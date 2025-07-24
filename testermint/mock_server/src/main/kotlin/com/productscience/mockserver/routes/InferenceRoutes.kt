@@ -19,6 +19,29 @@ import org.slf4j.LoggerFactory
 fun Route.inferenceRoutes(responseService: ResponseService, sseService: SSEService = SSEService()) {
     // POST /api/v1/inference/up - Transitions to INFERENCE state
     post("/api/v1/inference/up") {
+        val logger = LoggerFactory.getLogger("InferenceRoutes")
+        logger.info("Received inference/up request")
+
+        // This endpoint requires the state to be STOPPED
+        if (ModelState.getCurrentState() != ModelState.STOPPED) {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid state for inference up"))
+            return@post
+        }
+
+        // Update the state to INFERENCE
+        ModelState.updateState(ModelState.INFERENCE)
+
+        // Respond with 200 OK
+        call.respond(HttpStatusCode.OK)
+    }
+
+    // Handle all versioned inference/up endpoints
+    post("/{...segments}/api/v1/inference/up") {
+        val segments = call.parameters.getAll("segments")
+        val version = segments?.firstOrNull() // If there's a version, it would be the first segment
+        val logger = LoggerFactory.getLogger("InferenceRoutes")
+        logger.info("Received inference/up request" + if (version != null) " for version: $version" else "")
+
         // This endpoint requires the state to be STOPPED
         if (ModelState.getCurrentState() != ModelState.STOPPED) {
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid state for inference up"))
@@ -36,15 +59,7 @@ fun Route.inferenceRoutes(responseService: ResponseService, sseService: SSEServi
     post("/v1/chat/completions") {
         handleChatCompletions(call, responseService, sseService)
     }
-
-    // Handle paths with a segment prefix before /v1/chat/completions
-    // This will match paths like /api/v1/chat/completions, /custom/v1/chat/completions, etc.
-    post("/{segment}/v1/chat/completions") {
-        handleChatCompletions(call, responseService, sseService)
-    }
-
-    // Handle paths with multiple segments in the prefix
-    // This will match paths like /api/v2/v1/chat/completions, /custom/path/v1/chat/completions, etc.
+    // Handle all versioned chat completions endpoints
     post("/{...segments}/v1/chat/completions") {
         handleChatCompletions(call, responseService, sseService)
     }
@@ -73,6 +88,16 @@ private suspend fun handleChatCompletions(call: ApplicationCall, responseService
     responseService.setLastInferenceRequest(requestBody)
     logger.info("Stored last inference request")
 
+    // Extract model from request body
+    var model: String? = null
+    try {
+        val requestJson = objectMapper.readTree(requestBody)
+        model = requestJson.get("model")?.asText()
+        logger.info("Extracted model from request: $model")
+    } catch (e: Exception) {
+        logger.warn("Failed to extract model from request: ${e.message}")
+    }
+
     // Check if streaming is requested
     val isStreaming = sseService.isStreamingRequested(requestBody)
     logger.info("Streaming requested: $isStreaming")
@@ -81,7 +106,7 @@ private suspend fun handleChatCompletions(call: ApplicationCall, responseService
     val path = call.request.path()
 
     // Get the response configuration from the ResponseService
-    val responseConfig = responseService.getInferenceResponseConfig(path)
+    val responseConfig = responseService.getInferenceResponseConfig(path, model)
     logger.info("Retrieved response config for path $path: ${responseConfig != null}")
 
     // Default stream delay if not provided in the response

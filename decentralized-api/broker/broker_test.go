@@ -11,6 +11,7 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 	"github.com/stretchr/testify/mock"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slog"
 )
@@ -103,7 +104,8 @@ func NewTestBroker() *Broker {
 	mockChainBridge.On("GetCurrentEpochGroupData").Return(parentEpochData, nil)
 	mockChainBridge.On("GetEpochGroupDataByModelId", uint64(100), "model1").Return(model1EpochData, nil)
 
-	return NewBroker(mockChainBridge, phaseTracker, participantInfo, "", mlnodeclient.NewMockClientFactory())
+	mockConfigManager := &apiconfig.ConfigManager{}
+	return NewBroker(mockChainBridge, phaseTracker, participantInfo, "", mlnodeclient.NewMockClientFactory(), mockConfigManager)
 }
 
 func TestSingleNode(t *testing.T) {
@@ -120,7 +122,7 @@ func TestSingleNode(t *testing.T) {
 	registerNodeAndSetInferenceStatus(t, broker, node)
 
 	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model1", "", false, availableNode})
+	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
 	runningNode := <-availableNode
 	if runningNode == nil {
 		t.Fatalf("expected node1, got nil")
@@ -128,7 +130,7 @@ func TestSingleNode(t *testing.T) {
 	if runningNode.Id != node.Id {
 		t.Fatalf("expected node1, got: " + runningNode.Id)
 	}
-	queueMessage(t, broker, LockAvailableNode{"model1", "", false, availableNode})
+	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
 	if <-availableNode != nil {
 		t.Fatalf("expected nil, got " + runningNode.Id)
 	}
@@ -199,7 +201,7 @@ func TestNodeRemoval(t *testing.T) {
 	registerNodeAndSetInferenceStatus(t, broker, node)
 
 	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model1", "", false, availableNode})
+	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
 	runningNode := <-availableNode
 	if runningNode == nil {
 		t.Fatalf("expected node1, got nil")
@@ -212,7 +214,7 @@ func TestNodeRemoval(t *testing.T) {
 	if !<-release {
 		t.Fatalf("expected true, got false")
 	}
-	queueMessage(t, broker, LockAvailableNode{"model1", "", false, availableNode})
+	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
 	if <-availableNode != nil {
 		t.Fatalf("expected nil, got node")
 	}
@@ -232,7 +234,7 @@ func TestModelMismatch(t *testing.T) {
 	registerNodeAndSetInferenceStatus(t, broker, node)
 
 	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model2", "", false, availableNode})
+	queueMessage(t, broker, LockAvailableNode{"model2", availableNode})
 	if <-availableNode != nil {
 		t.Fatalf("expected nil, got node1")
 	}
@@ -253,50 +255,11 @@ func TestHighConcurrency(t *testing.T) {
 
 	availableNode := make(chan *Node, 2)
 	for i := 0; i < 100; i++ {
-		queueMessage(t, broker, LockAvailableNode{"model1", "", false, availableNode})
+		queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
 		if <-availableNode == nil {
 			t.Fatalf("expected node1, got nil")
 		}
 	}
-}
-
-func TestVersionFiltering(t *testing.T) {
-	broker := NewTestBroker()
-	v1node := apiconfig.InferenceNodeConfig{
-		Host:          "localhost",
-		InferencePort: 8080,
-		PoCPort:       5000,
-		Models:        map[string]apiconfig.ModelConfig{"model1": {Args: make([]string, 0)}},
-		Id:            "v1node",
-		MaxConcurrent: 1000,
-		Version:       "v1",
-	}
-	novNode := apiconfig.InferenceNodeConfig{
-		Host:          "localhost",
-		InferencePort: 8080,
-		PoCPort:       5000,
-		Models:        map[string]apiconfig.ModelConfig{"model1": {Args: make([]string, 0)}},
-		Id:            "novNode",
-		MaxConcurrent: 1000,
-		Version:       "",
-	}
-	registerNodeAndSetInferenceStatus(t, broker, v1node)
-	registerNodeAndSetInferenceStatus(t, broker, novNode)
-
-	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model1", "v1", false, availableNode})
-	node := <-availableNode
-	require.NotNil(t, node)
-	require.Equal(t, "v1node", node.Id)
-	queueMessage(t, broker, LockAvailableNode{"model1", "v1", false, availableNode})
-	node = <-availableNode
-	require.NotNil(t, node)
-	require.Equal(t, "v1node", node.Id)
-	queueMessage(t, broker, LockAvailableNode{"model1", "v2", false, availableNode})
-	require.Nil(t, <-availableNode)
-	queueMessage(t, broker, LockAvailableNode{"model1", "v2", true, availableNode})
-	node = <-availableNode
-	require.NotNil(t, node)
 }
 
 func TestMultipleNodes(t *testing.T) {
@@ -321,7 +284,7 @@ func TestMultipleNodes(t *testing.T) {
 	registerNodeAndSetInferenceStatus(t, broker, node2)
 
 	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model1", "", false, availableNode})
+	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
 	firstNode := <-availableNode
 	if firstNode == nil {
 		t.Fatalf("expected node1 or node2, got nil")
@@ -330,7 +293,7 @@ func TestMultipleNodes(t *testing.T) {
 	if firstNode.Id != node1.Id && firstNode.Id != node2.Id {
 		t.Fatalf("expected node1 or node2, got: " + firstNode.Id)
 	}
-	queueMessage(t, broker, LockAvailableNode{"model1", "", false, availableNode})
+	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
 	secondNode := <-availableNode
 	if secondNode == nil {
 		t.Fatalf("expected another node, got nil")
@@ -361,7 +324,7 @@ func TestReleaseNode(t *testing.T) {
 	registerNodeAndSetInferenceStatus(t, broker, node)
 
 	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model1", "", false, availableNode})
+	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
 	runningNode := <-availableNode
 	if runningNode == nil {
 		t.Fatalf("expected node1, got nil")
@@ -374,7 +337,7 @@ func TestReleaseNode(t *testing.T) {
 	if !<-release {
 		t.Fatalf("expected true, got false")
 	}
-	queueMessage(t, broker, LockAvailableNode{"model1", "", false, availableNode})
+	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
 	if <-availableNode == nil {
 		t.Fatalf("expected node1, got nil")
 	}
@@ -396,7 +359,7 @@ func TestRoundTripSegment(t *testing.T) {
 	registerNodeAndSetInferenceStatus(t, broker, node)
 
 	availableNode := make(chan *Node, 2)
-	queueMessage(t, broker, LockAvailableNode{"model1", "", false, availableNode})
+	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
 	runningNode := <-availableNode
 	if runningNode == nil {
 		t.Fatalf("expected node1, got nil")
@@ -451,4 +414,100 @@ func TestNodeShouldBeOperationalTest(t *testing.T) {
 	require.False(t, ShouldBeOperational(adminState, 12, types.PoCValidatePhase))
 	require.False(t, ShouldBeOperational(adminState, 12, types.PoCValidateWindDownPhase))
 	require.False(t, ShouldBeOperational(adminState, 12, types.InferencePhase))
+}
+
+func TestVersionedUrls(t *testing.T) {
+	node := Node{
+		Host:             "example.com",
+		InferencePort:    8080,
+		InferenceSegment: "/api/v1",
+		PoCPort:          9090,
+		PoCSegment:       "/api/v1",
+	}
+
+	// Test InferenceUrl without version (backward compatibility)
+	expectedInferenceUrl := "http://example.com:8080/api/v1"
+	actualInferenceUrl := node.InferenceUrl()
+	assert.Equal(t, expectedInferenceUrl, actualInferenceUrl)
+
+	// Test InferenceUrlWithVersion with empty version (should fall back to non-versioned)
+	actualInferenceUrlEmpty := node.InferenceUrlWithVersion("")
+	assert.Equal(t, expectedInferenceUrl, actualInferenceUrlEmpty)
+
+	// Test InferenceUrlWithVersion with version
+	expectedVersionedInferenceUrl := "http://example.com:8080/v3.0.8/api/v1"
+	actualVersionedInferenceUrl := node.InferenceUrlWithVersion("v3.0.8")
+	assert.Equal(t, expectedVersionedInferenceUrl, actualVersionedInferenceUrl)
+
+	// Test PoCUrl without version (backward compatibility)
+	expectedPocUrl := "http://example.com:9090/api/v1"
+	actualPocUrl := node.PoCUrl()
+	assert.Equal(t, expectedPocUrl, actualPocUrl)
+
+	// Test PoCUrlWithVersion with empty version (should fall back to non-versioned)
+	actualPocUrlEmpty := node.PoCUrlWithVersion("")
+	assert.Equal(t, expectedPocUrl, actualPocUrlEmpty)
+
+	// Test PoCUrlWithVersion with version
+	expectedVersionedPocUrl := "http://example.com:9090/v3.0.8/api/v1"
+	actualVersionedPocUrl := node.PoCUrlWithVersion("v3.0.8")
+	assert.Equal(t, expectedVersionedPocUrl, actualVersionedPocUrl)
+}
+
+func TestImmediateClientRefreshLogic(t *testing.T) {
+	// Test the immediate client refresh logic
+	broker := NewTestBroker()
+
+	// Test case 1: Should not refresh when lastUsedVersion is empty (first time)
+	assert.False(t, broker.configManager.ShouldRefreshClients(), "Should not refresh on first time")
+
+	// Test the RefreshAllClients functionality by registering a node
+	node := apiconfig.InferenceNodeConfig{
+		Host:          "localhost",
+		InferencePort: 8080,
+		PoCPort:       5000,
+		Models:        map[string]apiconfig.ModelConfig{"model1": {Args: make([]string, 0)}},
+		Id:            "node1",
+		MaxConcurrent: 1,
+	}
+
+	registerNodeAndSetInferenceStatus(t, broker, node)
+
+	// Get the worker and mock client factory
+	worker, exists := broker.nodeWorkGroup.GetWorker("node1")
+	require.True(t, exists, "Worker should exist")
+
+	mockFactory := broker.mlNodeClientFactory.(*mlnodeclient.MockClientFactory)
+
+	// Get the client using the actual key that would be used
+	allClients := mockFactory.GetAllClients()
+	var mockClient *mlnodeclient.MockClient
+	for _, client := range allClients {
+		mockClient = client
+		break // Get the first (and likely only) client
+	}
+	require.NotNil(t, mockClient, "Mock client should exist")
+
+	initialStopCalled := mockClient.StopCalled
+
+	// Test the immediate refresh directly - this should call stop on the old client immediately
+	worker.RefreshClientImmediate("v3.0.8", "v3.1.0")
+
+	// Give some time for the async stop call to complete
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify stop was called on the old client
+	assert.Greater(t, mockClient.StopCalled, initialStopCalled, "Stop should have been called on old client")
+
+	// Test the full immediate refresh flow again
+	previousStopCalled := mockClient.StopCalled
+
+	// Call immediate refresh again with different version
+	worker.RefreshClientImmediate("v3.1.0", "v3.2.0")
+
+	// Give some time for async stop calls to complete
+	time.Sleep(50 * time.Millisecond)
+
+	// Should have called stop again
+	assert.Greater(t, mockClient.StopCalled, previousStopCalled, "Stop should have been called again during second refresh")
 }

@@ -80,6 +80,7 @@ const (
 	Query_GetModelCapacity_FullMethodName                          = "/inference.inference.Query/GetModelCapacity"
 	Query_GetAllModelCapacities_FullMethodName                     = "/inference.inference.Query/GetAllModelCapacities"
 	Query_GranteesByMessageType_FullMethodName                     = "/inference.inference.Query/GranteesByMessageType"
+	Query_MLNodeVersion_FullMethodName                             = "/inference.inference.Query/MLNodeVersion"
 )
 
 // QueryClient is the client API for Query service.
@@ -188,6 +189,8 @@ type QueryClient interface {
 	GetAllModelCapacities(ctx context.Context, in *QueryGetAllModelCapacitiesRequest, opts ...grpc.CallOption) (*QueryGetAllModelCapacitiesResponse, error)
 	// Queries all authz grantees with specific message type for an account
 	GranteesByMessageType(ctx context.Context, in *QueryGranteesByMessageTypeRequest, opts ...grpc.CallOption) (*QueryGranteesByMessageTypeResponse, error)
+	// Queries the current MLNode version.
+	MLNodeVersion(ctx context.Context, in *QueryGetMLNodeVersionRequest, opts ...grpc.CallOption) (*QueryGetMLNodeVersionResponse, error)
 }
 
 type queryClient struct {
@@ -747,6 +750,15 @@ func (c *queryClient) GranteesByMessageType(ctx context.Context, in *QueryGrante
 	return out, nil
 }
 
+func (c *queryClient) MLNodeVersion(ctx context.Context, in *QueryGetMLNodeVersionRequest, opts ...grpc.CallOption) (*QueryGetMLNodeVersionResponse, error) {
+	out := new(QueryGetMLNodeVersionResponse)
+	err := c.cc.Invoke(ctx, Query_MLNodeVersion_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
@@ -853,6 +865,8 @@ type QueryServer interface {
 	GetAllModelCapacities(context.Context, *QueryGetAllModelCapacitiesRequest) (*QueryGetAllModelCapacitiesResponse, error)
 	// Queries all authz grantees with specific message type for an account
 	GranteesByMessageType(context.Context, *QueryGranteesByMessageTypeRequest) (*QueryGranteesByMessageTypeResponse, error)
+	// Queries the current MLNode version.
+	MLNodeVersion(context.Context, *QueryGetMLNodeVersionRequest) (*QueryGetMLNodeVersionResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -1042,6 +1056,9 @@ func (UnimplementedQueryServer) GetAllModelCapacities(context.Context, *QueryGet
 }
 func (UnimplementedQueryServer) GranteesByMessageType(context.Context, *QueryGranteesByMessageTypeRequest) (*QueryGranteesByMessageTypeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GranteesByMessageType not implemented")
+}
+func (UnimplementedQueryServer) MLNodeVersion(context.Context, *QueryGetMLNodeVersionRequest) (*QueryGetMLNodeVersionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MLNodeVersion not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -2154,6 +2171,24 @@ func _Query_GranteesByMessageType_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_MLNodeVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryGetMLNodeVersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).MLNodeVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_MLNodeVersion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).MLNodeVersion(ctx, req.(*QueryGetMLNodeVersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Query_ServiceDesc is the grpc.ServiceDesc for Query service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2404,6 +2439,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GranteesByMessageType",
 			Handler:    _Query_GranteesByMessageType_Handler,
+		},
+		{
+			MethodName: "MLNodeVersion",
+			Handler:    _Query_MLNodeVersion_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

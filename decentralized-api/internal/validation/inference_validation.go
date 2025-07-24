@@ -473,7 +473,7 @@ func (s *InferenceValidator) validateInferenceAndSendValMessage(inf types.Infere
 
 	// Retry logic for LockNode operation
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		valResult, err = broker.LockNode(s.nodeBroker, inf.Model, inf.NodeVersion, func(node *broker.Node) (ValidationResult, error) {
+		valResult, err = broker.LockNode(s.nodeBroker, inf.Model, func(node *broker.Node) (ValidationResult, error) {
 			return s.validate(inf, node)
 		})
 
@@ -554,9 +554,9 @@ func (s *InferenceValidator) validate(inference types.Inference, inferenceNode *
 		return nil, err
 	}
 
-	completionsUrl, err := url.JoinPath(inferenceNode.InferenceUrl(), "v1/chat/completions")
+	completionsUrl, err := url.JoinPath(inferenceNode.InferenceUrlWithVersion(s.configManager.GetCurrentNodeVersion()), "v1/chat/completions")
 	if err != nil {
-		logging.Error("Failed to join url", types.Validation, "url", inferenceNode.InferenceUrl(), "error", err)
+		logging.Error("Failed to join url", types.Validation, "url", inferenceNode.InferenceUrlWithVersion(s.configManager.GetCurrentNodeVersion()), "error", err)
 		return nil, err
 	}
 

@@ -5,6 +5,7 @@ import (
 	"decentralized-api/logging"
 	"decentralized-api/mlnodeclient"
 	"sync"
+	"time"
 
 	"github.com/productscience/inference/x/inference/types"
 )
@@ -19,6 +20,7 @@ type NodeWorker struct {
 	nodeId   string
 	node     *NodeWithState
 	mlClient mlnodeclient.MLNodeClient
+	clientMu sync.RWMutex
 	broker   *Broker
 	commands chan commandWithContext
 	shutdown chan struct{}
@@ -87,6 +89,34 @@ func (w *NodeWorker) Submit(ctx context.Context, cmd NodeWorkerCommand) bool {
 func (w *NodeWorker) Shutdown() {
 	close(w.shutdown)
 	w.wg.Wait() // Wait for all pending commands to complete
+}
+
+func (w *NodeWorker) RefreshClientImmediate(oldVersion, newVersion string) {
+	w.clientMu.Lock()
+	oldClient := w.mlClient
+	w.mlClient = w.broker.NewNodeClient(&w.node.Node)
+	w.clientMu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := oldClient.Stop(ctx); err != nil {
+			logging.Warn("Failed to stop old MLNode client during immediate version transition", types.Nodes,
+				"node_id", w.nodeId, "oldVersion", oldVersion, "newVersion", newVersion, "error", err)
+		} else {
+			logging.Info("Successfully stopped old MLNode client during immediate version transition", types.Nodes,
+				"node_id", w.nodeId, "oldVersion", oldVersion, "newVersion", newVersion)
+		}
+	}()
+
+	logging.Info("Immediately refreshed MLNode client", types.Nodes,
+		"node_id", w.nodeId, "oldVersion", oldVersion, "newVersion", newVersion)
+}
+
+func (w *NodeWorker) GetClient() mlnodeclient.MLNodeClient {
+	w.clientMu.RLock()
+	defer w.clientMu.RUnlock()
+	return w.mlClient
 }
 
 // NodeWorkGroup manages parallel execution across multiple node workers

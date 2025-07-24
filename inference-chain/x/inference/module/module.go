@@ -242,7 +242,15 @@ func (am AppModule) EndBlock(ctx context.Context) error {
 
 	partialUpgrades := am.keeper.GetAllPartialUpgrade(ctx)
 	for _, pu := range partialUpgrades {
-		if pu.Height < uint64(blockHeight) {
+		if pu.Height == uint64(blockHeight) {
+			if pu.NodeVersion != "" {
+				am.LogInfo("PartialUpgradeActive - updating current MLNode version", types.Upgrades,
+					"partialUpgradeHeight", pu.Height, "blockHeight", blockHeight, "nodeVersion", pu.NodeVersion)
+				am.keeper.SetMLNodeVersion(ctx, types.MLNodeVersion{
+					CurrentVersion: pu.NodeVersion,
+				})
+			}
+		} else if pu.Height < uint64(blockHeight) {
 			am.LogInfo("PartialUpgradeExpired", types.Upgrades, "partialUpgradeHeight", pu.Height, "blockHeight", blockHeight)
 			am.keeper.RemovePartialUpgrade(ctx, pu.Height)
 		}

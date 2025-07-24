@@ -6,9 +6,10 @@ import (
 	"decentralized-api/internal/event_listener/chainevents"
 	"decentralized-api/logging"
 	"encoding/json"
-	"github.com/productscience/inference/x/inference/types"
 	"os"
 	"path/filepath"
+
+	"github.com/productscience/inference/x/inference/types"
 )
 
 func ProcessNewBlockEvent(
@@ -21,24 +22,21 @@ func ProcessNewBlockEvent(
 		return
 	}
 
-	checkForPartialUpgrades(transactionRecorder, configManager)
-	checkForFullUpgrades(transactionRecorder, configManager)
+	checkForPartialUpgradesScheduled(transactionRecorder, configManager)
+	checkForFullUpgradesScheduled(transactionRecorder, configManager)
+
+	checkForVersionSwitch(configManager)
 }
 
-func checkForPartialUpgrades(transactionRecorder cosmosclient.InferenceCosmosClient, configManager *apiconfig.ConfigManager) {
+func checkForPartialUpgradesScheduled(transactionRecorder cosmosclient.InferenceCosmosClient, configManager *apiconfig.ConfigManager) {
 	partialUpgrades, err := transactionRecorder.GetPartialUpgrades()
 	if err != nil {
 		logging.Error("Error getting partial upgrades", types.Upgrades, "error", err)
 		return
 	}
+	logging.Info("checkForPartialUpgrades. Partial upgrades", types.Upgrades, "partialUpgrades", partialUpgrades)
 	for _, upgrade := range partialUpgrades.PartialUpgrade {
-		if upgrade.NodeVersion != "" {
-			err = configManager.AddNodeVersion(int64(upgrade.Height), upgrade.NodeVersion)
-			if err != nil {
-				logging.Error("Error adding node version", types.Upgrades, "error", err)
-				continue
-			}
-		}
+		// If Binaries are provided, we set everything
 		if upgrade.ApiBinariesJson != "" {
 			var planInfo UpgradeInfoInput
 			if err := json.Unmarshal([]byte(upgrade.ApiBinariesJson), &planInfo); err != nil {
@@ -53,19 +51,34 @@ func checkForPartialUpgrades(transactionRecorder cosmosclient.InferenceCosmosCli
 				continue
 			}
 			err = configManager.SetUpgradePlan(apiconfig.UpgradePlan{
-				Name:     upgrade.Name,
-				Height:   int64(upgrade.Height),
-				Binaries: planInfo.Binaries,
+				Name:        upgrade.Name,
+				Height:      int64(upgrade.Height),
+				Binaries:    planInfo.Binaries,
+				NodeVersion: planInfo.NodeVersion, // Store the known version
 			})
 			if err != nil {
-				logging.Error("Error setting upgrade plan", types.Upgrades, "error", err)
+				logging.Error("Error setting upgrade with binaries", types.Upgrades, "error", err)
 				continue
 			}
+			continue
+		}
+		// If Binaries are not provided but NodeVersion is, we set the NodeVersion, ignoring conflicts
+		if upgrade.NodeVersion != "" {
+			err = configManager.SetUpgradePlan(apiconfig.UpgradePlan{
+				Name:        upgrade.Name,
+				Height:      int64(upgrade.Height),
+				NodeVersion: upgrade.NodeVersion,
+			})
+			if err != nil {
+				logging.Error("Error setting upgrade plan for node version", types.Upgrades, "error", err)
+				continue
+			}
+			continue
 		}
 	}
 }
 
-func checkForFullUpgrades(transactionRecorder cosmosclient.InferenceCosmosClient, configManager *apiconfig.ConfigManager) {
+func checkForFullUpgradesScheduled(transactionRecorder cosmosclient.InferenceCosmosClient, configManager *apiconfig.ConfigManager) {
 	upgradePlan, err := transactionRecorder.GetUpgradePlan()
 	if err != nil {
 		logging.Error("Error getting upgrade plan", types.Upgrades, "error", err)
@@ -87,21 +100,42 @@ func checkForFullUpgrades(transactionRecorder cosmosclient.InferenceCosmosClient
 			return
 		}
 		err = configManager.SetUpgradePlan(apiconfig.UpgradePlan{
-			Name:     upgradePlan.Plan.Name,
-			Height:   upgradePlan.Plan.Height,
-			Binaries: planInfo.Binaries,
+			Name:        upgradePlan.Plan.Name,
+			Height:      upgradePlan.Plan.Height,
+			Binaries:    planInfo.Binaries,
+			NodeVersion: planInfo.NodeVersion,
 		})
 		if err != nil {
 			logging.Error("Error setting upgrade plan", types.Upgrades, "error", err)
 			return
 		}
+	}
+}
 
-		if planInfo.NodeVersion != "" {
-			err = configManager.AddNodeVersion(upgradePlan.Plan.Height, planInfo.NodeVersion)
-			if err != nil {
-				logging.Error("Error adding node version", types.Upgrades, "error", err)
-				return
+func checkForVersionSwitch(configManager *apiconfig.ConfigManager) {
+	upgradePlan := configManager.GetUpgradePlan()
+
+	if upgradePlan.Name == "" {
+		logging.Warn("checkForVersionSwitch. Websocket closed with no upgrade (name is empty)", types.Upgrades)
+		return
+	}
+
+	if configManager.GetHeight() >= upgradePlan.Height-1 {
+		if upgradePlan.NodeVersion != "" {
+			oldVersion := configManager.GetCurrentNodeVersion()
+			if upgradePlan.NodeVersion != oldVersion {
+				err := configManager.SetCurrentNodeVersion(upgradePlan.NodeVersion)
+				if err != nil {
+					logging.Error("checkForVersionSwitch. Failed to update MLNode version in config", types.Upgrades, "error", err)
+					return
+				}
+				logging.Info("MLNode version updated during upgrade using known target version", types.Upgrades, "oldVersion", oldVersion, "newVersion", upgradePlan.NodeVersion)
+				if len(upgradePlan.Binaries) == 0 {
+					configManager.ClearUpgradePlan()
+				}
 			}
+		} else {
+			logging.Warn("No NodeVersion specified in upgrade plan", types.Upgrades, "upgradeName", upgradePlan.Name)
 		}
 	}
 }
@@ -109,13 +143,19 @@ func checkForFullUpgrades(transactionRecorder cosmosclient.InferenceCosmosClient
 func CheckForUpgrade(configManager *apiconfig.ConfigManager) bool {
 	upgradePlan := configManager.GetUpgradePlan()
 	if upgradePlan.Name == "" {
-		logging.Warn("Websocket closed with no upgrade", types.Upgrades)
+		logging.Warn("CheckForUpgrade. Websocket closed with no upgrade (name is empty)", types.Upgrades)
 		return false
 	}
 
+	successfullyUpgraded := false
 	if configManager.GetHeight() >= upgradePlan.Height-1 {
-		logging.Info("Upgrade height reached", types.Upgrades, "height", upgradePlan.Height)
-		// Upgrade
+		logging.Info("CheckForUpgrade. Upgrade height reached", types.Upgrades, "height", upgradePlan.Height)
+
+		checkForVersionSwitch(configManager)
+		if len(upgradePlan.Binaries) == 0 {
+			return successfullyUpgraded
+		}
+
 		// Write out upgrade-info.json
 		path := getUpgradeInfoPath()
 		upgradeInfo := UpgradeInfoOutput{
@@ -150,7 +190,8 @@ func CheckForUpgrade(configManager *apiconfig.ConfigManager) bool {
 			logging.Error("Error writing output to file", types.Upgrades, "path", path, "error", err)
 			return false
 		}
-		logging.Info("Upgrade output written to file", types.Upgrades, "path", path)
+		logging.Info("Upgrade output written to file, clearing upgrade plan", types.Upgrades, "path", path)
+		configManager.ClearUpgradePlan()
 		return true
 	}
 
