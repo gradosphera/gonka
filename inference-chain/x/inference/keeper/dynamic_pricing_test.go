@@ -580,7 +580,8 @@ func TestDynamicPricingWithRealStats(t *testing.T) {
 		t.Logf("Querying stats from %d to %d (window: %d seconds)", timeWindowStart, timeWindowEnd, windowDuration)
 
 		// This is the same call UpdateDynamicPricing() makes
-		statsMap := k.GetSummaryByModelAndTime(goCtx, timeWindowStart, timeWindowEnd)
+		statsMap, err := k.GetSummaryByModelAndTime(goCtx, timeWindowStart, timeWindowEnd)
+		assert.NoError(t, err)
 		if len(statsMap) == 0 {
 			t.Logf("GetSummaryByModelAndTime returned no stats")
 			// If stats system isn't fully set up, fall back to testing the calculation logic

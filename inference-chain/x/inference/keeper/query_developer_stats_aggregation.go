@@ -3,8 +3,9 @@ package keeper
 import (
 	"context"
 	"errors"
-	"github.com/productscience/inference/x/inference/types"
 	"time"
+
+	"github.com/productscience/inference/x/inference/types"
 )
 
 var (
@@ -92,7 +93,10 @@ func (k Keeper) InferencesAndTokensStatsByModels(ctx context.Context, req *types
 	}
 
 	stats := make([]*types.ModelStats, 0)
-	statsPerModels := k.GetSummaryByModelAndTime(ctx, req.TimeFrom, req.TimeTo)
+	statsPerModels, err := k.GetSummaryByModelAndTime(ctx, req.TimeFrom, req.TimeTo)
+	if err != nil {
+		return nil, err
+	}
 	for modelName, summary := range statsPerModels {
 		stats = append(stats, &types.ModelStats{
 			Model:      modelName,

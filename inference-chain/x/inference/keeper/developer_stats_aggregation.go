@@ -70,7 +70,6 @@ func (k Keeper) GetDevelopersStatsByEpoch(ctx context.Context, developerAddr str
 	}
 
 	var stats types.DeveloperStatsByEpoch
-	// PANIC: MustUnmarshal panics if stored stats are corrupted or codec mismatch
 	k.cdc.MustUnmarshal(bz, &stats)
 	return stats, true
 }
@@ -97,7 +96,6 @@ func (k Keeper) GetDeveloperStatsByTime(
 		}
 
 		var stats types.DeveloperStatsByTime
-		// PANIC: MustUnmarshal panics if the time-based stats record is corrupted
 		k.cdc.MustUnmarshal(iterator.Value(), &stats)
 		results = append(results, &stats)
 	}
@@ -239,7 +237,7 @@ func (k Keeper) GetSummaryLastNEpochsByDeveloper(ctx context.Context, developerA
 	return summary
 }
 
-func (k Keeper) GetSummaryByModelAndTime(ctx context.Context, from, to int64) map[string]StatsSummary {
+func (k Keeper) GetSummaryByModelAndTime(ctx context.Context, from, to int64) (map[string]StatsSummary, error) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	timeStore := prefix.NewStore(store, types.KeyPrefix(StatsDevelopersByTime))
 
@@ -259,7 +257,9 @@ func (k Keeper) GetSummaryByModelAndTime(ctx context.Context, from, to int64) ma
 		}
 
 		var stat types.DeveloperStatsByTime
-		k.cdc.MustUnmarshal(iter.Value(), &stat)
+		if err := k.cdc.Unmarshal(iter.Value(), &stat); err != nil {
+			return nil, err
+		}
 
 		model := stat.Inference.Model
 		s, ok := stats[model]
@@ -271,7 +271,7 @@ func (k Keeper) GetSummaryByModelAndTime(ctx context.Context, from, to int64) ma
 		s.ActualCost += stat.Inference.ActualCostInCoins
 		stats[model] = s
 	}
-	return stats
+	return stats, nil
 }
 
 func (k Keeper) DumpAllDeveloperStats(ctx context.Context) (map[string][]*types.DeveloperStatsByEpoch, map[string][]*types.DeveloperStatsByTime) {

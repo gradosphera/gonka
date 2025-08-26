@@ -1,6 +1,9 @@
 package keeper_test
 
 import (
+	"testing"
+	"time"
+
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/google/uuid"
@@ -8,8 +11,6 @@ import (
 	keeper2 "github.com/productscience/inference/x/inference/keeper"
 	"github.com/productscience/inference/x/inference/types"
 	"github.com/stretchr/testify/assert"
-	"testing"
-	"time"
 )
 
 func TestDeveloperStats_MultipleDevs_MultipleEpochs(t *testing.T) {
@@ -278,7 +279,8 @@ func TestDeveloperStats_MultipleDevs_MultipleEpochs(t *testing.T) {
 			expectedStats[inf.Model] = stat
 		}
 
-		stat := keeper.GetSummaryByModelAndTime(ctx, inference1Developer1.StartBlockTimestamp-10, time.Now().UnixMilli())
+		stat, err := keeper.GetSummaryByModelAndTime(ctx, inference1Developer1.StartBlockTimestamp-10, time.Now().UnixMilli())
+		assert.NoError(t, err)
 		assert.Equal(t, len(expectedStats), len(stat))
 		for model, expectedStat := range expectedStats {
 			actualStat := stat[model]

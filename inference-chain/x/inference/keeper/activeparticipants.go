@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+
 	"cosmossdk.io/store/prefix"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/productscience/inference/x/inference/types"
@@ -28,7 +29,11 @@ func (k Keeper) GetActiveParticipants(ctx context.Context, epochId uint64) (val 
 		return types.ActiveParticipants{}, false
 	}
 
-	k.cdc.MustUnmarshal(b, &val)
+	err := k.cdc.Unmarshal(b, &val)
+	if err != nil {
+		k.LogError("failed to unmarshal active participants", types.Participants, "error", err)
+		return types.ActiveParticipants{}, false
+	}
 	return val, true
 }
 

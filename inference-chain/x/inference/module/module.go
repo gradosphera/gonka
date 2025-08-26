@@ -235,6 +235,7 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 			var consPubKey cryptotypes.PubKey
 			if err := cdc.UnpackAny(val.ConsensusPubkey, &consPubKey); err != nil {
 				am.LogError("BeginBlock: unable to unpack validator public key", types.Participants, "epoch", epochIndex)
+				continue
 			}
 
 			if consPubKey == nil || len(consPubKey.Bytes()) != ed25519.PubKeySize {
