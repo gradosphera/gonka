@@ -9,7 +9,7 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 )
 
-func (k Keeper) SetValidatorsSignatures(ctx context.Context, proof types.ValidatorsProof) error {
+func (k Keeper) SetValidatorsProof(ctx context.Context, proof types.ValidatorsProof) error {
 	h := uint64(proof.BlockHeight)
 
 	exists, err := k.ValidatorsProofs.Has(ctx, h)
@@ -26,7 +26,7 @@ func (k Keeper) SetValidatorsSignatures(ctx context.Context, proof types.Validat
 	// and since bock_proof formed on-chain, we can trust it
 	blockProof, found := k.GetBlockProof(ctx, int64(h))
 	if !found {
-		return fmt.Errorf("block prrof not found for height %v", h)
+		return fmt.Errorf("block proof not found for height %v", h)
 	}
 
 	validatorsData := make(map[string]string)
@@ -41,7 +41,7 @@ func (k Keeper) SetValidatorsSignatures(ctx context.Context, proof types.Validat
 	return k.ValidatorsProofs.Set(ctx, h, proof)
 }
 
-func (k Keeper) GetValidatorsSignatures(ctx context.Context, height int64) (types.ValidatorsProof, bool) {
+func (k Keeper) GetValidatorsProof(ctx context.Context, height int64) (types.ValidatorsProof, bool) {
 	v, err := k.ValidatorsProofs.Get(ctx, uint64(height))
 	if err != nil {
 		return types.ValidatorsProof{}, false

@@ -14,7 +14,7 @@ func (s msgServer) SubmitParticipantsProof(goCtx context.Context, msg *types.Msg
 	}
 
 	if msg.ValidatorsProof != nil {
-		if err := s.Keeper.SetValidatorsSignatures(ctx, *msg.ValidatorsProof); err != nil {
+		if err := s.Keeper.SetValidatorsProof(ctx, *msg.ValidatorsProof); err != nil {
 			return nil, err
 		}
 	}

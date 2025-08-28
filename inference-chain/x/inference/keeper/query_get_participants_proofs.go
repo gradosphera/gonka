@@ -16,7 +16,7 @@ func (k Keeper) GetParticipantsProofByHeight(ctx context.Context, req *types.Que
 		return nil, ErrEmptyBlockHeight
 	}
 
-	signatures, found := k.GetValidatorsSignatures(ctx, req.ProofHeight)
+	signatures, found := k.GetValidatorsProof(ctx, req.ProofHeight)
 	if !found {
 		return nil, ErrSignaturesNotFound
 	}
