@@ -2904,7 +2904,7 @@
           "weight": 1,
           "join_time": 1756409136,
           "last_inference_time": 1756409136,
-          "inference_url": "http://89.169.108.50:8000",
+          "inference_url": "http://89.169.111.30:8000",
           "status": 1,
           "validator_key": "7XK29NyfBjRS9Y8bBTEBYIaWEkfFV2dIst2gHkXEKs0=",
           "current_epoch_stats": {}
