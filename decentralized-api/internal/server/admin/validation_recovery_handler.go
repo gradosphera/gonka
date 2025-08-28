@@ -2,10 +2,10 @@ package admin
 
 import (
 	"decentralized-api/cosmosclient"
+	"decentralized-api/internal/utils"
 	"decentralized-api/logging"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/productscience/inference/api/inference/inference"
@@ -91,7 +91,7 @@ func (s *Server) postClaimRewardRecover(ctx echo.Context) error {
 			"epochIndex", epochIndex,
 			"recoveredCount", missedCount)
 
-		time.Sleep(4 * time.Minute)
+		utils.WaitNBlocks(40, s.configManager.GetHeight)
 	}
 
 	// Claim rewards if not already claimed or if forced
