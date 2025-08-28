@@ -19,13 +19,14 @@ import kotlin.test.assertNotNull
 
 const val DELAY_SEED = 8675309
 
-@Timeout(value = 15, unit = TimeUnit.MINUTES)
+@Timeout(value = 27, unit = TimeUnit.MINUTES)
 class InferenceAccountingTests : TestermintTest() {
 
     @Test
     fun `test with maximum tokens`() {
         logSection("=== STARTING TEST: test with maximum tokens ===")
-        genesis.waitForStage(EpochStage.CLAIM_REWARDS)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, offset = 2)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, offset = 1)
 
         val maxCompletionTokens = 100
 
@@ -130,7 +131,8 @@ class InferenceAccountingTests : TestermintTest() {
     @Tag("sanity")
     fun `test immediate pre settle amounts`() {
         logSection("Clearing claims")
-        genesis.waitForStage(EpochStage.CLAIM_REWARDS)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, offset = 2)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, offset = 1)
         logSection("Making inference")
         val beforeBalances = genesis.api.getParticipants()
         val inferenceResult = getInferenceResult(genesis)
@@ -147,6 +149,8 @@ class InferenceAccountingTests : TestermintTest() {
     @Test
     fun `test prompt larger than max_tokens`() {
         logSection("Clearing claims")
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, offset = 2)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, offset = 1)
         cluster.allPairs.forEach {
             it.mock?.setInferenceResponse(
                 defaultInferenceResponseObject.copy(
@@ -158,7 +162,6 @@ class InferenceAccountingTests : TestermintTest() {
                 )
             )
         }
-        genesis.waitForStage(EpochStage.CLAIM_REWARDS)
         logSection("Making inference")
         val genesisBalanceBefore = genesis.node.getSelfBalance()
         val beforeBalances = genesis.api.getParticipants()
@@ -180,7 +183,8 @@ class InferenceAccountingTests : TestermintTest() {
     fun `start comes after finish inference`() {
         logSection("Clearing Claims")
         genesis.waitForStage(EpochStage.START_OF_POC)
-        genesis.waitForStage(EpochStage.CLAIM_REWARDS)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, offset = 2)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, offset = 1)
         logSection("Making inferences")
         val startLastRewardedEpoch = getRewardCalculationEpochIndex(genesis)
         val participants = genesis.api.getParticipants()
@@ -200,7 +204,8 @@ class InferenceAccountingTests : TestermintTest() {
     fun `test post settle amounts`() {
         logSection("Clearing claims")
         // If we don't wait until the next rewards claim, there may be lingering requests that mess with our math
-        genesis.waitForStage(EpochStage.CLAIM_REWARDS)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, offset = 2)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, offset = 1)
         val startLastRewardedEpoch = getRewardCalculationEpochIndex(genesis)
         val participants = genesis.api.getParticipants()
 
