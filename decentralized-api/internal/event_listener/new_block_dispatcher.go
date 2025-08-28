@@ -343,35 +343,41 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 	// Check for other stage transitions
 	if epochContext.IsSetNewValidatorsStage(blockHeight) {
 		logging.Info("IsSetNewValidatorsStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
-
-		// Read the current seed before any changes to avoid race condition
-		// This seed will become the "previous seed" after ChangeCurrentSeed() executes
-		currentSeed := d.configManager.GetCurrentSeed()
-
-		// Verify the seed is from the correct epoch (previous epoch for recovery)
-		expectedPreviousEpochIndex := epochContext.EpochIndex - 1
-		if currentSeed.EpochIndex != expectedPreviousEpochIndex {
-			logging.Warn("Current seed epoch mismatch for recovery", types.Validation,
-				"currentSeedEpoch", currentSeed.EpochIndex,
-				"expectedPreviousEpoch", expectedPreviousEpochIndex,
-				"currentEpoch", epochContext.EpochIndex)
-		}
-
-		// Start both operations in parallel, passing the seed we read
 		go func() {
 			d.randomSeedManager.ChangeCurrentSeed()
-		}()
-
-		// Execute missed validation recovery in background with the seed we captured
-		go func() {
-			d.executeMissedValidationRecoveryWithSeed(expectedPreviousEpochIndex, currentSeed)
 		}()
 	}
 
 	if epochContext.IsClaimMoneyStage(blockHeight) {
 		logging.Info("IsClaimMoneyStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
+
+		// Get the previous epoch seed for validation recovery
+		previousSeed := d.configManager.GetPreviousSeed()
+
+		// Calculate previous epoch index
+		expectedPreviousEpochIndex := epochContext.EpochIndex - 1
+
+		// Verify the seed is from the correct epoch
+		if previousSeed.EpochIndex != expectedPreviousEpochIndex {
+			logging.Warn("Previous seed epoch mismatch for recovery", types.Validation,
+				"previousSeedEpoch", previousSeed.EpochIndex,
+				"expectedPreviousEpoch", expectedPreviousEpochIndex,
+				"currentEpoch", epochContext.EpochIndex)
+		}
+
+		// Execute missed validation recovery BEFORE claiming rewards
 		go func() {
+			// First, recover any missed validations from the previous epoch
+			d.executeMissedValidationRecoveryWithSeed(expectedPreviousEpochIndex, previousSeed)
+
+			// Then, claim rewards (this ensures we've validated everything before claiming)
 			d.randomSeedManager.RequestMoney()
+
+			// Mark the seed as claimed to prevent duplicate claims
+			err := d.configManager.MarkPreviousSeedClaimed()
+			if err != nil {
+				logging.Error("Failed to mark seed as claimed", types.Claims, "epochIndex", expectedPreviousEpochIndex, "error", err)
+			}
 		}()
 	}
 }

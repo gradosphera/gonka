@@ -5,6 +5,7 @@ import (
 	"decentralized-api/broker"
 	cosmos_client "decentralized-api/cosmosclient"
 	"decentralized-api/internal/server/middleware"
+	"decentralized-api/internal/validation"
 
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	blstypes "github.com/productscience/inference/x/bls/types"
@@ -25,13 +26,15 @@ type Server struct {
 	nodeBroker    *broker.Broker
 	configManager *apiconfig.ConfigManager
 	recorder      cosmos_client.CosmosMessageClient
+	validator     *validation.InferenceValidator
 	cdc           *codec.ProtoCodec
 }
 
 func NewServer(
 	recorder cosmos_client.CosmosMessageClient,
 	nodeBroker *broker.Broker,
-	configManager *apiconfig.ConfigManager) *Server {
+	configManager *apiconfig.ConfigManager,
+	validator *validation.InferenceValidator) *Server {
 	cdc := getCodec()
 
 	e := echo.New()
@@ -41,6 +44,7 @@ func NewServer(
 		nodeBroker:    nodeBroker,
 		configManager: configManager,
 		recorder:      recorder,
+		validator:     validator,
 		cdc:           cdc,
 	}
 
@@ -63,6 +67,9 @@ func NewServer(
 	g.POST("bls/request", s.postRequestThresholdSignature)
 
 	g.POST("debug/create-dummy-training-task", s.postDummyTrainingTask)
+
+	// Manual validation recovery and claim endpoint
+	g.POST("claim-reward/recover", s.postClaimRewardRecover)
 
 	return s
 }

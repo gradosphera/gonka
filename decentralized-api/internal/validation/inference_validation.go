@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -211,6 +212,7 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 
 // ExecuteRecoveryValidations executes validation for a list of missed inferences
 // This function uses the inference data already obtained and executes validations in parallel goroutines
+// It waits for all validations to complete before returning
 func (s *InferenceValidator) ExecuteRecoveryValidations(missedInferences []types.Inference) {
 	if len(missedInferences) == 0 {
 		logging.Info("No missed validations to execute", types.Validation)
@@ -219,9 +221,14 @@ func (s *InferenceValidator) ExecuteRecoveryValidations(missedInferences []types
 
 	logging.Info("Starting recovery validation execution", types.Validation, "missedValidations", len(missedInferences))
 
-	// Execute recovery validations in parallel goroutines (same pattern as SampleInferenceToValidate)
+	var wg sync.WaitGroup
+
+	// Execute recovery validations in parallel goroutines with WaitGroup synchronization
 	for _, inf := range missedInferences {
+		wg.Add(1)
 		go func(inference types.Inference) {
+			defer wg.Done()
+
 			logging.Info("Executing recovery validation", types.Validation, "inferenceId", inference.InferenceId)
 
 			// Use existing validation infrastructure
@@ -234,7 +241,11 @@ func (s *InferenceValidator) ExecuteRecoveryValidations(missedInferences []types
 		}(inf)
 	}
 
-	logging.Info("Recovery validation execution initiated for all missed validations", types.Validation, "count", len(missedInferences))
+	// Wait for all recovery validations to complete
+	logging.Info("Waiting for all recovery validations to complete", types.Validation, "count", len(missedInferences))
+	wg.Wait()
+
+	logging.Info("All recovery validations completed", types.Validation, "count", len(missedInferences))
 }
 
 func (s *InferenceValidator) SampleInferenceToValidate(ids []string, transactionRecorder cosmosclient.InferenceCosmosClient) {

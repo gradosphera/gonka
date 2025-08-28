@@ -92,6 +92,7 @@ type SeedInfo struct {
 	Seed       int64  `koanf:"seed"`
 	EpochIndex uint64 `koanf:"epoch_index"`
 	Signature  string `koanf:"signature"`
+	Claimed    bool   `koanf:"claimed"`
 }
 
 type ApiConfig struct {

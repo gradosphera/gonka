@@ -86,7 +86,7 @@ Each task includes:
 - **Where**: `decentralized-api/internal/event_listener/new_block_dispatcher.go`
 - **Why**: Automatically trigger recovery during natural epoch transition points
 - **Dependencies**: 1.3
-- **Result**: Successfully integrated missed validation recovery with epoch transition handling. Enhanced IsSetNewValidatorsStage detection to trigger recovery in background goroutine, implemented executeMissedValidationRecovery() with comprehensive error handling and logging. **Architecture Decision**: Eliminated redundant transactionRecorder parameter by using InferenceValidator's internal recorder (which is the same object). This simplified the architecture while maintaining full functionality - the validator's internal recorder is cast from CosmosMessageClient interface to InferenceCosmosClient concrete type when needed for validateInferenceAndSendValMessage(). **Race Condition Fix**: Identified and resolved critical race condition between ChangeCurrentSeed() and recovery seed reading. Now captures current seed before starting parallel goroutines, ensuring recovery uses correct previous epoch seed. Added executeMissedValidationRecoveryWithSeed() method with seed parameter to eliminate timing dependencies. Updated integration tests and fixed all compilation issues. Build successful.
+- **Result**: Successfully integrated missed validation recovery with epoch transition handling. **Major Architecture Improvement**: Moved recovery from IsSetNewValidatorsStage to IsClaimMoneyStage - this ensures we validate everything BEFORE claiming rewards, providing more time for recovery and better success rates. **Synchronization Fix**: Implemented WaitGroup in ExecuteRecoveryValidations() to ensure all recovery validations (including retries) complete before RequestMoney() is called. This guarantees we've fulfilled all validation duties before claiming rewards. **Architecture Decision**: Eliminated redundant transactionRecorder parameter by using InferenceValidator's internal recorder (which is the same object). This simplified the architecture while maintaining full functionality - the validator's internal recorder is cast from CosmosMessageClient interface to InferenceCosmosClient concrete type when needed for validateInferenceAndSendValMessage(). **Race Condition Fix**: Resolved race condition by using GetPreviousSeed() at claim time when seed state is stable. Updated integration tests and fixed all compilation issues. Build successful.
 
 #### 2.2 Background Processing Implementation
 - **Task**: [x] Implement background processing for validation recovery
@@ -100,7 +100,7 @@ Each task includes:
 - **Dependencies**: 2.1
 - **Result**: Background processing fully implemented. Recovery runs in separate goroutine with comprehensive logging. Context cancellation and rate limiting deemed unnecessary for current scope - recovery is lightweight and runs once per epoch transition.
 
-### Section 3: Validation Retry Logic
+### Section 3: Validation Retry Logic and State Management
 
 #### 3.1 Recovery Validation Retry Implementation
 - **Task**: [x] Add retry logic for failed recovery validations
@@ -116,6 +116,20 @@ Each task includes:
 - **Why**: Improve recovery success rate for transient failures during validation execution
 - **Dependencies**: 2.2
 - **Result**: Implemented comprehensive retry logic directly in `validateInferenceAndSendValMessage()`. Added retry loop with 4-minute intervals and 5 max attempts. **All errors are now retried** including `ErrNoNodesAvailable` (nodes might be temporarily busy/loading). Only after all retry attempts are exhausted does `ErrNoNodesAvailable` result in `ModelNotSupportedValidationResult`. Retry logic covers the LockNode operation which is the most common failure point. Comprehensive logging for retry attempts, success, and final failure states. Build successful.
+
+#### 3.2 Claim Status Tracking and Admin API
+- **Task**: [x] Implement claim status tracking and manual recovery API
+- **What**: Add state management and admin controls:
+  - ✅ Extend `SeedInfo` struct with `Claimed` boolean field
+  - ✅ Add `MarkPreviousSeedClaimed()` and `IsPreviousSeedClaimed()` methods
+  - ✅ Prevent duplicate claim attempts in automatic recovery
+  - ✅ Create admin API endpoint `POST /admin/v1/claim-reward/recover` for manual recovery
+  - ✅ Support optional epoch specification and force claim functionality
+  - ✅ Return detailed recovery status including missed validations count
+- **Where**: `decentralized-api/apiconfig/config.go`, `decentralized-api/internal/server/admin/`
+- **Why**: Prevent duplicate claims, enable manual recovery, and provide operational visibility
+- **Dependencies**: 3.1
+- **Result**: Implemented comprehensive claim status tracking stored in config file. Added admin API for manual validation recovery with detailed response including missed validation counts, claim status, and execution results. Supports force claim for re-processing. Automatic recovery now checks claim status to prevent duplicates. Build successful.
 
 ### Section 8: Testing and Validation
 

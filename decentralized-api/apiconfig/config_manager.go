@@ -158,6 +158,16 @@ func (cm *ConfigManager) SetPreviousSeed(seed SeedInfo) error {
 	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
 }
 
+func (cm *ConfigManager) MarkPreviousSeedClaimed() error {
+	cm.currentConfig.PreviousSeed.Claimed = true
+	logging.Info("Marking previous seed as claimed", types.Config, "epochIndex", cm.currentConfig.PreviousSeed.EpochIndex)
+	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+}
+
+func (cm *ConfigManager) IsPreviousSeedClaimed() bool {
+	return cm.currentConfig.PreviousSeed.Claimed
+}
+
 func (cm *ConfigManager) GetPreviousSeed() SeedInfo {
 	return cm.currentConfig.PreviousSeed
 }
