@@ -337,7 +337,7 @@ func logInferencesToValidate(toValidate []string) {
 
 func (s *InferenceValidator) validateInferenceAndSendValMessage(inf types.Inference, transactionRecorder cosmosclient.InferenceCosmosClient, revalidation bool) {
 	const maxRetries = 5
-	const retryInterval = 4 * time.Minute
+	const retryInterval = 1 * time.Millisecond
 
 	var valResult ValidationResult
 	var err error

@@ -2,7 +2,6 @@ package admin
 
 import (
 	"decentralized-api/cosmosclient"
-	"decentralized-api/internal/utils"
 	"decentralized-api/logging"
 	"net/http"
 	"strconv"
@@ -91,7 +90,6 @@ func (s *Server) postClaimRewardRecover(ctx echo.Context) error {
 			"epochIndex", epochIndex,
 			"recoveredCount", missedCount)
 
-		utils.WaitNBlocks(40, s.configManager.GetHeight)
 	}
 
 	// Claim rewards if not already claimed or if forced

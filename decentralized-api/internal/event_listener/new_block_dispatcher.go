@@ -14,7 +14,6 @@ import (
 	"decentralized-api/cosmosclient"
 	"decentralized-api/internal/event_listener/chainevents"
 	"decentralized-api/internal/poc"
-	"decentralized-api/internal/utils"
 	"decentralized-api/internal/validation"
 	"decentralized-api/logging"
 
@@ -579,7 +578,4 @@ func getBlockHash(data map[string]interface{}) (string, error) {
 // waitForValidationRecoveryCompletion implements dynamic wait logic for validation recovery
 // Waits for minimum of EpochLength // 4 and 40 blocks using block height monitoring
 func (d *OnNewBlockDispatcher) waitForValidationRecoveryCompletion() {
-	epochLength := d.phaseTracker.GetEpochParams().EpochLength
-	waitBlocks := utils.ComputeValidationWaitBlocks(epochLength)
-	utils.WaitNBlocks(waitBlocks, d.configManager.GetHeight)
 }
