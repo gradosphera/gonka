@@ -69,7 +69,7 @@ func (k Keeper) burnSettleAmount(ctx context.Context, settleAmount types.SettleA
 			k.LogError("Error burning settle amount coins", types.Settle, "error", err, "participant", settleAmount.Participant, "amount", totalCoins)
 			return err
 		}
-		k.BankKeeper.LogSubAccountTransaction(ctx, types.ModuleName, settleAmount.Participant, types.SettleSubAccount, sdk.NewInt64Coin(types.BaseCoin, int64(totalCoins)), reason)
+		k.SafeLogSubAccountTransaction(ctx, types.ModuleName, settleAmount.Participant, types.SettleSubAccount, totalCoins, reason)
 		k.LogInfo("Burned settle amount", types.Settle, "participant", settleAmount.Participant, "amount", totalCoins, "reason", reason)
 	}
 	return nil
@@ -88,8 +88,8 @@ func (k Keeper) SetSettleAmountWithBurn(ctx context.Context, settleAmount types.
 
 	// Set the new settle amount
 	k.SetSettleAmount(ctx, settleAmount)
-	k.BankKeeper.LogSubAccountTransaction(ctx, types.ModuleName, settleAmount.Participant, types.SettleSubAccount, sdk.NewInt64Coin(types.BaseCoin, int64(settleAmount.GetTotalCoins())), "awaiting claim")
-	k.BankKeeper.LogSubAccountTransaction(ctx, settleAmount.Participant, types.ModuleName, types.OwedSubAccount, sdk.NewInt64Coin(types.BaseCoin, int64(settleAmount.WorkCoins)), "moved to settled")
+	k.SafeLogSubAccountTransaction(ctx, types.ModuleName, settleAmount.Participant, types.SettleSubAccount, settleAmount.GetTotalCoins(), "awaiting claim")
+	k.SafeLogSubAccountTransactionUint(ctx, settleAmount.Participant, types.ModuleName, types.OwedSubAccount, settleAmount.WorkCoins, "moved to settler")
 	return nil
 }
 

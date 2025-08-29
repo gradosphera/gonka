@@ -29,7 +29,11 @@ func calcExpectedRewards(participants []types.Participant) int64 {
 	}
 	w := decimal.NewFromInt(totalWorkCoins)
 	r := decimal.NewFromInt(1).Sub(decimal.NewFromFloat32(defaultSettleParameters.CurrentSubsidyPercentage))
-	return w.Div(r).IntPart()
+	rewardAmount := w.Div(r).IntPart()
+	if rewardAmount < 0 {
+		panic("Negative reward amount")
+	}
+	return rewardAmount
 }
 
 func TestReduceSubsidy(t *testing.T) {
@@ -158,7 +162,7 @@ func TestSingleSettle(t *testing.T) {
 	result, newCoin, err := inference.GetSettleAmounts([]types.Participant{participant1}, &defaultSettleParameters)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(result))
-	require.Equal(t, expectedRewardCoin, newCoin.Amount)
+	require.Equal(t, expectedRewardCoin, uint64(newCoin.Amount))
 	p1Result := result[0]
 	require.Equal(t, uint64(1000), p1Result.Settle.WorkCoins)
 	require.Equal(t, uint64(expectedRewardCoin), p1Result.Settle.RewardCoins)
@@ -179,7 +183,7 @@ func TestEvenSettle(t *testing.T) {
 	result, newCoin, err := inference.GetSettleAmounts([]types.Participant{participant1, participant2}, &defaultSettleParameters)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(result))
-	require.Equal(t, expectedRewardCoin, newCoin.Amount)
+	require.Equal(t, expectedRewardCoin, uint64(newCoin.Amount))
 	p1Result := result[0]
 	require.Equal(t, uint64(1000), p1Result.Settle.WorkCoins)
 	require.Equal(t, uint64(expectedRewardCoin/2), p1Result.Settle.RewardCoins)
@@ -277,7 +281,9 @@ func TestActualSettle(t *testing.T) {
 	})
 	expectedRewardCoin := calcExpectedRewards([]types.Participant{participant1, participant2})
 
-	mocks.BankKeeper.EXPECT().MintCoins(ctx, types.ModuleName, types.GetCoins(expectedRewardCoin), gomock.Any()).Return(nil)
+	coins, err2 := types.GetCoins(expectedRewardCoin)
+	require.NoError(t, err2)
+	mocks.BankKeeper.EXPECT().MintCoins(ctx, types.ModuleName, coins, gomock.Any()).Return(nil)
 	mocks.BankKeeper.EXPECT().LogSubAccountTransaction(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	err := keeper.SettleAccounts(ctx, 10, 0)
 	require.NoError(t, err)

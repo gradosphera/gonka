@@ -42,7 +42,7 @@ func (am AppModule) RegisterTopMiners(ctx context.Context, participants []*types
 			am.keeper.SetTopMiner(ctx, typedAction.Miner)
 			params := am.keeper.GetParams(ctx)
 			topMinerVestingPeriod := &params.TokenomicsParams.TopMinerVestingPeriod
-			err := am.keeper.PayParticipantFromModule(ctx, typedAction.Miner.Address, uint64(typedAction.Payout), types.TopRewardPoolAccName, "top_miner", topMinerVestingPeriod)
+			err := am.keeper.PayParticipantFromModule(ctx, typedAction.Miner.Address, typedAction.Payout, types.TopRewardPoolAccName, "top_miner", topMinerVestingPeriod)
 			if err != nil {
 				return err
 			}
