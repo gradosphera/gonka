@@ -1,13 +1,3 @@
-RULES. NEVER DELETE
-
-Right now this document is WIP. Assistance should help to:
-
-- Phrase info
-- Find info in repo
-All found information should be described conciced, clearly and have references to file and function which has this logic
-
----
-
 # How it works now
 
 The Gonka network implements custom fraud detection and punishment mechanisms in addition to standard Cosmos SDK slashing. This document describes these mechanisms.
@@ -36,6 +26,7 @@ The Gonka network penalizes participants for several offenses to ensure network 
 
 - **Description**: Inference are scheduled to node but not executed. Detected as TA records `MsgStartInference` TX. Currently participants must be available for at least 95% of transferred request.
 - **Detection**: The system tracks missed requests in two ways:
+    - **Inference Timeouts**: When an inference is started via `MsgStartInference`, a timeout is set for it based on the `ExpirationBlocks` network parameter (`x/inference/keeper/msg_server_start_inference.go:addTimeout()`). At the end of each block, the network checks for inferences that have reached their expiration height. If a timed-out inference is still in the `STARTED` status, it is marked as `EXPIRED`, and the executor's `MissedRequests` counter for the epoch is incremented (`x/inference/module/module.go:handleExpiredInference()`).
     - **Epoch-End Slashing Check**: At the end of each epoch, checks if a participant missed more than 5% of their assigned inference requests (`x/inference/keeper/collateral.go:CheckAndSlashForDowntime()`). The calculation is `missedPercentage = MissedRequests / (InferenceCount + MissedRequests)`. No penalty is applied if the participant had no work assigned.
     - **Reputation Impact**: Tracks miss percentages per epoch and applies cumulative penalties to reputation score (`x/inference/module/module.go:calculateParticipantReputation()`, `x/inference/calculations/reputation.go:CalculateReputation()`). Penalties apply when missed request rate exceeds 1% (`MissPercentageCutoff` parameter).
 - **Penalties**:
@@ -63,7 +54,7 @@ The Gonka network penalizes participants for several offenses to ensure network 
 ### 4. Failed Proof-of-Compute (PoC) Consensus
 
 - **Description**: Failing to achieve a supermajority consensus on Proof-of-Compute (PoC) submissions.
-- **Detection**: The network verifies that the total weight of validators approving the PoC submission **exceeds 50%** of the total network weight. Submissions with 50% or less approval fail (`x/inference/module/chainvalidation.go:pocValidated()`).
+- **Detection**: The network verifies that the total weight of validators approving the PoC submission **strictly exceeds 50%** of the total network weight (ValidWeight > halfWeight). Submissions with exactly 50% or less approval fail (`x/inference/module/chainvalidation.go:pocValidated()`).
 - **Penalties**:
     - **Exclusion from Work**: If a participant fails to achieve PoC consensus, they are removed from the active set for the next epoch, effectively excluding them from new work assignments and consensus influence (`x/inference/module/chainvalidation.go:ComputeNewWeights()`). No collateral is slashed for this offense.
 
@@ -99,3 +90,45 @@ The network assigns validators to inferences using a deterministic algorithm bas
 
 # Proposal
 
+This proposal outlines a unified framework for fraud and non-performance detection to enhance network robustness and fairness. The goal is to move from disparate rules to a consistent, statistically-driven system for the first three offense types: Invalid Inferences, Downtime, and Missed Validations. Proof-of-Compute (PoC) consensus failures will remain subject to a strict, immediate penalty.
+
+### 1. Unified Statistical Anomaly Detection
+
+Offenses related to inferences, downtime, and validations will be evaluated using statistical tests over a single epoch (24 hours) to distinguish between minor incidents and persistent issues.
+
+- **Downtime**: Replace the fixed 5% slashing threshold with a statistical model analyzing a participant's downtime over a single epoch.
+- **Missed Validations**: Use a statistical test to identify participants with an anomalously high rate of missed validations over an epoch.
+
+### 2. Defined Penalty Tiers
+
+To create a more predictable and fair system, penalties will be structured into three distinct tiers based on the statistical severity of an offense. Each offense type (Invalid Inferences, Downtime, Missed Validations) will have its own configurable statistical thresholds to trigger these tiers.
+
+- **Tier 1: Warning (Low statistical significance)**
+    - **Trigger**: A minor statistical deviation from expected behavior. This serves as an initial warning without severe consequences.
+    - **Penalty**:
+        - A small, incremental reduction in reputation score.
+
+- **Tier 2: Major Offense (Medium statistical significance)**
+    - **Trigger**: A significant statistical anomaly indicating persistent non-performance or potential fraud.
+    - **Penalties**:
+        - **Collateral Slash**: A moderate portion of collateral is burned (e.g., 10%).
+        - **Major Reputation Hit**: A substantial reduction in reputation score.
+        - **Permanent Reward Forfeiture**: All rewards for the current epoch are permanently forfeited.
+
+- **Tier 3: Critical Offense (High statistical significance)**
+    - **Trigger**: A severe statistical anomaly that strongly indicates malicious activity or critical operational failure.
+    - **Penalties**:
+        - **Critical Collateral Slash**: A large portion of collateral is burned (e.g., 50%).
+        - **Reputation Reset**: Reputation score is reset to zero.
+        - **Permanent Reward Forfeiture**: All rewards for the current epoch are permanently forfeited.
+        - **Network Exclusion**: The participant's status is changed to `INVALID`, and they are removed from the active set for the remainder of the current epoch.
+
+### Changes from Notes
+
+- **Unified Downtime Calculation**: Revisit the `missedPercentage` formula (`MissedRequests / (InferenceCount + MissedRequests)`) to ensure its consistent application for both reputation and slashing.
+- **Reputation Impact for All Offenses**: All offenses, including missed validations, will impact reputation scores.
+- **Redemption for `INVALID` Status**: After a cooldown period, a participant can re-register by posting new collateral, with their reputation reset to a baseline level.
+- **Consensus Call Rate-Limiting**: To prevent abuse, the ability to initiate consensus calls will be limited based on a participant's PoC weight:
+    - Limit on parallel consensus calls (e.g. 1 per 500 PoC units, min 1).
+    - Limit on total invalid consensus calls per epoch (e.g. same).
+    - A fee-based mechanism may be considered in the future.
