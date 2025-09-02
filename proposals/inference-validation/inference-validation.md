@@ -201,8 +201,8 @@ Input: Token sequence + Artifact → Sequence Check (if not pass) → Reject
 **Stage 1: Sequence Check**
 1. Initialize RNG with `run_seed`
 2. For each position i:
-   - Sample token from artifact's $A_i$ using RNG.
-   - Verify: `artifact.positions[i].chosen == artifact.positions[i].top_k[j]`
+   - Use RNG to sample a token from artifact's $A_i$ top-k list (i.e., `artifact.positions[i].top_k`), obtaining its index `sampled_index`.
+   - Verify: `artifact.positions[i].chosen == artifact.positions[i].top_k[sampled_index]`
    - **Any mismatch → reject immediately**
 
 **Stage 2: Distribution Check**
