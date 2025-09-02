@@ -193,7 +193,7 @@ Input: Token sequence + Artifact → Sequence Check (if not pass) → Reject
       $A_{full} = \{ t^i_1: p^i_1, t^i_2: p^i_2,\dots t^i_k: p^i_k, t^i_{k+1}: p^i_{k+1}, \dots \}$
 
    A token t_i is sampled from this distribution using the RNG.
-   The top-k tokens from $A_{fukk}$ and their probabilities are recorded in the artifact $A_i$. The final artifact also includes the `run_seed`.
+   The top-k tokens from $A_{full}$ and their probabilities are recorded in the artifact $A_i$. The final artifact also includes the `run_seed`.
 
 
 #### Validator Process
