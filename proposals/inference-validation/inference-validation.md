@@ -60,7 +60,7 @@ def position_dist(
 def distance2(inf_result: Result, val_result: Result):
     total_dist = 0
     for inf_position, val_position in zip(inf_result.results, val_result.results):
-        dist, _ = position_dist(inf_position, val_position)
+        dist = position_dist(inf_position, val_position)
         total_dist += dist
     
     return (total_dist + 1.0) / (max(100, len(inf_result.results))*len(inf_result.results[0].logprobs) + 1.0)
