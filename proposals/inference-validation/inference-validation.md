@@ -71,6 +71,15 @@ The current implementation
 - catches wrong model usage (e.g. `Qwen2.5-3B` vs `Qwen2.5-7B`)
 - catches significant quantization differences in most cases. 
 
+For example, if the chain agrees to deploy `Qwen3-32B` FP8 but a participant uses INT4 instead, our distance check would flag the corresponding inferences as fraudulent and punish the participant. 
+
+In the plots below, all FP8 inferences are validated as honest (0 false positives, i.e. honest inferences marked as fraud), and 99% of INT4 inferences are correctly flagged as fraud. The small remainder of false negatives (fraudulent inferences accepted as honest) is acceptable as the cheating participant will still be caught and punished. Most importantly, the honest FP8 inferences won't be fraudulent, ensuring that honest participants running the claimed model will be rewarded accordingly.
+
+![qwen3-32b-FP8.png](qwen3-32b-FP8.png)
+
+![qwen3-32b-INT4.png](qwen3-32b-INT4.png)
+
+
 ### Vulnerability: Pre-fill Attacks
 
 The current system remains vulnerable to **pre-fill attacks**: an executer can generate a sequence with a cheap model (even random) and then compute probabilities for that same sequence with the real model (single model pass, without token-by-token generation). 
