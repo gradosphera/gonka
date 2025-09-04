@@ -33,17 +33,11 @@ def clean_state():
     
     if INFERENCED_BINARY.path.exists():
         print(f"Removing {BASE_DIR / 'inferenced'}")
-        shutil.rmtree(BASE_DIR / "inferenced")
+        INFERENCED_BINARY.path.unlink()
 
     if INFERENCED_STATE_DIR.exists():
         print(f"Removing {INFERENCED_STATE_DIR}")
         shutil.rmtree(INFERENCED_STATE_DIR)
-
-
-def download_models():
-    # mkdir -p $HF_HOME
-    # huggingface-cli download Qwen/Qwen2.5-7B-Instruct
-    pass
 
 def clone_repo():
     if not GONKA_REPO_DIR.exists():
