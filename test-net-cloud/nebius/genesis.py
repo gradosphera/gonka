@@ -1,5 +1,7 @@
 import os
 import shutil
+import hashlib
+import urllib.request
 from pathlib import Path
 
 
@@ -37,13 +39,38 @@ def create_state_dirs():
 
 
 def install_inferenced():
-    # clone sha256:24d4481bee27573b5a852265cf0672e1603e405ae1f1f9fba15a7a986feca569
+    # Expected sha256: 24d4481bee27573b5a852265cf0672e1603e405ae1f1f9fba15a7a986feca569
     # download: https://github.com/gonka-ai/gonka/releases/download/release%2Fv0.2.0/inferenced-linux-amd64.zip
 
+    url = "https://github.com/gonka-ai/gonka/releases/download/release%2Fv0.2.0/inferenced-linux-amd64.zip"
+    expected_sha256 = "24d4481bee27573b5a852265cf0672e1603e405ae1f1f9fba15a7a986feca569"
     inferenced_zip = BASE_DIR / "inferenced-linux-amd64.zip"
-    inferenced_zip.download_from_url("https://github.com/gonka-ai/gonka/releases/download/release%2Fv0.2.0/inferenced-linux-amd64.zip")
-    inferenced_zip.verify_checksum("24d4481bee27573b5a852265cf0672e1603e405ae1f1f9fba15a7a986feca569")
-    os.system(f"unzip {inferenced_zip} -d {BASE_DIR / "inferenced"}")
+    inferenced_path = BASE_DIR / "inferenced"
+    
+    # Download if not exists
+    if not inferenced_zip.exists():
+        print(f"Downloading {url}")
+        urllib.request.urlretrieve(url, inferenced_zip)
+    else:
+        print(f"{inferenced_zip} already exists")
+    
+    # Verify checksum
+    print(f"Verifying checksum...")
+    with open(inferenced_zip, 'rb') as f:
+        file_hash = hashlib.sha256(f.read()).hexdigest()
+    
+    if file_hash != expected_sha256:
+        raise ValueError(f"Checksum mismatch! Expected: {expected_sha256}, Got: {file_hash}")
+    else:
+        print("Checksum verified successfully")
+    
+    # Extract if directory doesn't exist
+    if not inferenced_path.exists():
+        print(f"Extracting {inferenced_zip} to {inferenced_path}")
+        os.system(f"unzip {inferenced_zip} -d {inferenced_path}")
+    else:
+        print(f"{inferenced_path} already exists")
+
 
 def main():
     if Path(os.getcwd()).absolute() != BASE_DIR:
