@@ -2,8 +2,6 @@ module github.com/productscience/inference
 
 go 1.23.2
 
-toolchain go1.24.2
-
 replace (
 	github.com/cosmos/cosmos-sdk => github.com/product-science/cosmos-sdk v0.53.3-ps5
 	// fix upstream GHSA-h395-qcrw-5vmq vulnerability.

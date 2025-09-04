@@ -2,8 +2,6 @@ package keeper
 
 import (
 	"context"
-
-	"cosmossdk.io/collections"
 	"github.com/productscience/inference/x/inference/types"
 )
 
@@ -15,7 +13,7 @@ func (k Keeper) SetBlockProof(ctx context.Context, proof types.BlockProof) error
 		return err
 	}
 	if exists {
-		return collections.ErrConflict
+		return nil
 	}
 	return k.BlockProofs.Set(ctx, h, proof)
 }

@@ -48,7 +48,8 @@ service Msg {
   rpc JoinTrainingStatus               (MsgJoinTrainingStatus              ) returns (MsgJoinTrainingStatusResponse              );
   rpc CreateDummyTrainingTask          (MsgCreateDummyTrainingTask         ) returns (MsgCreateDummyTrainingTaskResponse         );
   rpc BridgeExchange                   (MsgBridgeExchange                  ) returns (MsgBridgeExchangeResponse                  );
-  rpc SubmitParticipantsProof           (MsgSubmitParticipantsProof           ) returns (MsgSubmitParticipantsProofResponse           );
+  rpc SubmitParticipantsProof          (MsgSubmitParticipantsProof         ) returns (MsgSubmitParticipantsProofResponse           );
+  rpc SubmitMissingParticipantsProofData   (MsgSubmitActiveParticipantsProofData) returns (MsgSubmitActiveParticipantsProofDataResponse);
 }
 
 // MsgUpdateParams is the Msg/UpdateParams request type.
@@ -374,3 +375,16 @@ message MsgSubmitParticipantsProof {
 }
 
 message MsgSubmitParticipantsProofResponse {}
+
+message MsgSubmitActiveParticipantsProofData {
+  option (cosmos.msg.v1.signer) = "creator";
+  string creator = 1;
+  uint64 block_height = 2;
+  uint64 epoch_id = 3;
+  ValidatorsProof current_block_validators_proof = 4;
+  ValidatorsProof next_block_validators_proof = 5;
+  BlockHeaderFull block_proof = 6;
+  ProofOps  proof_opts = 7;
+}
+
+message MsgSubmitActiveParticipantsProofDataResponse {}

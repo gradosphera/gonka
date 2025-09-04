@@ -15,7 +15,6 @@ option (gogoproto.unmarshaler_all)      = true;
 message CommitInfo {
   string validator_address = 1;
   string validator_pub_key = 2;
-  int64  voting_power       = 3;
 }
 
 message BlockProof {
@@ -57,4 +56,24 @@ message ProofOps {
   int64 block_height             = 1;
   uint64 epoch = 2;
   repeated ProofOp ops = 3 [(gogoproto.nullable) = false];
+}
+
+message BlockHeaderFull {
+  int64                        version  = 1;
+  string                       chain_id = 2;
+  int64                        height   = 3;
+  google.protobuf.Timestamp timestamp = 4 [
+    (gogoproto.stdtime) = true,
+    (gogoproto.nullable) = false
+  ];
+  BlockID last_block_id = 5;
+  bytes last_commit_hash = 6;
+  bytes data_hash        = 7;
+  bytes validators_hash      = 8;
+  bytes next_validators_hash = 9;
+  bytes consensus_hash       = 10;
+  bytes app_hash             = 11;
+  bytes last_results_hash    = 12;
+  bytes evidence_hash    = 13;
+  bytes proposer_address = 14;
 }

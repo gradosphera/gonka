@@ -2,8 +2,6 @@ module decentralized-api
 
 go 1.23.2
 
-toolchain go1.24.2
-
 require (
 	cosmossdk.io/errors v1.0.2
 	cosmossdk.io/store v1.1.2

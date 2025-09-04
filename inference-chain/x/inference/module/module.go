@@ -271,7 +271,6 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		commits = append(commits, &types.CommitInfo{
 			ValidatorAddress: addr,
 			ValidatorPubKey:  pubKey,
-			VotingPower:      v.Validator.Power,
 		})
 		totalPower += v.Validator.Power
 	}

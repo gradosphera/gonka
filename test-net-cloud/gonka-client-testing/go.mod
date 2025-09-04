@@ -1,6 +1,6 @@
 module gonka-client-testing
 
-go 1.23.8
+go 1.23.2
 
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0 // indirect
