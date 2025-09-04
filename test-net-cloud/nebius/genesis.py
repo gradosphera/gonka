@@ -106,20 +106,31 @@ def create_account_key():
         # Keyring might not exist yet, which is fine
         pass
     
-    print("Creating account key 'gonka-account-key'...")
-    print("NOTE: You will be prompted for a passphrase. Make sure to remember it!")
-    print("The mnemonic phrase will be displayed - save it securely!")
+    print("Creating account key 'gonka-account-key' with auto-generated passphrase...")
     
-    # Execute the key creation command
-    # This will be interactive, so we don't capture output
-    subprocess.run([
+    # Execute the key creation command with automated password input
+    # The password is "12345678" and needs to be entered twice
+    password = "12345678\n"  # \n for newline
+    password_input = password + password  # Enter password twice
+    
+    process = subprocess.Popen([
         str(inferenced_binary), 
         "keys", 
         "add", 
         "gonka-account-key", 
         "--keyring-backend", 
         "file"
-    ], check=True)
+    ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    
+    stdout, stderr = process.communicate(input=password_input)
+    
+    if process.returncode != 0:
+        print(f"Error creating key: {stderr}")
+        raise subprocess.CalledProcessError(process.returncode, "inferenced keys add")
+    
+    print("Account key created successfully!")
+    print("Key details:")
+    print(stdout)
 
 
 def main():
