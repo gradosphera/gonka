@@ -14,6 +14,7 @@ from types import SimpleNamespace
 BASE_DIR = Path(os.environ["HOME"]).absolute()
 GENESIS_VAL_NAME = "testnet-genesis"
 GONKA_REPO_DIR = BASE_DIR / "gonka"
+DEPLOY_DIR = GONKA_REPO_DIR / "deploy/join"
 
 INFERENCED_BINARY = SimpleNamespace(
     zip_file=BASE_DIR / "inferenced-linux-amd64.zip",
@@ -62,6 +63,7 @@ def clean_state():
     if INFERENCED_STATE_DIR.exists():
         print(f"Removing {INFERENCED_STATE_DIR}")
         os.system(f"sudo rm -rf {INFERENCED_STATE_DIR}")
+
 
 def clone_repo():
     if not GONKA_REPO_DIR.exists():
