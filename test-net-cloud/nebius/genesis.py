@@ -354,7 +354,7 @@ def extract_consensus_key():
     
     # Now run the tmkms-pubkey command
     print("Running tmkms-pubkey command...")
-    pubkey_cmd = f"bash -c 'source {config_file} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml run --rm --entrypoint /bin/sh tmkms -c \"tmkms-pubkey\"'"
+    pubkey_cmd = f"bash -c 'source {config_file} && docker compose up -d tmkms && docker compose run --rm --entrypoint /bin/sh tmkms -c \"tmkms-pubkey\"'"
     
     pubkey_result = subprocess.run(
         pubkey_cmd,
@@ -440,7 +440,7 @@ def main():
     pull_images()
     run_genesis_initialization()
     extract_consensus_key()
-    get_or_create_warm_key()
+    # get_or_create_warm_key()
 
 
 if __name__ == "__main__":
