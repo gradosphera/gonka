@@ -21,18 +21,26 @@ INFERENCED_BINARY = SimpleNamespace(
 
 INFERENCED_STATE_DIR = BASE_DIR / ".inference"
 
-CONFIG_SUBSTITUTIONS = {
+CONFIG_ENV = {
     "KEY_NAME": "genesis", # TODO: allow to customize
     "KEYRING_PASSWORD": "12345678", # TODO: allow to customize
     "API_PORT": "8000",
     "PUBLIC_URL": "http://89.169.111.79:8000", # TODO: allow to customize
     "P2P_EXTERNAL_ADDRESS": "tcp://89.169.111.79:5000", # TODO: allow to customize
+    "ACCOUNT_PUBKEY": "", # will be populated later
+    "NODE_CONFIG": "./node-config.json",
     "HF_HOME": (Path(os.environ["HOME"]).absolute() / "hf-cache").__str__(),
     "SEED_API_URL": "http://89.169.111.79:8000",
     "SEED_NODE_RPC_URL": "http://89.169.111.79:26657",
+    "DAPI_API__POC_CALLBACK_URL": "http://api:9100",
+    "DAPI_CHAIN_NODE__URL": "http://node:26657",
+    "DAPI_CHAIN_NODE__P2P_URL": "http://node:26656",
     "SEED_NODE_P2P_URL": "tcp://89.169.111.79:5000",
     "RPC_SERVER_URL_1": "http://89.169.111.79:26657",
     "RPC_SERVER_URL_2": "http://89.169.111.79:26657",
+    "PORT": "8080",
+    "INFERENCE_PORT": "5050",
+    "KEYRING_BACKEND": "file",
 }
 
 def clean_state():
@@ -131,7 +139,7 @@ def create_account_key():
     
     # Execute the key creation command with automated password input
     # The password is "12345678" and needs to be entered twice
-    password = f"{CONFIG_SUBSTITUTIONS['KEYRING_PASSWORD']}\n"  # \n for newline
+    password = f"{CONFIG_ENV['KEYRING_PASSWORD']}\n"  # \n for newline
     password_input = password + password  # Enter password twice
     
     process = subprocess.Popen([
