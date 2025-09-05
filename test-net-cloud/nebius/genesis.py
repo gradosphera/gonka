@@ -162,9 +162,61 @@ def create_account_key():
     print(stdout)
 
 
+def create_config_env_file():
+    """Create config.env file in deploy/join directory"""
+    config_file_path = GONKA_REPO_DIR / "deploy/join/config.env"
+    
+    # Ensure the directory exists
+    config_file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Create the config.env content
+    config_content = []
+    for key, value in CONFIG_ENV.items():
+        config_content.append(f'export {key}="{value}"')
+    
+    # Write to file
+    with open(config_file_path, 'w') as f:
+        f.write('\n'.join(config_content))
+    
+    print(f"Created config.env at {config_file_path}")
+    print("== config.env ==")
+    print('\n'.join(config_content))
+    print("=============")
+
+
 def pull_images():
-    # docker compose -f docker-compose.yml -f docker-compose.mlnode.yml pull
-    os.system(f"docker compose -f docker-compose.yml -f docker-compose.mlnode.yml pull")
+    """Pull Docker images using docker compose"""
+    working_dir = GONKA_REPO_DIR / "deploy/join"
+    config_file = working_dir / "config.env"
+    
+    if not working_dir.exists():
+        raise FileNotFoundError(f"Working directory not found: {working_dir}")
+    
+    if not config_file.exists():
+        raise FileNotFoundError(f"Config file not found: {config_file}")
+    
+    print(f"Pulling Docker images from {working_dir}")
+    
+    # Create the command to source config.env and run docker compose
+    # We use bash -c to run both commands in sequence
+    cmd = f"bash -c 'source {config_file} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml pull'"
+    
+    # Run the command in the specified working directory
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        cwd=working_dir,
+        capture_output=True,
+        text=True
+    )
+    
+    if result.returncode != 0:
+        print(f"Error pulling images: {result.stderr}")
+        raise subprocess.CalledProcessError(result.returncode, cmd)
+    
+    print("Docker images pulled successfully!")
+    if result.stdout:
+        print(result.stdout)
 
 
 def main():
