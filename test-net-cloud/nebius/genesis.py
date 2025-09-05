@@ -99,7 +99,7 @@ def docker_compose_down():
 def clone_repo():
     if not GONKA_REPO_DIR.exists():
         print(f"Cloning {GONKA_REPO_DIR}")
-    os.system(f"git clone https://github.com/gonka-ai/gonka.git {GONKA_REPO_DIR}")
+        os.system(f"git clone https://github.com/gonka-ai/gonka.git {GONKA_REPO_DIR}")
     else:
         print(f"{GONKA_REPO_DIR} already exists")
 
@@ -109,7 +109,7 @@ def create_state_dirs():
     my_dir = GONKA_REPO_DIR / f"genesis/validators/{GENESIS_VAL_NAME}"
     if not my_dir.exists():
         print(f"Creating {my_dir}")
-    os.system(f"cp -r {template_dir} {my_dir}")
+        os.system(f"cp -r {template_dir} {my_dir}")
     else:
         print(f"{my_dir} already exists, contents: {list(my_dir.iterdir())}")
 
