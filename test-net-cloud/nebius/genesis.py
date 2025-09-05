@@ -6,6 +6,7 @@ import zipfile
 import subprocess
 import json
 import re
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -297,11 +298,98 @@ def run_genesis_initialization():
         print(result.stderr)
     print("=" * 50)
     
+    # Extract nodeId from output
+    full_output = result.stdout + result.stderr if result.stderr else result.stdout
+    node_id_match = re.search(r'nodeId:\s*([a-f0-9]+)', full_output)
+    if node_id_match:
+        node_id = node_id_match.group(1)
+        print(f"Extracted nodeId: {node_id}")
+        # Store in CONFIG_ENV for potential future use
+        CONFIG_ENV["NODE_ID"] = node_id
+    else:
+        print("Warning: Could not extract nodeId from output")
+    
     if result.returncode != 0:
         print(f"Genesis initialization failed with return code: {result.returncode}")
         raise subprocess.CalledProcessError(result.returncode, cmd)
     
     print("Genesis initialization completed successfully!")
+
+
+def extract_consensus_key():
+    """Extract consensus key from tmkms container"""
+    working_dir = GONKA_REPO_DIR / "deploy/join"
+    config_file = working_dir / "config.env"
+    
+    if not working_dir.exists():
+        raise FileNotFoundError(f"Working directory not found: {working_dir}")
+    
+    if not config_file.exists():
+        raise FileNotFoundError(f"Config file not found: {config_file}")
+    
+    print("Extracting consensus key from tmkms...")
+    
+    # First, start tmkms container in detached mode
+    print("Starting tmkms container...")
+    start_cmd = f"bash -c 'source {config_file} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml up -d tmkms'"
+    
+    start_result = subprocess.run(
+        start_cmd,
+        shell=True,
+        cwd=working_dir,
+        capture_output=True,
+        text=True
+    )
+    
+    if start_result.returncode != 0:
+        print(f"Error starting tmkms container: {start_result.stderr}")
+        raise subprocess.CalledProcessError(start_result.returncode, start_cmd)
+    
+    print("Tmkms container started successfully")
+    
+    # Wait a moment for container to be ready
+    time.sleep(2)
+    
+    # Now run the tmkms-pubkey command
+    print("Running tmkms-pubkey command...")
+    pubkey_cmd = f"bash -c 'source {config_file} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml run --rm --entrypoint /bin/sh tmkms -c \"tmkms-pubkey\"'"
+    
+    pubkey_result = subprocess.run(
+        pubkey_cmd,
+        shell=True,
+        cwd=working_dir,
+        capture_output=True,
+        text=True
+    )
+    
+    print("Consensus key extraction completed!")
+    print("Output:")
+    print("=" * 50)
+    if pubkey_result.stdout:
+        print(pubkey_result.stdout)
+    if pubkey_result.stderr:
+        print("Errors/Warnings:")
+        print(pubkey_result.stderr)
+    print("=" * 50)
+    
+    # Extract consensus key from output
+    full_output = pubkey_result.stdout + pubkey_result.stderr if pubkey_result.stderr else pubkey_result.stdout
+    consensus_key_match = re.search(r'([A-Za-z0-9+/=]{40,})', full_output)
+    if consensus_key_match:
+        consensus_key = consensus_key_match.group(1)
+        print(f"Extracted consensus key: {consensus_key}")
+        # Store in CONFIG_ENV for potential future use
+        CONFIG_ENV["CONSENSUS_KEY"] = consensus_key
+    else:
+        print("Warning: Could not extract consensus key from output")
+        print("Full output for debugging:")
+        print(full_output)
+    
+    if pubkey_result.returncode != 0:
+        print(f"Consensus key extraction failed with return code: {pubkey_result.returncode}")
+        raise subprocess.CalledProcessError(pubkey_result.returncode, pubkey_cmd)
+    
+    print("Consensus key extraction completed successfully!")
 
 
 def main():
@@ -320,6 +408,7 @@ def main():
     create_config_env_file()
     pull_images()
     run_genesis_initialization()
+    extract_consensus_key()
 
 
 if __name__ == "__main__":
