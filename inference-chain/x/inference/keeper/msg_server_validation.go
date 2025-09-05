@@ -87,6 +87,7 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 		if k.inferenceIsBeforeClaimsSet(ctx, inference, epochGroup) {
 			k.shareWorkWithValidators(ctx, inference, msg, executor)
 		}
+		inference.ValidatedBy = append(inference.ValidatedBy, msg.Creator)
 		executor.ConsecutiveInvalidInferences = 0
 		executor.CurrentEpochStats.ValidatedInferences++
 	} else {
@@ -150,7 +151,6 @@ func (k msgServer) inferenceIsBeforeClaimsSet(ctx sdk.Context, inference types.I
 func (k msgServer) shareWorkWithValidators(ctx sdk.Context, inference types.Inference, msg *types.MsgValidation, executor types.Participant) {
 	originalWorkers := append([]string{inference.ExecutedBy}, inference.ValidatedBy...)
 	adjustments := calculations.ShareWork(originalWorkers, []string{msg.Creator}, inference.ActualCost)
-	inference.ValidatedBy = append(inference.ValidatedBy, msg.Creator)
 	for _, adjustment := range adjustments {
 		if adjustment.ParticipantId == executor.Address {
 			executor.CoinBalance += adjustment.WorkAdjustment
