@@ -51,7 +51,7 @@ func (k msgServer) InvalidateInference(goCtx context.Context, msg *types.MsgInva
 
 	// Store the original status to check for a state transition to INVALID.
 	originalStatus := executor.Status
-	executor.Status = calculateStatus(k.Keeper.GetParams(goCtx).ValidationParams, executor, k)
+	executor.Status = calculateStatus(k.Keeper.GetParams(goCtx).ValidationParams, executor)
 
 	// Check for a status transition and slash if necessary.
 	k.CheckAndSlashForInvalidStatus(goCtx, originalStatus, &executor)
