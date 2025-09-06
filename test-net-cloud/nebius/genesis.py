@@ -325,8 +325,9 @@ def create_docker_compose_override(init_only=True, node_id=None):
             p2p_address = p2p_external_address[6:]  # Remove "tcp://" prefix
         else:
             p2p_address = p2p_external_address
-        
-        genesis_seeds = f"{node_id}@{p2p_address}"
+
+        # Putting just some dummy value!
+        genesis_seeds = f"7ea21aa72f90556628eb7354ee2d3f75a4b6148e@10.1.2.3:5000"
         
         override_content = f"""services:
   node:
