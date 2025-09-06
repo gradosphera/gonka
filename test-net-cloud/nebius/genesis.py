@@ -680,7 +680,7 @@ def collect_genesis_transactions():
     collect_cmd = [
         str(inferenced_binary),
         "genesis", "collect-gentxs",
-        "--gentx-dir", "gentxs"
+        "--gentx-dir", (INFERENCED_STATE_DIR / "config" / "gentx").__str__()
     ]
     
     print(f"Running collect-gentxs command: {' '.join(collect_cmd)}")
@@ -723,7 +723,7 @@ def patch_genesis_participants():
     patch_cmd = [
         str(inferenced_binary),
         "genesis", "patch-genesis",
-        "--genparticipant-dir", "genparticipants"
+        "--genparticipant-dir", (INFERENCED_STATE_DIR / "config" / "genparticipant").__str__()
     ]
     
     print(f"Running patch-genesis command: {' '.join(patch_cmd)}")
