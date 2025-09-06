@@ -109,7 +109,7 @@ def docker_compose_down():
 def clone_repo():
     if not GONKA_REPO_DIR.exists():
         print(f"Cloning {GONKA_REPO_DIR}")
-        os.system(f"git clone https://github.com/gonka-ai/gonka.git {GONKA_REPO_DIR}")
+    os.system(f"git clone https://github.com/gonka-ai/gonka.git {GONKA_REPO_DIR}")
     else:
         print(f"{GONKA_REPO_DIR} already exists")
 
@@ -119,7 +119,7 @@ def create_state_dirs():
     my_dir = GONKA_REPO_DIR / f"genesis/validators/{GENESIS_VAL_NAME}"
     if not my_dir.exists():
         print(f"Creating {my_dir}")
-        os.system(f"cp -r {template_dir} {my_dir}")
+    os.system(f"cp -r {template_dir} {my_dir}")
     else:
         print(f"{my_dir} already exists, contents: {list(my_dir.iterdir())}")
 
@@ -298,17 +298,42 @@ def pull_images():
         print(result.stdout)
 
 
-def create_docker_compose_override():
-    """Create a docker-compose override file for genesis initialization"""
+def create_docker_compose_override(init_only=True, node_id=None):
+    """Create a docker-compose override file for genesis initialization or runtime"""
     working_dir = GONKA_REPO_DIR / "deploy/join"
-    override_file = working_dir / "docker-compose.genesis-override.yml"
     
-    # Create the override content
-    override_content = """services:
+    if init_only:
+        override_file = working_dir / "docker-compose.genesis-override.yml"
+        override_content = """services:
   node:
     environment:
       - INIT_ONLY=true
       - IS_GENESIS=true
+"""
+    else:
+        override_file = working_dir / "docker-compose.runtime-override.yml"
+        if not node_id:
+            raise ValueError("node_id is required for runtime override")
+        
+        # Extract P2P external address from CONFIG_ENV
+        p2p_external_address = CONFIG_ENV.get("P2P_EXTERNAL_ADDRESS", "")
+        if not p2p_external_address:
+            raise ValueError("P2P_EXTERNAL_ADDRESS not found in CONFIG_ENV")
+        
+        # Convert tcp://host:port to host:port format for seeds
+        if p2p_external_address.startswith("tcp://"):
+            p2p_address = p2p_external_address[6:]  # Remove "tcp://" prefix
+        else:
+            p2p_address = p2p_external_address
+        
+        genesis_seeds = f"{node_id}@{p2p_address}"
+        
+        override_content = f"""services:
+  node:
+    environment:
+      - INIT_ONLY=false
+      - IS_GENESIS=true
+      - GENESIS_SEEDS={genesis_seeds}
 """
     
     with open(override_file, 'w') as f:
@@ -778,6 +803,56 @@ def copy_genesis_back_to_docker():
     print("Genesis.json copied back to Docker container successfully!")
 
 
+def start_docker_services():
+    """Start all Docker services with runtime configuration"""
+    working_dir = GONKA_REPO_DIR / "deploy/join"
+    config_file = working_dir / "config.env"
+    
+    if not working_dir.exists():
+        raise FileNotFoundError(f"Working directory not found: {working_dir}")
+    
+    if not config_file.exists():
+        raise FileNotFoundError(f"Config file not found: {config_file}")
+    
+    print("Starting Docker services with runtime configuration...")
+    
+    # Create runtime override file
+    node_id = CONFIG_ENV.get("NODE_ID", "")
+    if not node_id:
+        raise ValueError("NODE_ID not found in CONFIG_ENV")
+    
+    create_docker_compose_override(init_only=False, node_id=node_id)
+    
+    # Start all services
+    start_cmd = f"bash -c 'source {config_file} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml -f docker-compose.runtime-override.yml up -d'"
+    
+    print(f"Running command: {start_cmd}")
+    result = subprocess.run(
+        start_cmd,
+        shell=True,
+        cwd=working_dir,
+        capture_output=True,
+        text=True
+    )
+    
+    print("Docker services startup completed!")
+    print("Output:")
+    print("=" * 50)
+    if result.stdout:
+        print(result.stdout)
+    if result.stderr:
+        print("Errors/Warnings:")
+        print(result.stderr)
+    print("=" * 50)
+    
+    if result.returncode != 0:
+        print(f"Docker services startup failed with return code: {result.returncode}")
+        raise subprocess.CalledProcessError(result.returncode, start_cmd)
+    
+    print("Docker services started successfully!")
+    print("All services are now running with the finalized genesis configuration.")
+
+
 def main():
     if Path(os.getcwd()).absolute() != BASE_DIR:
         print(f"Changing directory to {BASE_DIR}")
@@ -822,33 +897,9 @@ def main():
     collect_genesis_transactions()
     patch_genesis_participants()
     copy_genesis_back_to_docker()
-
-
-"""
-./inferenced genesis gentx \
-    --keyring-backend file \
-    <cold_key_name> 1ngonka \
-    --moniker <YOUR_VALIDATOR_NAME> \
-    --pubkey <consensus-pubkey-from-step-1.3> \
-    --ml-operational-address <ml-operational-key-address-from-step-1.4> \
-    --url $PUBLIC_URL \
-    --chain-id gonka-mainnet \
-    --node-id <node-id-from-step-1.2>
-
-./inferenced genesis gentx \
-    --keyring-backend file \
-    gonka-account-key 1ngonka \
-    --moniker testnet-genesis \
-    --pubkey "AMchkuYDLMDN9C630s3/AqnV1wLLlOMgNuMf7nbINFU=" \
-    --ml-operational-address gonka156zkjmlv6x225jzx99sf9dqj8pzn2wvr0tz9se \
-    --url "http://89.169.111.79:8000" \
-    --chain-id gonka-mainnet \
-    --node-id 6d6a6afcd26cd8f0c3d2222e84c28d6e043af7c0
-
-Output:
-Classic genesis transaction written to "/home/ubuntu/.inference/config/gentx/gentx-6d6a6afcd26cd8f0c3d2222e84c28d6e043af7c0.json"
-Genparticipant transaction written to "/home/ubuntu/.inference/config/genparticipant/genparticipant-6d6a6afcd26cd8f0c3d2222e84c28d6e043af7c0.json"
-"""
+    
+    # Phase 5. Start services
+    start_docker_services()
 
 if __name__ == "__main__":
     main()
