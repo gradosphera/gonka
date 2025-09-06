@@ -24,6 +24,7 @@ BASE_DIR = Path(os.environ["HOME"]).absolute()
 GENESIS_VAL_NAME = "testnet-genesis"
 GONKA_REPO_DIR = BASE_DIR / "gonka"
 DEPLOY_DIR = GONKA_REPO_DIR / "deploy/join"
+COLD_KEY_NAME = "gonka-account-key"
 
 INFERENCED_BINARY = SimpleNamespace(
     zip_file=BASE_DIR / "inferenced-linux-amd64.zip",
@@ -191,7 +192,7 @@ def create_account_key():
         str(inferenced_binary), 
         "keys", 
         "add", 
-        "gonka-account-key", 
+        COLD_KEY_NAME, 
         "--keyring-backend", 
         "file"
     ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
