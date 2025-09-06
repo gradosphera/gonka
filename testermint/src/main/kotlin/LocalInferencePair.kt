@@ -347,8 +347,8 @@ data class LocalInferencePair(
         if (epochData.phase != EpochPhase.Inference ||
             startOfNextPoc - currentBlockHeight < windowSizeInBlocks
         ) {
-            logSection("Waiting for SET_NEW_VALIDATORS stage before running inference")
-            return waitForStage(EpochStage.SET_NEW_VALIDATORS)
+            logSection("Waiting for CLAIM_REWARDS stage before running inference")
+            return waitForStage(EpochStage.CLAIM_REWARDS)
         } else {
             Logger.info("Skipping wait for SET_NEW_VALIDATORS, current phase is ${epochData.phase}")
             return null

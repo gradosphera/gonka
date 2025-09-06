@@ -84,7 +84,9 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 		return epochGroup.Revalidate(passed, inference, msg, ctx)
 	} else if passed {
 		inference.Status = types.InferenceStatus_VALIDATED
-		if k.inferenceIsBeforeClaimsSet(ctx, inference, epochGroup) {
+		shouldShare, information := k.inferenceIsBeforeClaimsSet(ctx, inference, epochGroup)
+		k.LogInfo("Validation sharing decision", types.Validation, "inferenceId", inference.InferenceId, "validator", msg.Creator, "shouldShare", shouldShare, "information", information)
+		if shouldShare {
 			k.shareWorkWithValidators(ctx, inference, msg, executor)
 		}
 		inference.ValidatedBy = append(inference.ValidatedBy, msg.Creator)
@@ -124,27 +126,26 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 	return &types.MsgValidationResponse{}, nil
 }
 
-func (k msgServer) inferenceIsBeforeClaimsSet(ctx sdk.Context, inference types.Inference, group *epochgroup.EpochGroup) bool {
+func (k msgServer) inferenceIsBeforeClaimsSet(ctx sdk.Context, inference types.Inference, group *epochgroup.EpochGroup) (bool, string) {
 	// Submitted after epoch changeover (onSetNewValidatorsStage)
 	if inference.EpochId < group.GroupData.EpochIndex {
-		return false
+		return false, "Validation submitted in next epoch. InferenceEpoch: " + strconv.FormatUint(inference.EpochId, 10) + ", EpochGroupEpoch: " + strconv.FormatUint(group.GroupData.EpochIndex, 10)
 	}
 	upcomingEpoch, found := k.GetUpcomingEpoch(ctx)
 	// During regular inference time (majority case)
 	if !found {
 		// This would be before IsStartOfPocStage
-		k.LogInfo("Upcoming epoch not created yet", types.Validation, "error", found)
-		return true
+		return true, "Validation during inference epoch"
 	}
 	// Somewhere inbetween StartOfPocStage and SetNewValidatorsStage
 	// ActiveParticipants are set during EndOfPoCValidationStage, which is also when we set claims
 	_, found = k.GetActiveParticipants(ctx, upcomingEpoch.Index)
 	if found {
 		// We're AFTER EndOfPocValidationStage
-		return false
+		return false, "Validation submitted after claims set but before next epoch starts"
 	} else {
 		// We're in between StartOfPocStage and EndOfPocValidationStage, before claims
-		return true
+		return true, "Validation submitted after PoC start but before claims set"
 	}
 }
 

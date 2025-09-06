@@ -78,9 +78,7 @@ class ValidationTests : TestermintTest() {
     @Tag("unstable")
     @Order(Int.MAX_VALUE - 1)
     fun `test invalid gets removed`() {
-        if (!genesis.getEpochData().safeForInference) {
-            genesis.waitForStage(EpochStage.CLAIM_REWARDS, 3)
-        }
+        genesis.waitForNextInferenceWindow()
 
         val dispatcher = Executors.newFixedThreadPool(10).asCoroutineDispatcher()
         runBlocking(dispatcher) {

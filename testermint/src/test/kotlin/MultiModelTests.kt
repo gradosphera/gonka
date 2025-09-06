@@ -97,7 +97,7 @@ class MultiModelTests : TestermintTest() {
         
         logSection("making inferences")
         val models = listOf(defaultModel, newModelName)
-        val inferences = runParallelInferencesWithResults(genesis, 30, waitForBlocks = 4, maxConcurrentRequests = 30, models = models)
+        val inferences = runParallelInferencesWithResults(genesis, 20, waitForBlocks = 4, maxConcurrentRequests = 20, models = models)
         
         logSection("Waiting for settlement and claims")
         // We don't need to calculate exact amounts, just that the rewards goes through (claim isn't rejected)

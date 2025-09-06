@@ -41,12 +41,15 @@ func (k msgServer) InvalidateInference(goCtx context.Context, msg *types.MsgInva
 		return nil, err
 	}
 
-	if k.inferenceIsBeforeClaimsSet(ctx, inference, epochGroup) {
+	shouldRefund, reason := k.inferenceIsBeforeClaimsSet(ctx, inference, epochGroup)
+	k.LogInfo("Inference refund decision", types.Validation, "inferenceId", inference.InferenceId, "executor", executor.Address, "shouldRefund", shouldRefund, "reason", reason)
+	if shouldRefund {
 		err := k.refundInvalidatedInference(&executor, &inference, ctx)
 		if err != nil {
 			return nil, err
 		}
 	}
+
 	k.LogInfo("Inference invalidated", types.Inferences, "inferenceId", inference.InferenceId, "executor", executor.Address, "actualCost", inference.ActualCost)
 
 	// Store the original status to check for a state transition to INVALID.

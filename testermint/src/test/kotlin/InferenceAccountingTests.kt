@@ -200,7 +200,9 @@ class InferenceAccountingTests : TestermintTest() {
     fun `test post settle amounts`() {
         logSection("Clearing claims")
         // If we don't wait until the next rewards claim, there may be lingering requests that mess with our math
-        genesis.waitForStage(EpochStage.CLAIM_REWARDS)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, 3)
+        genesis.waitForNextInferenceWindow()
+
         val startLastRewardedEpoch = getRewardCalculationEpochIndex(genesis)
         val participants = genesis.api.getParticipants()
 
