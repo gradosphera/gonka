@@ -31,7 +31,7 @@ func TestSubmitTrainingKvRecord_AllowListEnforced(t *testing.T) {
 	// allow
 	acc, e := sdk.AccAddressFromBech32(creator)
 	require.NoError(t, e)
-	require.NoError(t, k.TrainingAllowListStore.Set(wctx, acc))
+	require.NoError(t, k.TrainingAllowListSet.Set(wctx, acc))
 
 	// should succeed now
 	_, err = ms.SubmitTrainingKvRecord(wctx, &types.MsgSubmitTrainingKvRecord{

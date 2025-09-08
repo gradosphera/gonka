@@ -14,7 +14,7 @@ import (
 func (k msgServer) JoinTrainingStatus(goCtx context.Context, msg *types.MsgJoinTrainingStatus) (*types.MsgJoinTrainingStatusResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	if err := k.CheckAllowList(ctx, msg); err != nil {
+	if err := k.CheckTrainingAllowList(ctx, msg); err != nil {
 		return nil, err
 	}
 

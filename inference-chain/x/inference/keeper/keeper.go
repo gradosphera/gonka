@@ -56,7 +56,7 @@ type (
 		TopMiners                 collections.Map[sdk.AccAddress, types.TopMiner]
 		PartialUpgrades           collections.Map[uint64, types.PartialUpgrade]
 		EpochPerformanceSummaries collections.Map[collections.Pair[sdk.AccAddress, uint64], types.EpochPerformanceSummary]
-		TrainingAllowListStore    collections.KeySet[sdk.AccAddress]
+		TrainingAllowListSet      collections.KeySet[sdk.AccAddress]
 	}
 )
 
@@ -237,7 +237,7 @@ func NewKeeper(
 			collections.PairKeyCodec(sdk.AccAddressKey, collections.Uint64Key),
 			codec.CollValue[types.EpochPerformanceSummary](cdc),
 		),
-		TrainingAllowListStore: collections.NewKeySet(
+		TrainingAllowListSet: collections.NewKeySet(
 			sb,
 			types.TrainingAllowListPrefix,
 			"training_allow_list",

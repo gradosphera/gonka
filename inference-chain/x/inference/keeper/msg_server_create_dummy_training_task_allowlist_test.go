@@ -29,7 +29,7 @@ func TestCreateDummyTrainingTask_AllowListEnforced(t *testing.T) {
 	// add to allow list
 	acc, e := sdk.AccAddressFromBech32(creator)
 	require.NoError(t, e)
-	require.NoError(t, k.TrainingAllowListStore.Set(wctx, acc))
+	require.NoError(t, k.TrainingAllowListSet.Set(wctx, acc))
 
 	// now allowed -> should succeed
 	resp, err := ms.CreateDummyTrainingTask(wctx, &types.MsgCreateDummyTrainingTask{

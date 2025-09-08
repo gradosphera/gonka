@@ -11,7 +11,7 @@ import (
 func (k msgServer) AssignTrainingTask(goCtx context.Context, msg *types.MsgAssignTrainingTask) (*types.MsgAssignTrainingTaskResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	if err := k.CheckAllowList(ctx, msg); err != nil {
+	if err := k.CheckTrainingAllowList(ctx, msg); err != nil {
 		return nil, err
 	}
 

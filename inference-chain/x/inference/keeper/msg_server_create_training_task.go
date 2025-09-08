@@ -12,7 +12,7 @@ import (
 func (k msgServer) CreateTrainingTask(goCtx context.Context, msg *types.MsgCreateTrainingTask) (*types.MsgCreateTrainingTaskResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	if err := k.CheckAllowList(ctx, msg); err != nil {
+	if err := k.CheckTrainingAllowList(ctx, msg); err != nil {
 		return nil, err
 	}
 

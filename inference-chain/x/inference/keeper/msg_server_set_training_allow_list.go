@@ -21,7 +21,7 @@ func (k msgServer) SetTrainingAllowList(goCtx context.Context, msg *types.MsgSet
 		}
 	}
 
-	if err := k.TrainingAllowListStore.Clear(ctx, nil); err != nil {
+	if err := k.TrainingAllowListSet.Clear(ctx, nil); err != nil {
 		return nil, err
 	}
 
@@ -30,7 +30,7 @@ func (k msgServer) SetTrainingAllowList(goCtx context.Context, msg *types.MsgSet
 		if err != nil {
 			return nil, err
 		}
-		if err := k.TrainingAllowListStore.Set(ctx, addr); err != nil {
+		if err := k.TrainingAllowListSet.Set(ctx, addr); err != nil {
 			return nil, err
 		}
 	}

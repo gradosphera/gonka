@@ -32,9 +32,9 @@ func TestQueryTrainingAllowList(t *testing.T) {
 	acc3, e := sdk.AccAddressFromBech32(a3)
 	require.NoError(t, e)
 
-	require.NoError(t, k.TrainingAllowListStore.Set(wctx, acc3))
-	require.NoError(t, k.TrainingAllowListStore.Set(wctx, acc1))
-	require.NoError(t, k.TrainingAllowListStore.Set(wctx, acc2))
+	require.NoError(t, k.TrainingAllowListSet.Set(wctx, acc3))
+	require.NoError(t, k.TrainingAllowListSet.Set(wctx, acc1))
+	require.NoError(t, k.TrainingAllowListSet.Set(wctx, acc2))
 
 	// query again; expect sorted lexicographically
 	resp, err = k.TrainingAllowList(wctx, &types.QueryTrainingAllowListRequest{})

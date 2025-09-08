@@ -33,7 +33,7 @@ func TestMsgAddUserToTrainingAllowList(t *testing.T) {
 
 	acc, e := sdk.AccAddressFromBech32(addr)
 	require.NoError(t, e)
-	ok, e := k.TrainingAllowListStore.Has(wctx, acc)
+	ok, e := k.TrainingAllowListSet.Has(wctx, acc)
 	require.NoError(t, e)
 	require.True(t, ok)
 }

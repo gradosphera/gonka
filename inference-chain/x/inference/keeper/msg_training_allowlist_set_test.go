@@ -42,13 +42,13 @@ func TestMsgSetTrainingAllowList(t *testing.T) {
 	acc3, e := sdk.AccAddressFromBech32(a3)
 	require.NoError(t, e)
 
-	ok, e := k.TrainingAllowListStore.Has(wctx, acc1)
+	ok, e := k.TrainingAllowListSet.Has(wctx, acc1)
 	require.NoError(t, e)
 	require.True(t, ok)
-	ok, e = k.TrainingAllowListStore.Has(wctx, acc2)
+	ok, e = k.TrainingAllowListSet.Has(wctx, acc2)
 	require.NoError(t, e)
 	require.True(t, ok)
-	ok, e = k.TrainingAllowListStore.Has(wctx, acc3)
+	ok, e = k.TrainingAllowListSet.Has(wctx, acc3)
 	require.NoError(t, e)
 	require.True(t, ok)
 }

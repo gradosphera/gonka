@@ -18,7 +18,7 @@ func (k msgServer) AddUserToTrainingAllowList(goCtx context.Context, msg *types.
 	if err != nil {
 		return nil, err
 	}
-	if err := k.TrainingAllowListStore.Set(ctx, addr); err != nil {
+	if err := k.TrainingAllowListSet.Set(ctx, addr); err != nil {
 		return nil, err
 	}
 

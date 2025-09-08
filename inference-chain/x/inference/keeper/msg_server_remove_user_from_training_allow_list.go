@@ -18,7 +18,7 @@ func (k msgServer) RemoveUserFromTrainingAllowList(goCtx context.Context, msg *t
 	if err != nil {
 		return nil, err
 	}
-	if err := k.TrainingAllowListStore.Remove(ctx, addr); err != nil {
+	if err := k.TrainingAllowListSet.Remove(ctx, addr); err != nil {
 		return nil, err
 	}
 

@@ -18,7 +18,7 @@ func (k Keeper) TrainingAllowList(goCtx context.Context, req *types.QueryTrainin
 
 	// Collect all addresses from the allow list
 	var addrs []string
-	if err := k.TrainingAllowListStore.Walk(ctx, nil, func(a sdk.AccAddress) (bool, error) {
+	if err := k.TrainingAllowListSet.Walk(ctx, nil, func(a sdk.AccAddress) (bool, error) {
 		addrs = append(addrs, a.String())
 		return false, nil
 	}); err != nil {
@@ -28,12 +28,12 @@ func (k Keeper) TrainingAllowList(goCtx context.Context, req *types.QueryTrainin
 	return &types.QueryTrainingAllowListResponse{Addresses: addrs}, nil
 }
 
-func (k msgServer) CheckAllowList(ctx context.Context, msg HasCreator) error {
+func (k msgServer) CheckTrainingAllowList(ctx context.Context, msg HasCreator) error {
 	creator, err := sdk.AccAddressFromBech32(msg.GetCreator())
 	if err != nil {
 		return err
 	}
-	allowed, err := k.TrainingAllowListStore.Has(ctx, creator)
+	allowed, err := k.TrainingAllowListSet.Has(ctx, creator)
 	if err != nil {
 		return err
 	}

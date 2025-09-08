@@ -27,7 +27,7 @@ func TestTrainingHeartbeat_AllowListEnforced(t *testing.T) {
 	// allow
 	acc, e := sdk.AccAddressFromBech32(creator)
 	require.NoError(t, e)
-	require.NoError(t, k.TrainingAllowListStore.Set(wctx, acc))
+	require.NoError(t, k.TrainingAllowListSet.Set(wctx, acc))
 
 	// should not fail with ErrTrainingNotAllowed
 	_, err = ms.TrainingHeartbeat(wctx, &types.MsgTrainingHeartbeat{Creator: creator, Req: req})

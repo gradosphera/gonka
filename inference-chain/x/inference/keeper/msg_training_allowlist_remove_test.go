@@ -28,7 +28,7 @@ func TestMsgRemoveUserFromTrainingAllowList(t *testing.T) {
 	require.NoError(t, e)
 
 	// pre-add to allow list
-	err = k.TrainingAllowListStore.Set(wctx, acc)
+	err = k.TrainingAllowListSet.Set(wctx, acc)
 	require.NoError(t, err)
 
 	// remove with proper authority
@@ -38,7 +38,7 @@ func TestMsgRemoveUserFromTrainingAllowList(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ok, e := k.TrainingAllowListStore.Has(wctx, acc)
+	ok, e := k.TrainingAllowListSet.Has(wctx, acc)
 	require.NoError(t, e)
 	require.False(t, ok)
 
