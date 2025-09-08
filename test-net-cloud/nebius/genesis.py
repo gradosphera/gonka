@@ -7,6 +7,7 @@ import subprocess
 import json
 import re
 import time
+import argparse
 from pathlib import Path
 from types import SimpleNamespace
 from dataclasses import dataclass
@@ -1011,12 +1012,57 @@ def join_route():
     pass
 
 
+def parse_arguments():
+    """Parse command-line arguments"""
+    parser = argparse.ArgumentParser(
+        description="Gonka testnet validator node setup script",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run in genesis mode (default)
+  python genesis.py
+  python genesis.py --mode genesis
+  
+  # Run in join mode
+  python genesis.py --mode join
+  
+  # Override configuration via environment variables
+  export KEY_NAME="my-validator"
+  export PUBLIC_URL="http://my-server.com:8000"
+  python genesis.py --mode genesis
+        """
+    )
+    
+    parser.add_argument(
+        "--mode",
+        choices=["genesis", "join"],
+        default="genesis",
+        help="Operation mode: 'genesis' for genesis node setup, 'join' for joining existing network (default: genesis)"
+    )
+    
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose output"
+    )
+    
+    return parser.parse_args()
+
+
 def main():
+    # Parse command-line arguments
+    args = parse_arguments()
+    
+    # Determine operation mode
+    is_genesis = (args.mode == "genesis")
+    
+    print(f"Running in {'GENESIS' if is_genesis else 'JOIN'} mode")
+    if args.verbose:
+        print(f"Verbose mode enabled")
+    
     if Path(os.getcwd()).absolute() != BASE_DIR:
         print(f"Changing directory to {BASE_DIR}")
         os.chdir(BASE_DIR)
-
-    is_genesis = True
 
     # Clean up any existing state
     docker_compose_down()  # Stop any running containers before cleanup
@@ -1041,15 +1087,20 @@ def main():
 
     # Phase 2. Genesis preparation
     if is_genesis:
+        print("\n=== GENESIS MODE: Initializing genesis node ===")
         run_genesis_initialization()
         add_genesis_account(account_key)
+    else:
+        print("\n=== JOIN MODE: Preparing to join existing network ===")
 
     consensus_key = extract_consensus_key()
     warm_key = get_or_create_warm_key()
 
     if is_genesis:
+        print("\n=== GENESIS MODE: Finalizing genesis configuration ===")
         genesis_route(account_key, consensus_key, warm_key)
     else:
+        print("\n=== JOIN MODE: Joining existing network ===")
         join_route()
     
     # Phase 5. Start services
