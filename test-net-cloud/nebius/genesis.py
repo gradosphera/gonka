@@ -958,8 +958,19 @@ def grant_key_permissions(cold_key: AccountKey, warm_key: AccountKey):
     pass
 
 
-def start_docker_services(is_genesis: bool):
-    """Start all Docker services with runtime configuration"""
+def start_docker_services(
+    compose_files: list = None,
+    services: list = None,
+    additional_args: list = None
+):
+    """
+    Start Docker services with flexible configuration
+    
+    Args:
+        compose_files: List of docker-compose files to use (default: ["docker-compose.yml", "docker-compose.mlnode.yml"])
+        services: List of specific services to start (default: None = all services)
+        additional_args: Additional docker compose arguments (default: ["-d"])
+    """
     working_dir = GONKA_REPO_DIR / "deploy/join"
     config_file = working_dir / "config.env"
     
@@ -969,19 +980,41 @@ def start_docker_services(is_genesis: bool):
     if not config_file.exists():
         raise FileNotFoundError(f"Config file not found: {config_file}")
     
-    print("Starting Docker services with runtime configuration...")
+    # Set defaults
+    if compose_files is None:
+        compose_files = ["docker-compose.yml", "docker-compose.mlnode.yml"]
     
-    # Create runtime override file
-    node_id = CONFIG_ENV.get("NODE_ID", "")
-    if not node_id:
-        raise ValueError("NODE_ID not found in CONFIG_ENV")
+    if additional_args is None:
+        additional_args = ["-d"]
     
-    create_docker_compose_override(init_only=False, node_id=node_id)
+    # Build docker compose command
+    cmd_parts = ["docker", "compose"]
     
-    # Start all services
-    start_cmd = f"bash -c 'source {config_file} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml -f docker-compose.runtime-override.yml up -d'"
+    # Add compose files
+    for file in compose_files:
+        cmd_parts.extend(["-f", file])
     
+    # Add up command
+    cmd_parts.append("up")
+    
+    # Add services if specified
+    if services:
+        cmd_parts.extend(services)
+    
+    # Add additional arguments
+    cmd_parts.extend(additional_args)
+    
+    # Build final command with config sourcing
+    docker_cmd = " ".join(cmd_parts)
+    start_cmd = f"bash -c 'source {config_file} && {docker_cmd}'"
+    
+    print(f"Starting Docker services...")
+    print(f"Compose files: {compose_files}")
+    if services:
+        print(f"Services: {services}")
+    print(f"Additional args: {additional_args}")
     print(f"Running command: {start_cmd}")
+    
     result = subprocess.run(
         start_cmd,
         shell=True,
@@ -1005,7 +1038,6 @@ def start_docker_services(is_genesis: bool):
         raise subprocess.CalledProcessError(result.returncode, start_cmd)
     
     print("Docker services started successfully!")
-    print("All services are now running with the finalized genesis configuration.")
 
 
 def genesis_route(account_key: AccountKey):
@@ -1123,7 +1155,18 @@ def main():
         join_route(account_key)
 
     # Phase 5. Start services
-    start_docker_services(is_genesis)
+    if is_genesis:
+        # Create runtime override for genesis nodes
+        node_id = CONFIG_ENV.get("NODE_ID", "")
+        if node_id:
+            create_docker_compose_override(init_only=False, node_id=node_id)
+            start_docker_services(
+                compose_files=["docker-compose.yml", "docker-compose.mlnode.yml", "docker-compose.runtime-override.yml"]
+            )
+        else:
+            start_docker_services()
+    else:
+        start_docker_services()
 
 if __name__ == "__main__":
     main()
