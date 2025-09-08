@@ -10,16 +10,21 @@ var _ sdk.Msg = &MsgSetTrainingAllowList{}
 
 func NewMsgSetTrainingAllowList(creator string, authority string, addresses []string) *MsgSetTrainingAllowList {
 	return &MsgSetTrainingAllowList{
-		Creator:   creator,
 		Authority: authority,
 		Addresses: addresses,
 	}
 }
 
 func (msg *MsgSetTrainingAllowList) ValidateBasic() error {
-	_, err := sdk.AccAddressFromBech32(msg.Creator)
+	_, err := sdk.AccAddressFromBech32(msg.Authority)
 	if err != nil {
-		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid creator address (%s)", err)
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid authority address (%s)", err)
+	}
+	for _, address := range msg.Addresses {
+		_, err := sdk.AccAddressFromBech32(address)
+		if err != nil {
+			return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid address to set (%s)", err)
+		}
 	}
 	return nil
 }

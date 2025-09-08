@@ -17,13 +17,15 @@ func TestMsgRemoveUserFromTrainingAllowList_ValidateBasic(t *testing.T) {
 		{
 			name: "invalid address",
 			msg: MsgRemoveUserFromTrainingAllowList{
-				Creator: "invalid_address",
+				Authority: sample.AccAddress(),
+				Address:   "invalid address",
 			},
 			err: sdkerrors.ErrInvalidAddress,
 		}, {
 			name: "valid address",
 			msg: MsgRemoveUserFromTrainingAllowList{
-				Creator: sample.AccAddress(),
+				Authority: sample.AccAddress(),
+				Address:   sample.AccAddress(),
 			},
 		},
 	}

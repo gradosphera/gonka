@@ -366,28 +366,25 @@ message MsgBridgeExchangeResponse {
 }
 
 message MsgAddUserToTrainingAllowList {
-  option (cosmos.msg.v1.signer) = "creator";
-  string creator   = 1;
-  string authority = 2;
-  string address   = 3;
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string address   = 2;
 }
 
 message MsgAddUserToTrainingAllowListResponse {}
 
 message MsgRemoveUserFromTrainingAllowList {
-  option (cosmos.msg.v1.signer) = "creator";
-  string creator   = 1;
-  string authority = 2;
-  string address   = 3;
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string address   = 2;
 }
 
 message MsgRemoveUserFromTrainingAllowListResponse {}
 
 message MsgSetTrainingAllowList {
-  option (cosmos.msg.v1.signer) = "creator";
-           string creator   = 1;
-           string authority = 2;
-  repeated string addresses = 3;
+  option (cosmos.msg.v1.signer) = "authority";
+           string authority = 1;
+  repeated string addresses = 2;
 }
 
 message MsgSetTrainingAllowListResponse {}

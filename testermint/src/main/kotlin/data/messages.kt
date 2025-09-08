@@ -53,6 +53,36 @@ data class UpdateRestrictionsParams(
     }
 }
 
+data class MsgAddUserToTrainingAllowList(
+    val authority: String = "",
+    val address: String,
+) : GovernanceMessage {
+    override val type: String = "/inference.inference.MsgAddUserToTrainingAllowList"
+    override fun withAuthority(authority: String): GovernanceMessage {
+        return this.copy(authority = authority)
+    }
+}
+
+data class MsgRemoveUserFromTrainingAllowList(
+    val authority: String = "",
+    val address: String,
+) : GovernanceMessage {
+    override val type: String = "/inference.inference.MsgRemoveUserFromTrainingAllowList"
+    override fun withAuthority(authority: String): GovernanceMessage {
+        return this.copy(authority = authority)
+    }
+}
+
+data class MsgSetTrainingAllowList(
+    val authority: String = "",
+    val addresses: List<String>,
+) : GovernanceMessage {
+    override val type: String = "/inference.inference.MsgSetTrainingAllowList"
+    override fun withAuthority(authority: String): GovernanceMessage {
+        return this.copy(authority = authority)
+    }
+}
+
 data class DepositorAmount(
     val denom: String,
     val amount: BigInteger

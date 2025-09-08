@@ -17,13 +17,15 @@ func TestMsgSetTrainingAllowList_ValidateBasic(t *testing.T) {
 		{
 			name: "invalid address",
 			msg: MsgSetTrainingAllowList{
-				Creator: "invalid_address",
+				Authority: sample.AccAddress(),
+				Addresses: []string{"invalid address"},
 			},
 			err: sdkerrors.ErrInvalidAddress,
 		}, {
 			name: "valid address",
 			msg: MsgSetTrainingAllowList{
-				Creator: sample.AccAddress(),
+				Authority: sample.AccAddress(),
+				Addresses: []string{sample.AccAddress()},
 			},
 		},
 	}
