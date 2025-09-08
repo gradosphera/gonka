@@ -937,25 +937,121 @@ def copy_final_genesis_to_repo():
 
 def register_joining_participant():
     """
-    inferenced register-new-participant \
-    $DAPI_API__PUBLIC_URL \
-    $ACCOUNT_PUBKEY \
-    --node-address $DAPI_CHAIN_NODE__SEED_API_URL
+    Register this node as a new participant in the existing network
     """
-    pass
+    print("Registering joining participant...")
+    
+    # Get required configuration values
+    public_url = CONFIG_ENV.get("DAPI_API__PUBLIC_URL")
+    account_pubkey = CONFIG_ENV.get("ACCOUNT_PUBKEY")
+    seed_api_url = CONFIG_ENV.get("DAPI_CHAIN_NODE__SEED_API_URL")
+    
+    if not public_url:
+        raise ValueError("DAPI_API__PUBLIC_URL not found in CONFIG_ENV")
+    if not account_pubkey:
+        raise ValueError("ACCOUNT_PUBKEY not found in CONFIG_ENV")
+    if not seed_api_url:
+        raise ValueError("DAPI_CHAIN_NODE__SEED_API_URL not found in CONFIG_ENV")
+    
+    # Build the command
+    cmd = [
+        str(INFERENCED_BINARY.path),
+        "register-new-participant",
+        public_url,
+        account_pubkey,
+        "--node-address", seed_api_url
+    ]
+    
+    print(f"Running command: {' '.join(cmd)}")
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        
+        print("Participant registration completed successfully!")
+        if result.stdout:
+            print("Output:")
+            print(result.stdout)
+        
+    except subprocess.CalledProcessError as e:
+        print(f"Participant registration failed with return code: {e.returncode}")
+        if e.stdout:
+            print("Output:")
+            print(e.stdout)
+        if e.stderr:
+            print("Error:")
+            print(e.stderr)
+        raise
 
 
-def grant_key_permissions():
+def grant_key_permissions(warm_key_address: str):
     """
-    ./inferenced tx inference grant-ml-ops-permissions \
-    gonka-account-key \
-    <ml-operational-key-address-from-step-3.1> \
-    --from gonka-account-key \
-    --keyring-backend file \
-    --gas 2000000 \
-    --node <seed_api_url from server's config.env>/chain-rpc/
+    Grant ML operations permissions to the warm key
+    
+    Args:
+        warm_key_address: The address of the warm key to grant permissions to
     """
-    pass
+    print("Granting ML operations permissions...")
+    
+    # Get required configuration values
+    seed_api_url = CONFIG_ENV.get("DAPI_CHAIN_NODE__SEED_API_URL")
+    keyring_password = CONFIG_ENV.get("KEYRING_PASSWORD")
+    
+    if not seed_api_url:
+        raise ValueError("DAPI_CHAIN_NODE__SEED_API_URL not found in CONFIG_ENV")
+    if not keyring_password:
+        raise ValueError("KEYRING_PASSWORD not found in CONFIG_ENV")
+    
+    # Build the command
+    cmd = [
+        str(INFERENCED_BINARY.path),
+        "tx", "inference", "grant-ml-ops-permissions",
+        COLD_KEY_NAME,  # The key name to grant permissions to
+        warm_key_address,  # The warm key address
+        "--from", COLD_KEY_NAME,
+        "--keyring-backend", "file",
+        "--gas", "2000000",
+        "--node", f"{seed_api_url}/chain-rpc/"
+    ]
+    
+    print(f"Running command: {' '.join(cmd)}")
+    
+    try:
+        # Run the command with password input
+        process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Send the password twice (for signing and confirmation)
+        password_input = f"{keyring_password}\n{keyring_password}\n"
+        stdout, stderr = process.communicate(input=password_input)
+        
+        if process.returncode == 0:
+            print("ML operations permissions granted successfully!")
+            if stdout:
+                print("Output:")
+                print(stdout)
+        else:
+            print(f"Grant permissions failed with return code: {process.returncode}")
+            if stdout:
+                print("Output:")
+                print(stdout)
+            if stderr:
+                print("Error:")
+                print(stderr)
+            raise subprocess.CalledProcessError(process.returncode, cmd)
+            
+    except Exception as e:
+        print(f"Error granting ML operations permissions: {e}")
+        raise
 
 
 def start_docker_services(
@@ -1079,8 +1175,12 @@ def join_route(account_key: AccountKey):
     )
     print("Waiting 15 seconds for node to start...")
     time.sleep(15)
+    
+    # Get warm key for ML operations
+    warm_key = get_or_create_warm_key()
+    
     register_joining_participant()
-    grant_key_permissions()
+    grant_key_permissions(warm_key.address)
 
 
 def parse_arguments():
