@@ -1000,7 +1000,8 @@ def main():
     copy_genesis_back_to_docker()
     
     # Apply genesis overrides (includes denom_metadata and other configurations)
-    genesis_overrides_path = GONKA_REPO_DIR / "genesis/genesis-overrides.json"
+    # FIXME: replace with path to checked in genesis-overrides.json
+    genesis_overrides_path = BASE_DIR / "genesis-overrides.json"
     apply_genesis_overrides(genesis_overrides_path)
     
     copy_final_genesis_to_repo()
