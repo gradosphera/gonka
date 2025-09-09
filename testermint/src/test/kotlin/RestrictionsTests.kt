@@ -227,9 +227,6 @@ class RestrictionsTests : TestermintTest() {
         
         logHighlight("Submitting governance proposal for emergency exemption")
         genesis.runProposal(cluster, updateProposal)
-        
-        // Wait for proposal to pass
-        genesis.node.waitForNextBlock(5)
 
         val exemptions = genesis.node.queryRestrictionsExemptions()
         assertThat(exemptions.getExemptionsSafe().any { it.exemptionId == exemptionId }).isTrue()
@@ -291,9 +288,6 @@ class RestrictionsTests : TestermintTest() {
             logHighlight("Submitting governance proposal to update restriction end block")
             genesis.runProposal(cluster, updateProposal)
             
-            // Wait for proposal to pass
-            genesis.node.waitForNextBlock(5)
-
             val updatedStatus = genesis.node.queryRestrictionsStatus()
             logHighlight("✅ Parameters updated via governance:")
             logHighlight("  • New end block: ${updatedStatus.restrictionEndBlock}")
@@ -342,7 +336,6 @@ class RestrictionsTests : TestermintTest() {
                 
                 logHighlight("Submitting governance proposal to update restriction deadline to block $nearBlock")
                 genesis.runProposal(cluster, updateProposal)
-                genesis.node.waitForNextBlock(1) // Pass proposal
                 logHighlight("✅ Restriction deadline reached at updated block: $nearBlock")
             }
             

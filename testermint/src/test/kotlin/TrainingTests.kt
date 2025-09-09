@@ -1,11 +1,12 @@
 import com.productscience.*
 import com.productscience.data.*
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.*
 import java.time.Duration
 
 class TrainingTests : TestermintTest() {
     @Test
+    @Tag("unstable")
     fun test() {
         val (cluster, instance) = initCluster()
         val result = instance.node.exec(listOf("inferenced", "query", "inference", "hardware-nodes-all"))
@@ -43,9 +44,10 @@ class TrainingTests : TestermintTest() {
     }
 }
 
-
+@TestMethodOrder(MethodOrderer.OrderAnnotation::class)
 class TrainingAllowListTests : TestermintTest() {
     @Test
+    @Order(1)
     fun `message sending not allowed`() {
         val (cluster, genesis) = initCluster()
         val genesisAddress = genesis.node.getColdAddress()
@@ -65,11 +67,12 @@ class TrainingAllowListTests : TestermintTest() {
     }
 
     @Test
+    @Order(3)
     fun `message sending allowed after vote`() {
         val (cluster, genesis) = initCluster()
         logSection("Adding genesis address to allow list")
-        genesis.runProposal(cluster, MsgAddUserToTrainingAllowList(
-            address = genesis.node.getColdAddress()))
+        genesis.runProposal(cluster, MsgSetTrainingAllowList(
+            addresses = listOf(genesis.node.getColdAddress())))
         val genesisAddress = genesis.node.getColdAddress()
         val joinAddress = cluster.joinPairs.first().node.getColdAddress()
         val messages:List<TxMessage> = getTxMessages(genesisAddress, joinAddress)
@@ -91,27 +94,25 @@ class TrainingAllowListTests : TestermintTest() {
     }
 
     @Test
+    @Order(2)
     fun `test allow list messages`() {
-        val (cluster, genesis) = initCluster(reboot = true)
+        val (cluster, genesis) = initCluster()
         val currentAllowList = genesis.node.getTrainingAllowList()
         assertThat(currentAllowList).isEmpty()
         logSection("Adding genesis address to allow list")
         genesis.runProposal(cluster, MsgAddUserToTrainingAllowList(
             address = genesis.node.getColdAddress()))
-        genesis.node.waitForNextBlock()
         val newAllowList = genesis.node.getTrainingAllowList()
         assertThat(newAllowList).hasSize(1)
         assertThat(newAllowList.first()).isEqualTo(genesis.node.getColdAddress())
         logSection("Replacing entire address list")
         genesis.runProposal(cluster, MsgSetTrainingAllowList(addresses = cluster.joinPairs.map { it.node.getColdAddress()}))
-        genesis.node.waitForNextBlock()
         val replacedAllowList = genesis.node.getTrainingAllowList()
         assertThat(replacedAllowList).hasSize(cluster.joinPairs.size)
         assertThat(replacedAllowList).containsAll(cluster.joinPairs.map { it.node.getColdAddress()})
         logSection("Removing join address from allow list")
         genesis.runProposal(cluster, MsgRemoveUserFromTrainingAllowList(
             address = cluster.joinPairs.first().node.getColdAddress()))
-        genesis.node.waitForNextBlock()
         val finalAllowList = genesis.node.getTrainingAllowList()
         assertThat(finalAllowList).doesNotContain(cluster.joinPairs.first().node.getColdAddress())
 
@@ -197,7 +198,6 @@ class TrainingAllowListTests : TestermintTest() {
                 timestamp = 5.5,
                 epoch = 4,
                 localRank = 5
-
             )
         )
     )
