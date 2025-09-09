@@ -5,82 +5,100 @@ import org.junit.jupiter.api.Test
 import java.time.Duration
 import kotlin.test.assertNotNull
 
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.MethodOrderer
+import org.junit.jupiter.api.Order
+import org.junit.jupiter.api.TestMethodOrder
+
+@TestMethodOrder(MethodOrderer.OrderAnnotation::class)
 class RestrictionsTests : TestermintTest() {
 
-    @Test
-    fun `comprehensive transfer restrictions lifecycle test`() {
-        // Configure genesis with transfer restrictions enabled and shorter deadline for testing
-        // Instead of 1,555,000 blocks (~3 months), use 100 blocks for fast E2E testing
-        val restrictionsSpec = spec {
-            this[AppState::restrictions] = spec<RestrictionsState> {
-                this[RestrictionsState::params] = spec<RestrictionsParams> {
-                    this[RestrictionsParams::restrictionEndBlock] = 100L // Short deadline for testing (100 blocks)
-                    this[RestrictionsParams::emergencyTransferExemptions] = emptyList<EmergencyTransferExemption>() // Start with no exemptions
-                    this[RestrictionsParams::exemptionUsageTracking] = emptyList<ExemptionUsageEntry>() // Start with no usage tracking
+    companion object {
+        private lateinit var cluster: LocalCluster
+        private lateinit var genesis: LocalInferencePair
+        private lateinit var genesisAddress: String
+        private lateinit var participantAddress: String
+
+        @BeforeAll
+        @JvmStatic
+        fun initOnce() {
+            // Configure genesis with transfer restrictions enabled and shorter deadline for testing
+            val restrictionsSpec = spec {
+                this[AppState::restrictions] = spec<RestrictionsState> {
+                    this[RestrictionsState::params] = spec<RestrictionsParams> {
+                        this[RestrictionsParams::restrictionEndBlock] = 100L
+                        this[RestrictionsParams::emergencyTransferExemptions] = emptyList<EmergencyTransferExemption>()
+                        this[RestrictionsParams::exemptionUsageTracking] = emptyList<ExemptionUsageEntry>()
+                    }
                 }
             }
+
+            val restrictionsConfig = inferenceConfig.copy(
+                genesisSpec = inferenceConfig.genesisSpec?.merge(restrictionsSpec) ?: restrictionsSpec
+            )
+
+            val (c, g) = initCluster(config = restrictionsConfig, reboot = true)
+            cluster = c
+            genesis = g
+
+            logSection("=== COMPREHENSIVE TRANSFER RESTRICTIONS LIFECYCLE TEST ===")
+            logHighlight("Testing complete transfer restriction functionality:")
+            logHighlight("  • Restriction deadline set to block 100 for fast testing")
+            logHighlight("  • User-to-user transfers blocked during restriction period")
+            logHighlight("  • Gas fee payments allowed during restrictions")
+            logHighlight("  • Inference payments work normally")
+            logHighlight("  • Governance emergency exemptions")
+            logHighlight("  • Automatic restriction lifting at deadline (block 100)")
+            logHighlight("  • Parameter governance control")
+
+            // Get initial test addresses
+            genesisAddress = genesis.node.getColdAddress()
+            participantAddress = cluster.allPairs.getOrNull(1)?.node?.getColdAddress() ?: genesisAddress
+
+            logSection("Test setup:")
+            logHighlight("  Genesis address: $genesisAddress")
+            logHighlight("  Participant address: $participantAddress")
+
+            // Wait for system to be ready
+            logSection("Waiting for system initialization")
+            genesis.waitForStage(EpochStage.CLAIM_REWARDS)
         }
+    }
 
-        val restrictionsConfig = inferenceConfig.copy(
-            genesisSpec = inferenceConfig.genesisSpec?.merge(restrictionsSpec) ?: restrictionsSpec
-        )
-
-        val (cluster, genesis) = initCluster(config = restrictionsConfig, reboot = true)
-
-        logSection("=== COMPREHENSIVE TRANSFER RESTRICTIONS LIFECYCLE TEST ===")
-        logHighlight("Testing complete transfer restriction functionality:")
-        logHighlight("  • Restriction deadline set to block 100 for fast testing")
-        logHighlight("  • User-to-user transfers blocked during restriction period")
-        logHighlight("  • Gas fee payments allowed during restrictions")
-        logHighlight("  • Inference payments work normally")
-        logHighlight("  • Governance emergency exemptions")
-        logHighlight("  • Automatic restriction lifting at deadline (block 100)")
-        logHighlight("  • Parameter governance control")
-
-        // Get initial test addresses
-        val genesisAddress = genesis.node.getColdAddress()
-        val participantAddress = cluster.allPairs.getOrNull(1)?.node?.getColdAddress() ?: genesisAddress
-        
-        logSection("Test setup:")
-        logHighlight("  Genesis address: $genesisAddress")
-        logHighlight("  Participant address: $participantAddress")
-
-        // Wait for system to be ready
-        logSection("Waiting for system initialization")
-        genesis.waitForStage(EpochStage.CLAIM_REWARDS)
-
-        // SCENARIO 1: Verify transfer restrictions are initially active
-        logSection("=== SCENARIO 1: Verify Initial Transfer Restrictions ===")
+    @Test
+    @Order(1)
+    fun `Verify Initial Transfer Restrictions`() {
         testInitialRestrictionStatus(genesis)
+    }
 
-        // SCENARIO 2: Test that user-to-user transfers are blocked
-        logSection("=== SCENARIO 2: Verify User-to-User Transfer Blocking ===")
+    @Test
+    @Order(2)
+    fun `Verify User-to-User Transfer Blocking`() {
         testUserToUserTransferBlocking(genesis, genesisAddress, participantAddress)
+    }
 
-        // SCENARIO 3: Test that gas fees and inference payments work normally
-        logSection("=== SCENARIO 3: Verify Essential Operations Work ===")
+    @Test
+    @Order(3)
+    fun `Verify Essential Operations Work`() {
         testEssentialOperationsWork(genesis, cluster)
+    }
 
-        // SCENARIO 4: Test governance emergency exemption creation and execution
-        logSection("=== SCENARIO 4: Test Governance Emergency Exemptions ===")
+    @Test
+    @Order(4)
+    fun `Test Governance Emergency Exemptions`() {
         testGovernanceEmergencyExemptions(genesis, cluster, genesisAddress, participantAddress)
+    }
 
-        // SCENARIO 5: Test restriction parameter governance
-        logSection("=== SCENARIO 5: Test Parameter Governance Control ===")
+    @Test
+    @Order(5)
+    fun `Test Parameter Governance Control`() {
         testParameterGovernanceControl(genesis, cluster)
+    }
 
-        // SCENARIO 6: Test automatic restriction lifting (simulate deadline reached)
-        logSection("=== SCENARIO 6: Test Automatic Restriction Lifting ===")
+    @Test
+    @Order(6)
+    fun `Test Automatic Restriction Lifting`() {
         testAutomaticRestrictionLifting(genesis, cluster, genesisAddress, participantAddress)
-
-        logSection("=== TRANSFER RESTRICTIONS LIFECYCLE TEST COMPLETED ===")
-        logHighlight("✅ All scenarios verified successfully:")
-        logHighlight("✅ Initial restrictions active and blocking user-to-user transfers")
-        logHighlight("✅ Essential operations (gas fees, inference payments) work normally")
-        logHighlight("✅ Governance emergency exemptions function correctly")
-        logHighlight("✅ Parameter governance control operational")
-        logHighlight("✅ Automatic restriction lifting works at deadline")
-        logHighlight("✅ Transfer restrictions provide comprehensive protection while preserving functionality")
     }
 
     private fun testInitialRestrictionStatus(genesis: LocalInferencePair) {
@@ -228,11 +246,12 @@ class RestrictionsTests : TestermintTest() {
         logHighlight("Submitting governance proposal for emergency exemption")
         genesis.runProposal(cluster, updateProposal)
 
+        logSection("verifying emergency exemption creation")
         val exemptions = genesis.node.queryRestrictionsExemptions()
         assertThat(exemptions.getExemptionsSafe().any { it.exemptionId == exemptionId }).isTrue()
         
         // Step 3: Execute emergency transfer
-        logHighlight("Step 3: Executing emergency transfer")
+        logSection("Step 3: Executing emergency transfer")
         
         val initialFromBalance = genesis.getBalance(fromAddress)
         val initialToBalance = genesis.getBalance(toAddress)
@@ -245,7 +264,8 @@ class RestrictionsTests : TestermintTest() {
             genesis.node.executeEmergencyTransfer(exemptionId, fromAddress, toAddress, "2000", "ngonka")
         }
         assertThat(emergencyTx.isSuccess).isTrue()
-        
+
+        logSection("Verifying emergency transfer")
         // Wait for transaction to be processed in the next block
         genesis.node.waitForNextBlock(1)
         

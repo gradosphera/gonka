@@ -12,8 +12,29 @@ import (
 func (k msgServer) SubmitHardwareDiff(goCtx context.Context, msg *types.MsgSubmitHardwareDiff) (*types.MsgSubmitHardwareDiffResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	_, found := k.GetParticipant(goCtx, msg.Creator)
+	if !found {
+		return nil, types.ErrParticipantNotFound
+	}
+
+	// Check for duplicate LocalIds
+	seenIds := make(map[string]bool)
+	for _, node := range msg.NewOrModified {
+		if seenIds[node.LocalId] {
+			return nil, types.ErrDuplicateNodeId
+		}
+		seenIds[node.LocalId] = true
+	}
+	for _, node := range msg.Removed {
+		if seenIds[node.LocalId] {
+			return nil, types.ErrDuplicateNodeId
+		}
+		seenIds[node.LocalId] = true
+	}
+
 	// TODO: Make sure that before the update, we have models in the state
 	for _, node := range msg.NewOrModified {
+
 		for _, modelId := range node.Models {
 			if !k.IsValidGovernanceModel(ctx, modelId) {
 				return nil, types.ErrInvalidModel

@@ -48,4 +48,5 @@ var (
 	ErrIllegalState                            = sdkerrors.Register(ModuleName, 1137, "illegal state for the operation requested")
 	ErrInvalidValidationThreshold              = sdkerrors.Register(ModuleName, 1138, "validation threshold must be in [0, 100] range")
 	ErrTrainingNotAllowed                      = sdkerrors.Register(ModuleName, 1139, "training not allowed for this address")
+	ErrDuplicateNodeId                         = sdkerrors.Register(ModuleName, 1140, "duplicate node id")
 )
