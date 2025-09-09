@@ -2,7 +2,6 @@
 
 # Set default values for environment variables if not provided
 
-export PROXY_ADD_NODE_PREFIX=${PROXY_ADD_NODE_PREFIX:-false}
 export API_PORT=${API_PORT:-9000}
 export CHAIN_RPC_PORT=${CHAIN_RPC_PORT:-26657}
 export CHAIN_API_PORT=${CHAIN_API_PORT:-1317}
@@ -15,8 +14,7 @@ export EXPLORER_SERVICE_NAME=${EXPLORER_SERVICE_NAME:-explorer}
 export PROXY_SSL_SERVICE_NAME=${PROXY_SSL_SERVICE_NAME:-proxy-ssl}
 export PROXY_SSL_PORT=${PROXY_SSL_PORT:-8080}
 
-# Set KEY_NAME_PREFIX based on PROXY_ADD_NODE_PREFIX flag and KEY_NAME being set
-if [ "${PROXY_ADD_NODE_PREFIX}" = "true" ] && [ -n "${KEY_NAME}" ] && [ "${KEY_NAME}" != "" ]; then
+if [ -n "${KEY_NAME}" ] && [ "${KEY_NAME}" != "" ]; then
     export KEY_NAME_PREFIX="${KEY_NAME}-"
 else
     export KEY_NAME_PREFIX=""
