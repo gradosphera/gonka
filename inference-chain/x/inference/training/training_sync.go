@@ -12,7 +12,6 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 )
 
-// EpochState holds per‑epoch membership info.
 type OuterStepState struct {
 	OuterStep int32
 	Activity  map[GlobalNodeId]*types.TrainingTaskNodeEpochActivity
