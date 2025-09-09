@@ -2,6 +2,7 @@ package training
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -112,7 +113,7 @@ type GlobalNodeId struct {
 	LocalNodeId string
 }
 
-func NewGlobalNodeId(globalNodeId string) (*GlobalNodeId, error) {
+func NewGlobalNodeId(globalNodeId string, creator string) (*GlobalNodeId, error) {
 	// Check globalNodeId contains only one slash /
 	if len(globalNodeId) == 0 {
 		return nil, fmt.Errorf("empty globalNodeId")
@@ -134,20 +135,18 @@ func NewGlobalNodeId(globalNodeId string) (*GlobalNodeId, error) {
 		return nil, fmt.Errorf("globalNodeId should not contain empty strings")
 	}
 	address := splitRes[0]
+	if _, err := sdk.AccAddressFromBech32(address); err != nil {
+		return nil, fmt.Errorf("invalid address: %s", err)
+	}
+	if address != creator {
+		return nil, errors.New("nodeId must start with creator")
+	}
 	localNodeId := splitRes[1]
 	return &GlobalNodeId{Participant: address, LocalNodeId: localNodeId}, nil
 }
 
 type LocalNodeId struct {
 	id string
-}
-
-func NewLocalNodeId(globalNodeId string) (*LocalNodeId, error) {
-	global, err := NewGlobalNodeId(strings.TrimSpace(globalNodeId))
-	if err != nil {
-		return nil, err
-	}
-	return &LocalNodeId{id: global.LocalNodeId}, nil
 }
 
 func (n *GlobalNodeId) ToString() string {

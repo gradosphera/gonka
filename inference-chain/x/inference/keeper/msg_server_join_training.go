@@ -2,8 +2,6 @@ package keeper
 
 import (
 	"context"
-	"errors"
-	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/productscience/inference/x/inference/training"
@@ -17,10 +15,7 @@ func (k msgServer) JoinTraining(goCtx context.Context, msg *types.MsgJoinTrainin
 		return nil, err
 	}
 
-	if !strings.HasPrefix(msg.Req.NodeId, msg.Creator+"/") {
-		return nil, errors.New("nodeId must start with creator")
-	}
-	nodeId, err := training.NewGlobalNodeId(msg.Req.NodeId)
+	nodeId, err := training.NewGlobalNodeId(msg.Req.NodeId, msg.Creator)
 	if err != nil {
 		return nil, err
 	}

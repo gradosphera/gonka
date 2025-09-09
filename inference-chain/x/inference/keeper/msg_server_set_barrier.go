@@ -2,8 +2,6 @@ package keeper
 
 import (
 	"context"
-	"errors"
-	"strings"
 
 	"github.com/productscience/inference/x/inference/training"
 	"github.com/productscience/inference/x/inference/types"
@@ -18,10 +16,7 @@ func (k msgServer) SetBarrier(goCtx context.Context, msg *types.MsgSetBarrier) (
 		return nil, err
 	}
 
-	if !strings.HasPrefix(msg.Req.NodeId, msg.Creator+"/") {
-		return nil, errors.New("nodeId must start with creator")
-	}
-	nodeId, err := training.NewGlobalNodeId(msg.Req.NodeId)
+	nodeId, err := training.NewGlobalNodeId(msg.Req.NodeId, msg.Creator)
 	if err != nil {
 		return nil, err
 	}
