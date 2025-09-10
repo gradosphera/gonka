@@ -1,9 +1,10 @@
 package keeper_test
 
 import (
-	"github.com/productscience/inference/testutil"
-	"github.com/productscience/inference/x/inference/keeper"
 	"testing"
+
+	"github.com/productscience/inference/testutil"
+	"github.com/productscience/inference/x/inference/calculations"
 
 	"github.com/stretchr/testify/require"
 
@@ -36,7 +37,7 @@ func TestMsgServer_StartInference(t *testing.T) {
 	require.Equal(t, initialBlockHeight, ctx.BlockHeight())
 
 	expected, err := inferenceHelper.StartInference("promptPayload", "model1", requestTimestamp,
-		keeper.DefaultMaxTokens)
+		calculations.DefaultMaxTokens)
 	require.NoError(t, err)
 	savedInference, found := k.GetInference(ctx, expected.InferenceId)
 	require.True(t, found)
