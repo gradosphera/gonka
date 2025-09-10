@@ -131,8 +131,8 @@ class UpgradeTests : TestermintTest() {
         logSection("Verifying current inference hits right endpoint")
         val effectiveHeight = genesis.getCurrentBlockHeight() + 40
         val newResponse = "Only a short response"
-        val newSegment = "/newVersion"
-        val newVersion = "v1"
+        val newSegment = "/6Version"
+        val newVersion = "v6"
         genesis.waitForNextInferenceWindow()
         cluster.allPairs.forEach {
             it.mock?.setInferenceResponse(
@@ -147,7 +147,7 @@ class UpgradeTests : TestermintTest() {
             )
         }
         // Nodes changed so we really need to wait for PoC so it sets EpochModels and such
-        genesis.waitForStage(EpochStage.SET_NEW_VALIDATORS)
+        genesis.waitForStage(EpochStage.SET_NEW_VALIDATORS, 3)
         val inferenceResponse = genesis.makeInferenceRequest(inferenceRequest)
         assertThat(inferenceResponse.choices.first().message.content).isNotEqualTo(newResponse)
         val proposalId = genesis.runProposal(
