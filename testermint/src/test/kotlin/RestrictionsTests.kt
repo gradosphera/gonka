@@ -209,7 +209,7 @@ class RestrictionsTests : TestermintTest() {
         logHighlight("Testing governance emergency exemption creation and execution")
         
         // Step 1: Create emergency exemption via governance parameter update
-        logHighlight("Step 1: Creating emergency exemption via governance")
+        logSection("Step 1: Creating emergency exemption via governance")
         
         val exemptionId = "emergency-test-${System.currentTimeMillis()}"
         val exemptionAmount = "5000"
@@ -249,7 +249,8 @@ class RestrictionsTests : TestermintTest() {
         logSection("verifying emergency exemption creation")
         val exemptions = genesis.node.queryRestrictionsExemptions()
         assertThat(exemptions.getExemptionsSafe().any { it.exemptionId == exemptionId }).isTrue()
-        
+        // Make sure our numbers aren't messed up by rewards
+        genesis.waitForNextInferenceWindow()
         // Step 3: Execute emergency transfer
         logSection("Step 3: Executing emergency transfer")
         
