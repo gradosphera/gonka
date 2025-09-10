@@ -275,6 +275,10 @@ func (ma *ModelAssigner) distributeLegacyWeight(originalMLNodes []*types.MLNodeI
 		"weight_per_node", weightPerNode,
 		"remainder_weight", remainderWeight)
 
+	newMlNodesMap := make(map[string]*types.MLNodeInfo)
+	for _, mlNode := range newMLNodes {
+		newMlNodesMap[mlNode.NodeId] = mlNode
+	}
 	var remainderCounter = int64(0)
 	// Distribute weight among hardware nodes
 	// Give weightPerNode to each, then distribute remainder by giving +1 to first nodes until remainder is over
@@ -292,29 +296,24 @@ func (ma *ModelAssigner) distributeLegacyWeight(originalMLNodes []*types.MLNodeI
 		ma.LogInfo("Distributing weight to hardware node", types.PoC, "flow_context", FlowContext, "sub_flow_context", SubFlowContext, "step", "distribute_to_node", "node_id", nodeId, "distributed_weight", distributedWeight)
 
 		// Find existing MLNode for this hardware node
-		found := false
-		for _, existingMLNode := range newMLNodes {
-			if existingMLNode.NodeId == nodeId {
-				// Add distributed weight to existing MLNode
-				if preservedNode == nil {
-					if remainderCounter < remainderWeight {
-						distributedWeight++
-						remainderCounter++
-					}
-					existingMLNode.PocWeight += distributedWeight
-				} else {
-					// If preserved node, just set the weight without adding
-					existingMLNode.PocWeight = preservedNode.PocWeight
+		existingMLNode := newMlNodesMap[nodeId]
+		if existingMLNode != nil {
+			if preservedNode == nil {
+				if remainderCounter < remainderWeight {
+					distributedWeight++
+					remainderCounter++
 				}
-
-				found = true
-				ma.LogInfo("Added weight to existing ML node", types.PoC, "flow_context", FlowContext, "sub_flow_context", SubFlowContext, "step", "add_to_existing_node", "node_id", existingMLNode.NodeId, "added_weight", distributedWeight, "new_total_weight", existingMLNode.PocWeight)
-				break
+				existingMLNode.PocWeight += distributedWeight
+			} else {
+				// If preserved node, just set the weight without adding
+				existingMLNode.PocWeight = preservedNode.PocWeight
 			}
+
+			ma.LogInfo("Added weight to existing ML node", types.PoC, "flow_context", FlowContext, "sub_flow_context", SubFlowContext, "step", "add_to_existing_node", "node_id", existingMLNode.NodeId, "added_weight", distributedWeight, "new_total_weight", existingMLNode.PocWeight)
 		}
 
 		// If no existing MLNode found, create new one
-		if !found {
+		if existingMLNode == nil {
 			var newMLNode *types.MLNodeInfo
 			if preservedNode != nil {
 				newMLNode = preservedNode
