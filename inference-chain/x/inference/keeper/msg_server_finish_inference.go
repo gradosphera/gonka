@@ -78,7 +78,7 @@ func (k msgServer) FinishInference(goCtx context.Context, msg *types.MsgFinishIn
 	}
 	k.SetInference(ctx, *finalInference)
 	if existingInference.IsCompleted() {
-		err := k.handleInferenceCompleted(ctx, &existingInference)
+		err := k.handleInferenceCompleted(ctx, finalInference)
 		if err != nil {
 			return nil, err
 		}
