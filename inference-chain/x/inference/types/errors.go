@@ -49,4 +49,5 @@ var (
 	ErrInvalidValidationThreshold              = sdkerrors.Register(ModuleName, 1138, "validation threshold must be in [0, 100] range")
 	ErrTrainingNotAllowed                      = sdkerrors.Register(ModuleName, 1139, "training not allowed for this address")
 	ErrDuplicateNodeId                         = sdkerrors.Register(ModuleName, 1140, "duplicate node id")
+	ErrTrainingTaskNotAssigned                 = sdkerrors.Register(ModuleName, 1141, "training task not assigned to message creator")
 )
