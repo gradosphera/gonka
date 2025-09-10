@@ -10,7 +10,10 @@ type InferenceMessage interface{}
 type StartInferenceMessage struct {
 }
 
-const DefaultMaxTokens = 5000
+const (
+	DefaultMaxTokens = 5000
+	PerTokenCost     = 1000 // Legacy fallback price
+)
 
 type BlockContext struct {
 	BlockHeight    int64
@@ -185,8 +188,6 @@ func getMaxTokens(msg *types.MsgStartInference) uint64 {
 	}
 	return DefaultMaxTokens
 }
-
-const PerTokenCost = 1000 // Legacy fallback price
 
 func CalculateCost(inference *types.Inference) int64 {
 	// Simply use the per-token price stored in the inference
