@@ -14,11 +14,11 @@ Currently, inference validation compares whether two token–probability distrib
 
 1. Generates a token sequence $[\,t_1,\, t_2,\, \dots,\, t_N\,]$ for the given prompt.
 
-2. For each position $i \in \{1,\dots,N\}$, records the top-$k$ (e.g. `k=5`) candidate tokens and their probabilities:
+2. For each position $i \in \{1,\dots,N\}$, records the top-k (e.g. `k=5`) candidate tokens and their probabilities:
 
-   $$
-      A_i = \{ t^i_1: p^i_1, t^i_2: p^i_2,\dots t^i_k: p^i_k \}
-   $$
+$$
+   A_i = \{ t^i_1: p^i_1, t^i_2: p^i_2,\dots t^i_k: p^i_k \}
+$$
 
 Collecting this for every position $i$ forms an **inference artifact** $A = [ A_1, \dots, A_N ] $.
 
@@ -26,7 +26,7 @@ Collecting this for every position $i$ forms an **inference artifact** $A = [ A_
 
 1. Re-generates **the same** token sequence $[t_1, t_2, \dots, t_N]$.
 
-2. Computes probabilities for the same top-$k$ candidates:
+2. Computes probabilities for the same top-k candidates:
 
 $$
    \tilde{A}_i = \{ t^i_1: \tilde{p}^i_1, t^i_2: \tilde{p}^i_2,\dots t^i_k: \tilde{p}^i_k \}
@@ -38,7 +38,7 @@ The new artifact becomes: $\tilde{A} = [ \tilde{A}_1, \dots, \tilde{A}_N ] $.
 
 $$
    \frac{1}{N}\sum_{i=1}^{N}
-   \operatorname{dist}(A_i, \tilde{A}_i).
+   dist(A_i, \tilde{A}_i).
 $$
 
 Note: The described function is quite noisy for short outputs. In practice, the following aggregation is used:
