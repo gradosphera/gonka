@@ -73,7 +73,7 @@ services:
   
   proxy:
     container_name: proxy
-    image: ghcr.io/product-science/proxy:0.2.1.0.4
+    image: ghcr.io/product-science/proxy:0.2.1.0.5
     ports:
       - "${API_PORT:-8000}:80"
     environment:
@@ -112,7 +112,7 @@ services:
 
   proxy-ssl:
     container_name: proxy-ssl
-    image: ghcr.io/product-science/proxy-ssl:0.2.1.0.4
+    image: ghcr.io/product-science/proxy-ssl:0.2.1.0.5
     environment:
       # ACME Configuration
       - ACME_ACCOUNT_EMAIL=${ACME_ACCOUNT_EMAIL}
