@@ -260,6 +260,10 @@ func (ma *ModelAssigner) distributeLegacyWeight(originalMLNodes []*types.MLNodeI
 	totalLegacyWeight := legacyMLNode.PocWeight
 	numHardwareNodes := int64(len(hardwareNodes.HardwareNodes))
 	numNodesToDistributeWeight := numHardwareNodes - numPreservedNodes
+	if numNodesToDistributeWeight <= 0 {
+		ma.LogInfo("No hardware nodes to distribute weight to, returning original list.", types.PoC, "flow_context", flowContext, "sub_flow_context", subFlowContext, "step", "no_hardware_nodes")
+		return originalMLNodes
+	}
 	weightPerNode := totalLegacyWeight / numNodesToDistributeWeight
 	remainderWeight := totalLegacyWeight % numNodesToDistributeWeight
 	ma.LogInfo("Calculated weight distribution", types.PoC,
