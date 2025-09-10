@@ -7,26 +7,26 @@ const (
 	EpochGroup
 	PoC
 	Tokenomics
-	Pricing         = 4
-	Validation      = 5
-	Settle          = 6
-	System          = 7
-	Claims          = 8
-	Inferences      = 9
-	Participants    = 10
-	Messages        = 11
-	Nodes           = 12
-	Config          = 13
-	EventProcessing = 14
-	Upgrades        = 15
-	Server          = 16
-	Training        = 17
-	Stages          = 18
-	Balances        = 19
-	Stat            = 20
-	Pruning         = 21
-	BLS             = 22
-	Testing         = 255
+	Pricing
+	Validation
+	Settle
+	System
+	Claims
+	Inferences
+	Participants
+	Messages
+	Nodes
+	Config
+	EventProcessing
+	Upgrades
+	Server
+	Training
+	Stages
+	Balances
+	Stat
+	Pruning
+	BLS
+	Testing = 255
 )
 
 func (s SubSystem) String() string {
