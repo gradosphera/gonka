@@ -196,7 +196,7 @@ Input: Token sequence + Artifact → Sequence Check (if not pass) → Reject
 2. **Sequence Generation**:
    - Initialize model with specified parameters and quantization
    - Initiate RNG from `run_seed`
-   - Generate token sequence: $[\,t_1,\, t_2,\, \dots,\, t_N\,]$ one by one using RNG:
+   - Generate token sequence: $[t_1, t_2, \dots, t_N\,]$ one by one using RNG:
 
    At each inference step $i$, the model produces a full probability distribution over the vocabulary:
       $A_{full} = \{ t^i_1: p^i_1, t^i_2: p^i_2,\dots t^i_k: p^i_k, t^i_{k+1}: p^i_{k+1}, \dots \}$
