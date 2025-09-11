@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -20,7 +21,9 @@ func main() {
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		log.Printf("proxy-ssl disabled: configuration invalid or missing: %v", err)
+		startDisabledHealthServer()
+		return
 	}
 
 	// Setup logging
@@ -70,4 +73,47 @@ func main() {
 	}
 
 	logger.Info("Server exited")
+}
+
+// startDisabledHealthServer starts a minimal HTTP server that only serves /health.
+// Used when required configuration is missing so the container does not crash-loop.
+func startDisabledHealthServer() {
+	// Determine port from env (fallback to 8080)
+	port := 8080
+	if p := os.Getenv("PORT"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil {
+			port = v
+		}
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok","mode":"disabled"}`))
+	})
+
+	server := &http.Server{
+		Addr:         fmt.Sprintf(":%d", port),
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	go func() {
+		log.Printf("Starting proxy-ssl in DISABLED mode on port %d (health only)", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Disabled health server error: %v", err)
+		}
+	}()
+
+	// Graceful shutdown on SIGINT/SIGTERM
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = server.Shutdown(ctx)
 }

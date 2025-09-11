@@ -68,6 +68,7 @@ http {
             proxy_set_header X-Real-IP $$remote_addr;
             proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Authorization $http_authorization;
             
             # Handle WebSocket connections if needed
             proxy_http_version 1.1;
@@ -87,6 +88,7 @@ http {
             proxy_set_header X-Real-IP $$remote_addr;
             proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Authorization $http_authorization;
             
             # Handle WebSocket connections if needed
             proxy_http_version 1.1;
@@ -125,6 +127,7 @@ http {
             proxy_set_header X-Real-IP $$remote_addr;
             proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Authorization $http_authorization;
             
             # Standard timeouts for chain API (2 minutes)
             proxy_connect_timeout 30s;
@@ -139,6 +142,7 @@ http {
             proxy_set_header X-Real-IP $$remote_addr;
             proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Authorization $http_authorization;
             
             # Standard timeouts for chain gRPC (2 minutes)
             proxy_connect_timeout 30s;
