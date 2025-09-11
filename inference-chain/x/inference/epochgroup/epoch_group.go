@@ -49,11 +49,9 @@ func NewEpochMemberFromStakingValidator(
 	if err != nil {
 		return nil, err
 	}
-	println("Val Address for genesis.", "opAddr", validator.OperatorAddress, "accAddr", accAddr)
 
 	// FIXME: it's definitely a wrong way to get the pubkey
 	pubKey := validator.ConsensusPubkey.String()
-	println("PUBKEY for genesis validator is", pubKey)
 
 	return &EpochMember{
 		Address:       accAddr,
