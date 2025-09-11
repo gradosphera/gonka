@@ -173,7 +173,7 @@ func (eg *EpochGroup) updateEpochGroupWithNewMember(ctx context.Context, member 
 		Signature:     member.SeedSignature,
 	})
 
-	mlNodes := eg.storeMLNodeInfo(member, eg.GroupData.ModelId)
+	mlNodes := eg.getMLNodeInfo(member, eg.GroupData.ModelId)
 
 	eg.GroupData.ValidationWeights = append(eg.GroupData.ValidationWeights, &types.ValidationWeight{
 		MemberAddress: member.Address,
@@ -192,7 +192,7 @@ func (eg *EpochGroup) updateEpochGroupWithNewMember(ctx context.Context, member 
 	eg.GroupDataKeeper.SetEpochGroupData(ctx, *eg.GroupData)
 }
 
-func (eg *EpochGroup) storeMLNodeInfo(member EpochMember, modelId string) []*types.MLNodeInfo {
+func (eg *EpochGroup) getMLNodeInfo(member EpochMember, modelId string) []*types.MLNodeInfo {
 	if modelId == "" {
 		return nil // Do not store ML nodes in the parent group
 	}
