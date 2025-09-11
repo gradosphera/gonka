@@ -101,6 +101,10 @@ func (am AppModule) GetPreviousEpochMLNodesWithInferenceAllocation(ctx context.C
 
 	preservedNodesByParticipant, err := am.GetPreservedNodesByParticipant(ctx, currentEpochGroup.GroupData.EpochIndex)
 
+	if err != nil {
+		am.LogWarn("GetPreviousEpochMLNodesWithInferenceAllocation: Unable to get preserved nodes by participant", types.PoC, "error", err)
+	}
+
 	// Iterate through all validation weights in current epoch to find inference-serving MLNodes
 	for _, validationWeight := range currentEpochGroup.GroupData.ValidationWeights {
 		participantAddress := validationWeight.MemberAddress
