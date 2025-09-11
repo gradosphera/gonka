@@ -70,8 +70,8 @@
         "poc_exchange_duration": "5",
         "poc_validation_delay": "5",
         "poc_validation_duration": "20",
-        "set_new_validators_delay": "120",
-        "inference_validation_cutoff": "80",
+        "set_new_validators_delay": "30",
+        "inference_validation_cutoff": "20",
         "default_unit_of_compute_price": "100"
         },
         "bandwidth_limits_params": {
