@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/productscience/inference/x/inference/types"
 )
@@ -23,7 +24,7 @@ func createNewParticipant(ctx sdk.Context, msg *types.MsgSubmitNewParticipant) t
 		JoinHeight:        ctx.BlockHeight(),
 		LastInferenceTime: 0,
 		InferenceUrl:      msg.GetUrl(),
-		Status:            types.ParticipantStatus_ACTIVE,
+		Status:            types.ParticipantStatus_RAMPING,
 		ValidatorKey:      msg.GetValidatorKey(),
 		WorkerPublicKey:   msg.GetWorkerKey(),
 		CurrentEpochStats: &types.CurrentEpochStats{},
