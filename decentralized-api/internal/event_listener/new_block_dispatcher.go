@@ -306,14 +306,14 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 	// Check for PoC start for the next epoch. This is the most important transition.
 	if epochContext.IsStartOfPocStage(blockHeight) {
 
-		logging.Info("IsStartOfPocStage: sending StartPoCEvent to the PoC orchestrator", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
+		logging.Info("DapiStage:IsStartOfPocStage: sending StartPoCEvent to the PoC orchestrator", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
 		d.randomSeedManager.GenerateSeed(epochContext.EpochIndex)
 		return
 	}
 
 	// Check for PoC validation stage transitions
 	if epochContext.IsEndOfPoCStage(blockHeight) {
-		logging.Info("IsEndOfPoCStage. Calling MoveToValidationStage", types.Stages,
+		logging.Info("DapiStage:IsEndOfPoCStage. Calling MoveToValidationStage", types.Stages,
 			"blockHeigh", blockHeight, "blockHash", blockHash)
 		command := broker.NewInitValidateCommand()
 		err := d.nodeBroker.QueueMessage(command)
@@ -324,13 +324,14 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 	}
 
 	if epochContext.IsStartOfPoCValidationStage(blockHeight) {
-		logging.Info("IsStartOfPoCValidationStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
+		logging.Info("DapiStage:IsStartOfPoCValidationStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
 		go func() {
 			d.nodePocOrchestrator.ValidateReceivedBatches(blockHeight)
 		}()
 	}
 
 	if epochContext.IsEndOfPoCValidationStage(blockHeight) {
+		logging.Info("DapiStage:IsEndOfPoCValidationStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
 		command := broker.NewInferenceUpAllCommand()
 		err := d.nodeBroker.QueueMessage(command)
 		if err != nil {
@@ -342,14 +343,14 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 
 	// Check for other stage transitions
 	if epochContext.IsSetNewValidatorsStage(blockHeight) {
-		logging.Info("IsSetNewValidatorsStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
+		logging.Info("DapiStage:IsSetNewValidatorsStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
 		go func() {
 			d.randomSeedManager.ChangeCurrentSeed()
 		}()
 	}
 
 	if epochContext.IsClaimMoneyStage(blockHeight) {
-		logging.Info("IsClaimMoneyStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
+		logging.Info("DapiStage:IsClaimMoneyStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
 
 		// Get the previous epoch seed for validation recovery
 		previousSeed := d.configManager.GetPreviousSeed()

@@ -95,8 +95,8 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 		k.LogInfo("Validation sharing decision", types.Validation, "inferenceId", inference.InferenceId, "validator", msg.Creator, "shouldShare", shouldShare, "information", information)
 		if shouldShare {
 			k.shareWorkWithValidators(ctx, inference, msg, &executor)
+			inference.ValidatedBy = append(inference.ValidatedBy, msg.Creator)
 		}
-		inference.ValidatedBy = append(inference.ValidatedBy, msg.Creator)
 		executor.ConsecutiveInvalidInferences = 0
 		executor.CurrentEpochStats.ValidatedInferences++
 	} else {
@@ -203,7 +203,7 @@ func (k msgServer) validateAdjustments(adjustments []calculations.Adjustment, ms
 			if adjustment.WorkAdjustment > 0 {
 				k.LogError("Validation adjustment for existing validator cannot be positive", types.Validation, "adjustment", adjustment)
 			} else {
-				negativeAdjustmentTotal += adjustment.WorkAdjustment
+				negativeAdjustmentTotal -= adjustment.WorkAdjustment
 			}
 		}
 	}

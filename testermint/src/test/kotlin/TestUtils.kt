@@ -28,9 +28,9 @@ fun verifySettledInferences(
     beforeParticipants: List<Participant>,
     startLastRewardedEpoch: Long
 ) {
-    logSection("Waiting for settlement and claims")
     // More than just debugging, this forces the evaluation of the sequence
     val allInferences = inferences.toList()
+    logSection("Waiting for settlement and claims")
     highestFunded.waitForStage(EpochStage.START_OF_POC)
     highestFunded.waitForStage(EpochStage.CLAIM_REWARDS, offset = 2)
 
