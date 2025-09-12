@@ -366,10 +366,7 @@ func (s *InferenceValidator) validateInferenceAndSendValMessage(inf types.Infere
 			// Final attempt failed - check if it's ErrNoNodesAvailable for special handling
 			if errors.Is(err, broker.ErrNoNodesAvailable) {
 				logging.Warn("Failed to validate inference after all retry attempts. No nodes available, probably unsupported model.", types.Validation, "id", inf.InferenceId, "attempts", maxRetries, "error", err)
-				valResult = ModelNotSupportedValidationResult{
-					InferenceId: inf.InferenceId,
-				}
-				break
+				return
 			} else {
 				logging.Error("Failed to validate inference after all retry attempts", types.Validation,
 					"id", inf.InferenceId,
