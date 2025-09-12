@@ -92,7 +92,7 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 				k.LogInfo("Adjusting executor balance for validation", types.Validation, "executor", executor.Address, "adjustment", adjustment.WorkAdjustment)
 				k.LogInfo("Adjusting executor CoinBalance for validation", types.Balances, "executor", executor.Address, "adjustment", adjustment.WorkAdjustment, "coin_balance", executor.CoinBalance)
 				if adjustment.WorkAdjustment < 0 {
-					k.BankKeeper.LogSubAccountTransaction(ctx, msg.Creator, adjustment.ParticipantId, types.OwedSubAccount, types.GetCoin(-adjustment.WorkAdjustment), "share_validation_executor:"+inference.InferenceId)
+					k.SafeLogSubAccountTransaction(ctx, msg.Creator, adjustment.ParticipantId, types.OwedSubAccount, -adjustment.WorkAdjustment, "share_validation_executor:"+inference.InferenceId)
 				}
 			} else {
 				worker, found := k.GetParticipant(ctx, adjustment.ParticipantId)
@@ -104,7 +104,7 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 				k.LogInfo("Adjusting worker balance for validation", types.Validation, "worker", worker.Address, "adjustment", adjustment.WorkAdjustment)
 				k.LogInfo("Adjusting worker CoinBalance for validation", types.Balances, "worker", worker.Address, "adjustment", adjustment.WorkAdjustment, "coin_balance", worker.CoinBalance)
 				if adjustment.WorkAdjustment < 0 {
-					k.BankKeeper.LogSubAccountTransaction(ctx, msg.Creator, adjustment.ParticipantId, types.OwedSubAccount, types.GetCoin(-adjustment.WorkAdjustment), "share_validation_executor:"+inference.InferenceId)
+					k.SafeLogSubAccountTransaction(ctx, msg.Creator, adjustment.ParticipantId, types.OwedSubAccount, -adjustment.WorkAdjustment, "share_validation_executor:"+inference.InferenceId)
 				}
 				k.SetParticipant(ctx, worker)
 			}
