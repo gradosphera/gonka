@@ -132,7 +132,6 @@ func (ma *ModelAssigner) setModelsForParticipants(ctx context.Context, participa
 		p.Models = supportedModels
 		ma.LogInfo("Participant models and ML nodes updated before 50% allocation", types.EpochGroup, "flow_context", FlowContext, "step", "pre_50_percent_alloc", "participant_index", p.Index, "supported_models", p.Models, "ml_nodes", p.MlNodes)
 
-		// Task 6.2.2: Apply 50% weight allocation logic
 		ma.apply50PercentWeightAllocation(upcomingEpoch, p, supportedModels)
 		ma.LogInfo("Finished 50% weight allocation", types.EpochGroup, "flow_context", FlowContext, "step", "post_50_percent_alloc", "participant_index", p.Index, "final_ml_nodes", p.MlNodes)
 	}

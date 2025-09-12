@@ -41,7 +41,7 @@ var (
 
 var _ paramtypes.ParamSet = (*Params)(nil)
 
-// ParamKeyTable the param key table for launch module
+// ParamKeyTable the param key table for inference module
 func ParamKeyTable() paramtypes.KeyTable {
 	return paramtypes.NewKeyTable().RegisterParamSet(&Params{})
 }
@@ -159,7 +159,7 @@ func DefaultCollateralParams() *CollateralParams {
 func DefaultBitcoinRewardParams() *BitcoinRewardParams {
 	return &BitcoinRewardParams{
 		UseBitcoinRewards:          true,
-		InitialEpochReward:         285000000000000,             // 285,000 gonka coins per epoch (285,000 * 1,000,000,000 nicoins)
+		InitialEpochReward:         285000000000000,             // 285,000 gonka coins per epoch (285,000 * 1,000,000,000 ngonka)
 		DecayRate:                  DecimalFromFloat(-0.000475), // Exponential decay rate per epoch
 		GenesisEpoch:               1,                           // Starting epoch for Bitcoin-style calculations (since epoch 0 is skipped)
 		UtilizationBonusFactor:     DecimalFromFloat(0.5),       // Multiplier for utilization bonuses (Phase 2)
@@ -174,14 +174,13 @@ func DefaultDynamicPricingParams() *DynamicPricingParams {
 		StabilityZoneUpperBound:   DecimalFromFloat(0.60), // Upper bound of stability zone (60%)
 		PriceElasticity:           DecimalFromFloat(0.05), // Price elasticity factor (5% max change)
 		UtilizationWindowDuration: 60,                     // Utilization calculation window (60 seconds)
-		MinPerTokenPrice:          1,                      // Minimum per-token price floor (1 nicoin)
-		BasePerTokenPrice:         100,                    // Initial per-token price after grace period (100 nicoins)
+		MinPerTokenPrice:          1,                      // Minimum per-token price floor (1 ngonka)
+		BasePerTokenPrice:         100,                    // Initial per-token price after grace period (100 ngonka)
 		GracePeriodEndEpoch:       90,                     // Grace period ends at epoch 90
-		GracePeriodPerTokenPrice:  0,                      // Free inference during grace period (0 nicoins)
+		GracePeriodPerTokenPrice:  0,                      // Free inference during grace period (0 ngonka)
 	}
 }
 
-// ParamSetPairs get the params.ParamSet: Pretty sure this is deprecated
 func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 	return paramtypes.ParamSetPairs{}
 }
@@ -306,9 +305,6 @@ func (p Params) Validate() error {
 	if err := p.EpochParams.Validate(); err != nil {
 		return err
 	}
-	// if err := p.PocParams.Validate(); err != nil {
-	// 	return err
-	// }
 	if err := p.CollateralParams.Validate(); err != nil {
 		return err
 	}

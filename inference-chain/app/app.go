@@ -162,7 +162,6 @@ type App struct {
 	// Wasm
 	WasmKeeper       wasmkeeper.Keeper
 	ScopedWasmKeeper capabilitykeeper.ScopedKeeper
-	//ContractKeeper   *wasmkeeper.PermissionedKeeper
 
 	BookkeeperKeeper      bookkeepermodulekeeper.Keeper
 	InferenceKeeper       inferencemodulekeeper.Keeper
@@ -172,7 +171,6 @@ type App struct {
 	GenesistransferKeeper genesistransfermodulekeeper.Keeper
 	// this line is used by starport scaffolding # stargate/app/keeperDeclaration
 
-	// simulation manager
 	sm *module.SimulationManager
 }
 
@@ -244,45 +242,6 @@ func New(
 				// Supply the logger
 				app.GetWasmKeeper,
 				logger,
-
-				// ADVANCED CONFIGURATION
-				//
-				// AUTH
-				//
-				// For providing a custom function required in auth to generate custom account types
-				// add it below. By default the auth module uses simulation.RandomGenesisAccounts.
-				//
-				// authtypes.RandomGenesisAccountsFn(simulation.RandomGenesisAccounts),
-				//
-				// For providing a custom a base account type add it below.
-				// By default the auth module uses authtypes.ProtoBaseAccount().
-				//
-				// func() sdk.AccountI { return authtypes.ProtoBaseAccount() },
-				//
-				// For providing a different address codec, add it below.
-				// By default the auth module uses a Bech32 address codec,
-				// with the prefix defined in the auth module configuration.
-				//
-				// func() address.Codec { return <- custom address codec type -> }
-
-				//
-				// STAKING
-				//
-				// For provinding a different validator and consensus address codec, add it below.
-				// By default the staking module uses the bech32 prefix provided in the auth config,
-				// and appends "valoper" and "valcons" for validator and consensus addresses respectively.
-				// When providing a custom address codec in auth, custom address codecs must be provided here as well.
-				//
-				// func() runtime.ValidatorAddressCodec { return <- custom validator address codec type -> }
-				// func() runtime.ConsensusAddressCodec { return <- custom consensus address codec type -> }
-
-				//
-				// MINT
-				//
-
-				// For providing a custom inflation function for x/mint add here your
-				// custom function that implements the minttypes.InflationCalculationFn
-				// interface.
 			),
 		)
 	)
@@ -320,38 +279,6 @@ func New(
 	); err != nil {
 		panic(err)
 	}
-
-	// Below we could construct and set an application specific mempool and
-	// ABCI 1.0 PrepareProposal and ProcessProposal handlers. These defaults are
-	// already set in the SDK's BaseApp, this shows an example of how to override
-	// them.
-	//
-	// Example:
-	//
-	// app.App = appBuilder.Build(...)
-	// nonceMempool := mempool.NewSenderNonceMempool()
-	// abciPropHandler := NewDefaultProposalHandler(nonceMempool, app.App.BaseApp)
-	//
-	// app.App.BaseApp.SetMempool(nonceMempool)
-	// app.App.BaseApp.SetPrepareProposal(abciPropHandler.PrepareProposalHandler())
-	// app.App.BaseApp.SetProcessProposal(abciPropHandler.ProcessProposalHandler())
-	//
-	// Alternatively, you can construct BaseApp options, append those to
-	// baseAppOptions and pass them to the appBuilder.
-	//
-	// Example:
-	//
-	// prepareOpt = func(app *baseapp.BaseApp) {
-	// 	abciPropHandler := baseapp.NewDefaultProposalHandler(nonceMempool, app)
-	// 	app.SetPrepareProposal(abciPropHandler.PrepareProposalHandler())
-	// }
-	// baseAppOptions = append(baseAppOptions, prepareOpt)
-	//
-	// create and set vote extension handler
-	// voteExtOp := func(bApp *baseapp.BaseApp) {
-	// 	voteExtHandler := NewVoteExtensionHandler()
-	// 	voteExtHandler.SetHandlers(bApp)
-	// }
 
 	app.App = appBuilder.Build(db, traceStore, baseAppOptions...)
 
@@ -395,16 +322,6 @@ func New(
 
 	// Setup upgrade handlers if needed
 	app.setupUpgradeHandlers()
-	// A custom InitChainer can be set if extra pre-init-genesis logic is required.
-	// By default, when using app wiring enabled module, this is not required.
-	// For instance, the upgrade module will set automatically the module version map in its init genesis thanks to app wiring.
-	// However, when registering a module manually (i.e. that does not support app wiring), the module version map
-	// must be set manually as follow. The upgrade module will de-duplicate the module version map.
-	//
-	// app.SetInitChainer(func(ctx sdk.Context, req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
-	// 	app.UpgradeKeeper.SetModuleVersionMap(ctx, app.ModuleManager.GetVersionMap())
-	// 	return app.App.InitChainer(ctx, req)
-	// })
 
 	if err := app.Load(loadLatest); err != nil {
 		return nil, err

@@ -161,7 +161,7 @@ func calculateEnhancedPower(ctx context.Context, k keeper.Keeper, computeResults
 	return enhancedResults, enhancedTotalPower
 }
 
-// validateGuardianEnhancementResults ensures enhancement was applied correctly
+// ValidateGuardianEnhancementResults ensures enhancement was applied correctly
 func ValidateGuardianEnhancementResults(original []stakingkeeper.ComputeResult, enhanced []stakingkeeper.ComputeResult, enhancedTotalPower int64) error {
 	// Check participant count consistency
 	if len(original) != len(enhanced) {

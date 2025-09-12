@@ -17,7 +17,6 @@ func (k Keeper) InferenceParticipant(goCtx context.Context, req *types.QueryInfe
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// TODO: Process the query
 	addr, err := sdk.AccAddressFromBech32(req.Address)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid address")

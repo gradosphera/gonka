@@ -25,12 +25,6 @@ var IgnoreDuplicateDenomRegistration bool
 func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) {
 	// Observability: start of InitGenesis
 	k.LogInfo("InitGenesis: starting module genesis", types.System)
-	// PRTODO: set active participants here, but how?
-	// Set all the epochGroupData
-	// Add explicit InitGenesis method for setting epoch data
-	/*	for _, elem := range genState.EpochGroupDataList {
-		k.SetEpochGroupData(ctx, elem)
-	}*/
 	InitGenesisEpoch(ctx, k)
 
 	InitHoldingAccounts(ctx, k, genState)

@@ -162,11 +162,9 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 
 // ConsensusVersion is a sequence number for state-breaking change of the module.
 // It should be incremented on each consensus-breaking change introduced by the module.
-// To avoid wrong/empty versions, the initial version should be set to 1.
 func (AppModule) ConsensusVersion() uint64 { return 4 }
 
 // BeginBlock contains the logic that is automatically triggered at the beginning of each block.
-// The begin block implementation is optional.
 func (am AppModule) BeginBlock(ctx context.Context) error {
 	// Update dynamic pricing for all models at the start of each block
 	// This ensures consistent pricing for all inferences processed in this block
@@ -211,7 +209,6 @@ func (am AppModule) handleExpiredInference(ctx context.Context, inference types.
 }
 
 // EndBlock contains the logic that is automatically triggered at the end of each block.
-// The end block implementation is optional.
 func (am AppModule) EndBlock(ctx context.Context) error {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	blockHeight := sdkCtx.BlockHeight()
@@ -225,7 +222,6 @@ func (am AppModule) EndBlock(ctx context.Context) error {
 	epochContext := types.NewEpochContextFromEffectiveEpoch(*currentEpoch, *epochParams, blockHeight)
 
 	currentEpochGroup, err := am.keeper.GetEpochGroupForEpoch(ctx, *currentEpoch)
-	// TODO: Why error here?
 	if err != nil {
 		am.LogError("Unable to get current epoch group", types.EpochGroup, "error", err.Error())
 		return nil
@@ -489,7 +485,6 @@ func (am AppModule) addEpochMembers(ctx context.Context, upcomingEg *epochgroup.
 	validationParams := am.keeper.GetParams(ctx).ValidationParams
 
 	for _, p := range activeParticipants {
-		// FIXME: add some centralized way that'd govern key enc/dec rules
 		reputation, err := am.calculateParticipantReputation(ctx, p, validationParams)
 		if err != nil {
 			am.LogError("onSetNewValidatorsStage: Unable to calculate participant reputation", types.EpochGroup, "error", err.Error())

@@ -31,7 +31,7 @@ func ProcessStartInference(
 	blockContext BlockContext,
 	logger types.InferenceLogger,
 ) (*types.Inference, *Payments, error) {
-	// Technically, the inference should be empty, not nil!
+	// nil should not happen, but we should always check to avoid panics
 	if currentInference == nil {
 		return nil, nil, sdkerrors.Wrap(types.ErrInferenceNotFound, startMessage.InferenceId)
 	}
@@ -87,8 +87,8 @@ func ProcessStartInference(
 			logger.LogWarn("PromptTokens is 0 when StartInference is called!", types.Inferences, "inferenceId", startMessage.InferenceId)
 		}
 		escrowAmount := CalculateEscrow(currentInference, startMessage.PromptTokenCount)
-		// We are NOT setting inference.EscrowAmount here, because it will be set later after
-		// escrow is SUCCESSFULLY put in escrow.
+		// NOTE: inference.EscrowAmount is not set here. It will be set later, after escrow
+		// has SUCCESSFULLY been transferred
 		if finishedProcessed(currentInference) {
 			setEscrowForFinished(currentInference, escrowAmount, payments)
 		} else {
@@ -142,7 +142,6 @@ func ProcessFinishInference(
 	if finishMessage.PromptTokenCount != 0 {
 		currentInference.PromptTokenCount = finishMessage.PromptTokenCount
 	}
-	// TODO: What if there are discrepancies between existing values and the ones in finishMessage?
 	currentInference.RequestTimestamp = finishMessage.RequestTimestamp
 	currentInference.TransferredBy = finishMessage.TransferredBy
 	currentInference.TransferSignature = finishMessage.TransferSignature
