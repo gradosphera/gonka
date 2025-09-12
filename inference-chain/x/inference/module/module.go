@@ -183,14 +183,14 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	currentHeight := sdkCtx.BlockHeight()
-	am.LogInfo("BeginBlock: current height", types.System, "block height", currentHeight)
+	am.LogDebug("BeginBlock: current height", types.System, "block height", currentHeight)
 	if currentHeight <= 0 {
 		return nil
 	}
 
 	target := currentHeight - 1
-
-	if _, found := am.keeper.GetPendingProof(ctx, target); !found {
+	upcomingEpochId, found := am.keeper.GetPendingProof(ctx, target)
+	if !found {
 		return nil
 	}
 
@@ -203,10 +203,7 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		signedPower int64
 	)
 
-	var (
-		prevParticipants types.ActiveParticipants
-		found            bool
-	)
+	var prevParticipants types.ActiveParticipants
 
 	// new participants set is created in the end of CURRENT epoch
 	// current participants set will be PREVIOUS set for upcoming epoch
@@ -280,6 +277,7 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		AppHashHex:           strings.ToUpper(hex.EncodeToString(appHashForTarget)),
 		TotalVotingPower:     totalPower,
 		Commits:              commits,
+		EpochId:              upcomingEpochId,
 	}
 
 	if err := am.keeper.SetBlockProof(sdkCtx, proof); err != nil {

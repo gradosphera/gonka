@@ -5,7 +5,6 @@ import (
 	"decentralized-api/internal/utils"
 	"encoding/json"
 	"fmt"
-	rpcclient "github.com/cometbft/cometbft/rpc/client/http"
 	externalutils "github.com/gonka-ai/gonka-utils/go/utils"
 	"strconv"
 	"strings"
@@ -160,7 +159,11 @@ func NewOnNewBlockDispatcherFromCosmosClient(
 
 // ProcessNewBlock is the main entry point for processing new block events
 func (d *OnNewBlockDispatcher) ProcessNewBlock(ctx context.Context, blockInfo chainevents.FinalizedBlock, knownHeight int64) error {
-	d.collectGenesisBlockProof()
+	if err := d.collectGenesisBlockProof(); err != nil {
+		logging.Error("failed to collect genesis block proof", types.Stages, "height", blockInfo.Block.Header.Height, "err", err)
+		return err
+	}
+
 	height, err := strconv.ParseInt(blockInfo.Block.Header.Height, 10, 64)
 	if err != nil {
 		logging.Error("failed to parse block height", types.Stages, "height", blockInfo.Block.Header.Height, "err", err)
@@ -472,7 +475,7 @@ func (el *OnNewBlockDispatcher) collectBlockProofs(block chainevents.FinalizedBl
 		return
 	}
 
-	proofOps, err := getParticipantsProof(rpcClient, pendingProofResp.PendingProofEpochId, height)
+	proofOps, err := utils.GetParticipantsProof(rpcClient, pendingProofResp.PendingProofEpochId, height)
 	if err != nil {
 		logging.Error("EventListener: Failed to get participants proof", types.System, "error", err)
 	}
@@ -574,27 +577,4 @@ func parseFinalizedBlock(event *chainevents.JSONRPCResponse) (*chainevents.Final
 		return nil, err
 	}
 	return &block, nil
-}
-
-func getParticipantsProof(rpcClient *rpcclient.HTTP, epochId uint64, height int64) (*types.ProofOps, error) {
-	dataKey := types.ActiveParticipantsFullKey(epochId)
-
-	result, err := cosmosclient.QueryByKeyWithOptions(rpcClient, "inference", dataKey, height, true)
-	if err != nil {
-		logging.Error("Failed to query active participant. Req 2", types.Participants, "error", err)
-		return nil, err
-	}
-
-	var proofOps *types.ProofOps
-	if result.Response.ProofOps != nil {
-		proofOps = &types.ProofOps{
-			Ops: make([]types.ProofOp, 0),
-		}
-		for _, op := range result.Response.ProofOps.Ops {
-			proofOps.Ops = append(proofOps.Ops, types.ProofOp(op))
-		}
-	}
-
-	proofOps.Epoch = epochId
-	return proofOps, nil
 }

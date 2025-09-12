@@ -63,7 +63,7 @@ func NewServer(
 	g.POST("bls/request", s.postRequestThresholdSignature)
 
 	g.POST("debug/create-dummy-training-task", s.postDummyTrainingTask)
-
+	g.POST("populate-missing-proofs", s.populateMissingProofs)
 	return s
 }
 

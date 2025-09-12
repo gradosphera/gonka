@@ -196,6 +196,7 @@ type CosmosMessageClient interface {
 	SubmitGroupKeyValidationSignature(transaction *blstypes.MsgSubmitGroupKeyValidationSignature) error
 	SubmitPartialSignature(requestId []byte, slotIndices []uint32, partialSignature []byte) error
 	SubmitActiveParticipantsPendingProof(proof *types.MsgSubmitParticipantsProof) error
+	SubmitMissingProofs(tx *types.MsgSubmitActiveParticipantsProofData) error
 	NewBLSQueryClient() blstypes.QueryClient
 	NewRestrictionsQueryClient() restrictionstypes.QueryClient
 	GetAddress() string
@@ -400,6 +401,12 @@ func (icc *InferenceCosmosClient) SendTransactionAsyncWithRetry(msg sdk.Msg) (*s
 
 func (icc *InferenceCosmosClient) SendTransactionAsyncNoRetry(msg sdk.Msg) (*sdk.TxResponse, error) {
 	return icc.manager.SendTransactionAsyncNoRetry(msg)
+}
+
+func (icc *InferenceCosmosClient) SubmitMissingProofs(tx *types.MsgSubmitActiveParticipantsProofData) error {
+	tx.Creator = icc.Address
+	_, err := icc.manager.SendTransactionAsyncNoRetry(tx)
+	return err
 }
 
 func (icc *InferenceCosmosClient) GetUpgradePlan() (*upgradetypes.QueryCurrentPlanResponse, error) {

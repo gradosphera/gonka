@@ -11,11 +11,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"net/url"
-	"strconv"
-	"strings"
-
-	"github.com/cometbft/cometbft/crypto/tmhash"
 	rpcclient "github.com/cometbft/cometbft/rpc/client/http"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -24,6 +19,8 @@ import (
 	externalutils "github.com/gonka-ai/gonka-utils/go/utils"
 	"github.com/productscience/common"
 	"github.com/productscience/inference/x/inference/types"
+	"net/url"
+	"strconv"
 )
 
 // UnquoteEventValue removes JSON quotes from event values
@@ -184,15 +181,26 @@ func QueryActiveParticipants(rpcClient *rpcclient.HTTP, queryClient types.QueryC
 	}
 }
 
-func pubKeyToAddress3(pubKey string) (string, error) {
-	pubKeyBytes, err := base64.StdEncoding.DecodeString(pubKey)
+func GetParticipantsProof(rpcClient *rpcclient.HTTP, epochId uint64, height int64) (*types.ProofOps, error) {
+	dataKey := types.ActiveParticipantsFullKey(epochId)
+
+	result, err := cosmos_client.QueryByKeyWithOptions(rpcClient, "inference", dataKey, height, true)
 	if err != nil {
-		return "", err
+		logging.Error("Failed to query active participant. Req 2", types.Participants, "error", err)
+		return nil, err
 	}
 
-	valAddr := tmhash.SumTruncated(pubKeyBytes)
-	valAddrHex := strings.ToUpper(hex.EncodeToString(valAddr))
-	return valAddrHex, nil
+	if result.Response.ProofOps == nil {
+		return nil, errors.New("empty result")
+	}
+	proofOps := &types.ProofOps{
+		Ops: make([]types.ProofOp, 0),
+	}
+	for _, op := range result.Response.ProofOps.Ops {
+		proofOps.Ops = append(proofOps.Ops, types.ProofOp(op))
+	}
+	proofOps.Epoch = epochId
+	return proofOps, nil
 }
 
 func verifyProof(epoch uint64, result *coretypes.ResultABCIQuery, appHash []byte) {

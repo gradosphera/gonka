@@ -13,6 +13,14 @@ import (
 	"strings"
 )
 
+var (
+	ErrMissingProofs             = errors.New("one of the mandatory proofs missing")
+	ErrMerkleRootIsMandatory     = errors.New("merkle root is mandatory")
+	ErrInvalidHeightInBlockProof = errors.New("invalid height by block proof")
+	ErrInvalidHashInBlockProof   = errors.New("invalid hash by block proof")
+	ErrParticipantsNotFound      = errors.New("participants not found")
+)
+
 func (s msgServer) SubmitParticipantsProof(goCtx context.Context, msg *types.MsgSubmitParticipantsProof) (*types.MsgSubmitParticipantsProofResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	if msg.BlockHeight == 0 {
@@ -35,36 +43,42 @@ func (s msgServer) SubmitParticipantsProof(goCtx context.Context, msg *types.Msg
 
 func (s msgServer) SubmitMissingParticipantsProofData(ctx context.Context, msg *types.MsgSubmitActiveParticipantsProofData) (*types.MsgSubmitActiveParticipantsProofDataResponse, error) {
 	if msg.BlockHeight == 0 {
-		return nil, errors.New("block height must be set")
+		return nil, ErrEmptyBlockHeight
 	}
 
 	if msg.CurrentBlockValidatorsProof == nil ||
 		msg.NextBlockValidatorsProof == nil ||
 		msg.BlockProof == nil {
-		return nil, errors.New("one of the mandatory proofs missing")
+		s.logger.Error(ErrMissingProofs.Error())
+		return nil, ErrMissingProofs
 	}
 
 	if msg.EpochId != 0 && msg.ProofOpts == nil {
-		return nil, errors.New("merkle proof is mandatory for epoch_id > 0")
+		s.logger.Error("merkle proof is mandatory for epoch_id > 0")
+		return nil, ErrMerkleRootIsMandatory
 	}
 
 	// 1. make sure current block validators proof, next block validators proof and next block header  are really formed from N and N+1 blocks
 	if int64(msg.BlockHeight) != msg.BlockProof.Height-1 || msg.CurrentBlockValidatorsProof.BlockHeight != msg.BlockProof.Height-1 {
-		return nil, errors.New("invalid height by block proof")
+		s.logger.Error("invalid height by block proof", msg.BlockHeight, msg.CurrentBlockValidatorsProof.BlockHeight)
+		return nil, ErrInvalidHeightInBlockProof
 	}
 
 	if strings.ToUpper(msg.CurrentBlockValidatorsProof.BlockId.Hash) != strings.ToUpper(msg.BlockProof.LastBlockId.Hash) {
-		return nil, errors.New("invalid hash by block proof")
+		s.logger.Error("invalid hash by block proof", msg.CurrentBlockValidatorsProof.BlockId.Hash, msg.BlockProof.LastBlockId.Hash)
+		return nil, ErrInvalidHashInBlockProof
 	}
 
 	// 2. make sure active participants set exists for given epoch and given proofs data os for reight block
 	currentParticipants, found := s.Keeper.GetActiveParticipants(ctx, msg.EpochId)
 	if !found {
-		return nil, errors.New("participants for given epoch not found")
+		s.logger.Error("participants not found for epoch", "epoch", msg.EpochId)
+		return nil, ErrParticipantsNotFound
 	}
 
 	if currentParticipants.CreatedAtBlockHeight != int64(msg.BlockHeight) ||
 		currentParticipants.CreatedAtBlockHeight != msg.CurrentBlockValidatorsProof.BlockHeight {
+		s.logger.Error("proofs block height do not match participants block height")
 		return nil, errors.New("proofs block height do not match participants block height")
 	}
 
@@ -76,11 +90,11 @@ func (s msgServer) SubmitMissingParticipantsProofData(ctx context.Context, msg *
 		prevParticipants, found = s.Keeper.GetActiveParticipants(ctx, epoch)
 	}
 	if !found {
-		return nil, errors.New("participants for previous epoch not found")
+		s.logger.Error("participants not found for previous epoch")
+		return nil, ErrParticipantsNotFound
 	}
 
 	participantsData := make(map[string]string)
-
 	for _, participant := range prevParticipants.Participants {
 		addrHex, err := common.ConsensusKeyToConsensusAddress(participant.ValidatorKey)
 		if err != nil {
@@ -90,6 +104,7 @@ func (s msgServer) SubmitMissingParticipantsProofData(ctx context.Context, msg *
 	}
 
 	if err := verifyGivenProofs(msg, participantsData); err != nil {
+		s.logger.Error("error verifying  proofs", "block height", int64(msg.BlockHeight), "err", err)
 		return nil, err
 	}
 
@@ -106,17 +121,21 @@ func (s msgServer) SubmitMissingParticipantsProofData(ctx context.Context, msg *
 	if err := s.Keeper.SetBlockProof(ctx, types.BlockProof{
 		CreatedAtBlockHeight: int64(msg.BlockHeight),
 		AppHashHex:           hex.EncodeToString(msg.BlockProof.AppHash),
+		EpochId:              msg.EpochId,
 		Commits:              commits,
 	}); err != nil {
+		s.logger.Error("error setting block proof", "block height", int64(msg.BlockHeight), "err", err)
 		return nil, err
 	}
 
 	if err := s.Keeper.SetValidatorsProof(ctx, *msg.CurrentBlockValidatorsProof); err != nil {
+		s.logger.Error("error setting validators proof", "block height", int64(msg.BlockHeight), "err", err)
 		return nil, err
 	}
 
 	if msg.ProofOpts != nil {
 		if err := s.Keeper.SetActiveParticipantsProof(ctx, *msg.ProofOpts, msg.BlockHeight); err != nil {
+			s.logger.Error("error setting merkle root proof", "block height", int64(msg.BlockHeight), "err", err)
 			return nil, err
 		}
 	}
@@ -145,7 +164,7 @@ func verifyGivenProofs(msg *types.MsgSubmitActiveParticipantsProofData, particip
 
 	// 3. verify app hash: validators in next block must sign header of current block
 	// hash of header == hash of block id
-	lastBlockIDhashBytes, err := hex.DecodeString(msg.BlockProof.LastBlockId.Hash)
+	lastBlockIDHashBytes, err := hex.DecodeString(msg.BlockProof.LastBlockId.Hash)
 	if err != nil {
 		return err
 	}
@@ -163,7 +182,7 @@ func verifyGivenProofs(msg *types.MsgSubmitActiveParticipantsProofData, particip
 		Height:  msg.BlockProof.Height,
 		Time:    msg.BlockProof.Timestamp,
 		LastBlockID: cmttypes.BlockID{
-			Hash: lastBlockIDhashBytes,
+			Hash: lastBlockIDHashBytes,
 			PartSetHeader: cmttypes.PartSetHeader{
 				Total: uint32(msg.BlockProof.LastBlockId.PartSetHeaderTotal),
 				Hash:  partSetHeaderHash,

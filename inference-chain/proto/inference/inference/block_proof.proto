@@ -21,7 +21,8 @@ message BlockProof {
   int64 created_at_block_height = 1; // H
   string app_hash_hex           = 2; // Header(H).AppHash (from Header(H+1))
   int64 total_voting_power      = 3;
-  repeated CommitInfo commits   = 4;
+  uint64 epoch_id = 4;
+  repeated CommitInfo commits   = 5;
 }
 
 message SignatureInfo {
