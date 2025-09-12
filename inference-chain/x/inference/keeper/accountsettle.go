@@ -131,6 +131,10 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 		if err != nil {
 			k.LogError("Error getting Bitcoin settle amounts", types.Settle, "error", err)
 		}
+		if bitcoinResult.Amount < 0 {
+			k.LogError("Bitcoin reward amount is negative", types.Settle, "amount", bitcoinResult.Amount)
+			return types.ErrNegativeRewardAmount
+		}
 		rewardAmount = bitcoinResult.Amount
 	} else {
 		// Use current WorkCoins-based variable reward system with its own parameters
@@ -139,6 +143,10 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 		amounts, subsidyResult, err = GetSettleAmounts(participants.Participant, settleParameters)
 		if err != nil {
 			k.LogError("Error getting settle amounts", types.Settle, "error", err)
+		}
+		if subsidyResult.Amount < 0 {
+			k.LogError("Subsidy amount is negative", types.Settle, "amount", subsidyResult.Amount)
+			return types.ErrNegativeRewardAmount
 		}
 		rewardAmount = subsidyResult.Amount
 		// Handle cutoff logic internally for current system
@@ -170,8 +178,7 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 		if participant.Status != types.ParticipantStatus_INVALID {
 			participant.EpochsCompleted += 1
 		}
-		// TODO: Check if we need to reset status
-		k.BankKeeper.LogSubAccountTransaction(ctx, types.ModuleName, participant.Address, "balance", sdk.NewInt64Coin(types.BaseCoin, participant.CoinBalance), "settling")
+		k.SafeLogSubAccountTransaction(ctx, types.ModuleName, participant.Address, "balance", participant.CoinBalance, "settling")
 		participant.CoinBalance = 0
 		participant.CurrentEpochStats.EarnedCoins = 0
 		k.LogInfo("Participant CoinBalance reset", types.Balances, "address", participant.Address)

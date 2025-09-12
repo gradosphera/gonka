@@ -120,7 +120,7 @@ func (k msgServer) processInferencePayments(
 		inference.EscrowAmount = escrowAmount
 	}
 	if payments.EscrowAmount < 0 {
-		err := k.IssueRefund(ctx, uint64(-payments.EscrowAmount), inference.RequestedBy, "inference_refund:"+inference.InferenceId)
+		err := k.IssueRefund(ctx, -payments.EscrowAmount, inference.RequestedBy, "inference_refund:"+inference.InferenceId)
 		if err != nil {
 			k.LogError("Unable to Issue Refund for started inference", types.Payments, err)
 		}
@@ -135,7 +135,7 @@ func (k msgServer) processInferencePayments(
 		executor.CurrentEpochStats.EarnedCoins += uint64(payments.ExecutorPayment)
 		executor.CurrentEpochStats.InferenceCount++
 		executor.LastInferenceTime = inference.EndBlockTimestamp
-		k.BankKeeper.LogSubAccountTransaction(ctx, executor.Address, types.ModuleName, types.OwedSubAccount, types.GetCoin(executor.CoinBalance), "inference_finished:"+inference.InferenceId)
+		k.SafeLogSubAccountTransaction(ctx, executor.Address, types.ModuleName, types.OwedSubAccount, executor.CoinBalance, "inference_started:"+inference.InferenceId)
 		k.SetParticipant(ctx, executor)
 	}
 	return inference, nil
