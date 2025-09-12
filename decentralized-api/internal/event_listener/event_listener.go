@@ -73,6 +73,7 @@ func NewEventListener(
 		&transactionRecorder,
 		phaseTracker,
 		DefaultReconciliationConfig,
+		validator,
 	)
 
 	eventHandlers := []EventHandler{

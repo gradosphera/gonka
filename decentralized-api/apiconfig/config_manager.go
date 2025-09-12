@@ -53,7 +53,7 @@ func LoadDefaultConfigManager() (*ConfigManager, error) {
 func (cm *ConfigManager) Write() error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) Load() error {
@@ -94,7 +94,7 @@ func (cm *ConfigManager) getConfig() *Config {
 func (cm *ConfigManager) SetUpgradePlan(plan UpgradePlan) error {
 	cm.currentConfig.UpgradePlan = plan
 	logging.Info("Setting upgrade plan", types.Config, "plan", plan)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) GetUpgradePlan() UpgradePlan {
@@ -109,7 +109,7 @@ func (cm *ConfigManager) SetHeight(height int64) error {
 		cm.currentConfig.CurrentNodeVersion = newVersion
 	}
 	logging.Info("Setting height", types.Config, "height", height)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) GetCurrentNodeVersion() string {
@@ -121,7 +121,7 @@ func (cm *ConfigManager) SetValidationParams(params ValidationParamsCache) error
 	defer cm.mutex.Unlock()
 	cm.currentConfig.ValidationParams = params
 	logging.Info("Setting validation params", types.Config, "params", params)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) GetValidationParams() ValidationParamsCache {
@@ -133,7 +133,7 @@ func (cm *ConfigManager) SetBandwidthParams(params BandwidthParamsCache) error {
 	defer cm.mutex.Unlock()
 	cm.currentConfig.BandwidthParams = params
 	logging.Info("Setting bandwidth params", types.Config, "params", params)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) GetBandwidthParams() BandwidthParamsCache {
@@ -145,7 +145,7 @@ func (cm *ConfigManager) AddNodeVersion(height int64, version string) error {
 		return nil
 	}
 	logging.Info("Adding node version", types.Upgrades, "height", height, "version", version)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) GetHeight() int64 {
@@ -155,7 +155,17 @@ func (cm *ConfigManager) GetHeight() int64 {
 func (cm *ConfigManager) SetPreviousSeed(seed SeedInfo) error {
 	cm.currentConfig.PreviousSeed = seed
 	logging.Info("Setting previous seed", types.Config, "seed", seed)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
+}
+
+func (cm *ConfigManager) MarkPreviousSeedClaimed() error {
+	cm.currentConfig.PreviousSeed.Claimed = true
+	logging.Info("Marking previous seed as claimed", types.Config, "epochIndex", cm.currentConfig.PreviousSeed.EpochIndex)
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
+}
+
+func (cm *ConfigManager) IsPreviousSeedClaimed() bool {
+	return cm.currentConfig.PreviousSeed.Claimed
 }
 
 func (cm *ConfigManager) GetPreviousSeed() SeedInfo {
@@ -165,7 +175,7 @@ func (cm *ConfigManager) GetPreviousSeed() SeedInfo {
 func (cm *ConfigManager) SetCurrentSeed(seed SeedInfo) error {
 	cm.currentConfig.CurrentSeed = seed
 	logging.Info("Setting current seed", types.Config, "seed", seed)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) GetCurrentSeed() SeedInfo {
@@ -175,7 +185,7 @@ func (cm *ConfigManager) GetCurrentSeed() SeedInfo {
 func (cm *ConfigManager) SetUpcomingSeed(seed SeedInfo) error {
 	cm.currentConfig.UpcomingSeed = seed
 	logging.Info("Setting upcoming seed", types.Config, "seed", seed)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) GetUpcomingSeed() SeedInfo {
@@ -185,7 +195,7 @@ func (cm *ConfigManager) GetUpcomingSeed() SeedInfo {
 func (cm *ConfigManager) SetNodes(nodes []InferenceNodeConfig) error {
 	cm.currentConfig.Nodes = nodes
 	logging.Info("Setting nodes", types.Config, "nodes", nodes)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) CreateWorkerKey() (string, error) {
@@ -280,7 +290,13 @@ func readConfig(provider koanf.Provider) (Config, error) {
 	return config, nil
 }
 
-func writeConfig(config Config, writer WriteCloser) error {
+func writeConfig(config Config, writerProvider WriteCloserProvider) error {
+	// Skip writing in tests where WriterProvider is nil
+	if writerProvider == nil {
+		return nil
+	}
+
+	writer := writerProvider.GetWriter()
 	k := koanf.New(".")
 	parser := yaml.Parser()
 	err := k.Load(structs.Provider(config, "koanf"), nil)

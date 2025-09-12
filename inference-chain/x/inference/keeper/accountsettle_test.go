@@ -162,7 +162,7 @@ func TestSingleSettle(t *testing.T) {
 	result, newCoin, err := inference.GetSettleAmounts([]types.Participant{participant1}, &defaultSettleParameters)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(result))
-	require.Equal(t, expectedRewardCoin, newCoin.Amount)
+	require.Equal(t, expectedRewardCoin, uint64(newCoin.Amount))
 	p1Result := result[0]
 	require.Equal(t, uint64(1000), p1Result.Settle.WorkCoins)
 	require.Equal(t, uint64(expectedRewardCoin), p1Result.Settle.RewardCoins)
@@ -183,7 +183,7 @@ func TestEvenSettle(t *testing.T) {
 	result, newCoin, err := inference.GetSettleAmounts([]types.Participant{participant1, participant2}, &defaultSettleParameters)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(result))
-	require.Equal(t, expectedRewardCoin, newCoin.Amount)
+	require.Equal(t, expectedRewardCoin, uint64(newCoin.Amount))
 	p1Result := result[0]
 	require.Equal(t, uint64(1000), p1Result.Settle.WorkCoins)
 	require.Equal(t, uint64(expectedRewardCoin/2), p1Result.Settle.RewardCoins)
