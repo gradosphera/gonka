@@ -106,7 +106,7 @@ func (s *InferenceValidator) shouldValidateInference(
 // DetectMissedValidations identifies which validations were missed for a specific epoch
 // Returns a list of inference objects that the current participant should have validated but didn't
 func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int64) ([]types.Inference, error) {
-	logging.Info("Starting missed validation detection", types.Validation, "epochIndex", epochIndex, "seed", seed)
+	logging.Info("Starting missed validation detection", types.ValidationRecovery, "epochIndex", epochIndex, "seed", seed)
 
 	queryClient := s.recorder.NewInferenceQueryClient()
 	address := s.recorder.GetAddress()
@@ -114,7 +114,7 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 	// Get all inferences (automatically pruned to recent 2-3 epochs)
 	allInferencesResp, err := queryClient.InferenceAll(s.recorder.GetContext(), &types.QueryAllInferenceRequest{})
 	if err != nil {
-		logging.Error("Failed to query all inferences", types.Validation, "error", err)
+		logging.Error("Failed to query all inferences", types.ValidationRecovery, "error", err)
 		return nil, fmt.Errorf("failed to query all inferences: %w", err)
 	}
 
@@ -127,11 +127,11 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 	}
 
 	if len(epochInferences) == 0 {
-		logging.Info("No inferences found for epoch", types.Validation, "epochIndex", epochIndex)
+		logging.Info("No inferences found for epoch", types.ValidationRecovery, "epochIndex", epochIndex)
 		return []types.Inference{}, nil
 	}
 
-	logging.Info("Found inferences for epoch", types.Validation, "epochIndex", epochIndex, "count", len(epochInferences))
+	logging.Info("Found inferences for epoch", types.ValidationRecovery, "epochIndex", epochIndex, "count", len(epochInferences))
 
 	// Create a map for quick lookup of inferences by ID
 	inferenceMap := make(map[string]types.Inference)
@@ -146,14 +146,14 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 		Requester: address,
 	})
 	if err != nil {
-		logging.Error("Failed to get validation parameters", types.Validation, "error", err)
+		logging.Error("Failed to get validation parameters", types.ValidationRecovery, "error", err)
 		return nil, fmt.Errorf("failed to get validation parameters: %w", err)
 	}
 
 	// Get validation params
 	params, err := queryClient.Params(s.recorder.GetContext(), &types.QueryParamsRequest{})
 	if err != nil {
-		logging.Error("Failed to get params", types.Validation, "error", err)
+		logging.Error("Failed to get params", types.ValidationRecovery, "error", err)
 		return nil, fmt.Errorf("failed to get params: %w", err)
 	}
 
@@ -170,12 +170,24 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 			alreadyValidated[inferenceId] = true
 		}
 	} else {
-		logging.Warn("Failed to get epoch group validations or no validations found", types.Validation, "error", err, "participant", address, "epochIndex", epochIndex)
+		logging.Warn("Failed to get epoch group validations or no validations found", types.ValidationRecovery, "error", err, "participant", address, "epochIndex", epochIndex)
+	}
+
+	nodes := s.configManager.GetNodes()
+	supportedModels := make(map[string]bool)
+	for _, node := range nodes {
+		for model, _ := range node.Models {
+			supportedModels[model] = true
+		}
 	}
 
 	// Check each inference to see if it should have been validated but wasn't
 	var missedValidations []types.Inference
 	for _, inferenceDetails := range validationParamsResp.Details {
+		if !supportedModels[inferenceDetails.Model] {
+			logging.Info("Skipping inference - model not supported by any node", types.ValidationRecovery, "inferenceId", inferenceDetails.InferenceId, "model", inferenceDetails.Model)
+			continue
+		}
 		// Check if this participant should validate this inference
 		shouldValidate, message := s.shouldValidateInference(
 			inferenceDetails,
@@ -184,7 +196,7 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 			address,
 			params.Params.ValidationParams)
 
-		logging.Debug("Validation check result", types.Validation,
+		logging.Debug("Validation check result", types.ValidationRecovery,
 			"inferenceId", inferenceDetails.InferenceId,
 			"shouldValidate", shouldValidate,
 			"message", message,
@@ -194,14 +206,14 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 		if shouldValidate && !alreadyValidated[inferenceDetails.InferenceId] {
 			if inference, exists := inferenceMap[inferenceDetails.InferenceId]; exists {
 				missedValidations = append(missedValidations, inference)
-				logging.Info("Found missed validation", types.Validation, "inferenceId", inferenceDetails.InferenceId)
+				logging.Info("Found missed validation", types.ValidationRecovery, "inferenceId", inferenceDetails.InferenceId)
 			} else {
-				logging.Warn("Inference not found in map", types.Validation, "inferenceId", inferenceDetails.InferenceId)
+				logging.Warn("Inference not found in map", types.ValidationRecovery, "inferenceId", inferenceDetails.InferenceId)
 			}
 		}
 	}
 
-	logging.Info("Missed validation detection complete", types.Validation,
+	logging.Info("Missed validation detection complete", types.ValidationRecovery,
 		"epochIndex", epochIndex,
 		"totalInferences", len(epochInferences),
 		"missedValidations", len(missedValidations))
@@ -214,11 +226,11 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 // It waits for all validations to complete before returning
 func (s *InferenceValidator) ExecuteRecoveryValidations(missedInferences []types.Inference) {
 	if len(missedInferences) == 0 {
-		logging.Info("No missed validations to execute", types.Validation)
+		logging.Info("No missed validations to execute", types.ValidationRecovery)
 		return
 	}
 
-	logging.Info("Starting recovery validation execution", types.Validation, "missedValidations", len(missedInferences))
+	logging.Info("Starting recovery validation execution", types.ValidationRecovery, "missedValidations", len(missedInferences))
 
 	var wg sync.WaitGroup
 
@@ -228,7 +240,7 @@ func (s *InferenceValidator) ExecuteRecoveryValidations(missedInferences []types
 		go func(inference types.Inference) {
 			defer wg.Done()
 
-			logging.Info("Executing recovery validation", types.Validation, "inferenceId", inference.InferenceId)
+			logging.Info("Executing recovery validation", types.ValidationRecovery, "inferenceId", inference.InferenceId)
 
 			// Use existing validation infrastructure
 			// The validateInferenceAndSendValMessage function handles all validation logic, node locking, and message sending
@@ -236,15 +248,15 @@ func (s *InferenceValidator) ExecuteRecoveryValidations(missedInferences []types
 			concreteRecorder := s.recorder.(*cosmosclient.InferenceCosmosClient)
 			s.validateInferenceAndSendValMessage(inference, *concreteRecorder, false)
 
-			logging.Info("Recovery validation completed", types.Validation, "inferenceId", inference.InferenceId)
+			logging.Info("Recovery validation completed", types.ValidationRecovery, "inferenceId", inference.InferenceId)
 		}(inf)
 	}
 
 	// Wait for all recovery validations to complete
-	logging.Info("Waiting for all recovery validations to complete", types.Validation, "count", len(missedInferences))
+	logging.Info("Waiting for all recovery validations to complete", types.ValidationRecovery, "count", len(missedInferences))
 	wg.Wait()
 
-	logging.Info("All recovery validations completed", types.Validation, "count", len(missedInferences))
+	logging.Info("All recovery validations completed", types.ValidationRecovery, "count", len(missedInferences))
 }
 
 func (s *InferenceValidator) SampleInferenceToValidate(ids []string, transactionRecorder cosmosclient.InferenceCosmosClient) {

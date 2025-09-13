@@ -99,7 +99,7 @@ class MockServerInferenceMock(private val baseUrl: String, val name: String) : I
         streamDelay: Duration,
         segment: String,
         model: String?
-    ): StubMapping? = this.setInferenceResponse(openAiJson.toJson(openAIResponse), delay, streamDelay, segment, model)
+    ): StubMapping? = this.setInferenceResponse(openAiJson.toJson(openAIResponse.copy(model = model ?: openAIResponse.model)), delay, streamDelay, segment, model)
 
     /**
      * Sets an error response for the inference endpoint.

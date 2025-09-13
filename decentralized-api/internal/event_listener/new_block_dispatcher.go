@@ -460,19 +460,19 @@ func getCommandForPhase(phaseInfo chainphase.EpochState) (broker.Command, *chan 
 // It accepts the seed as a parameter to avoid race conditions with ChangeCurrentSeed()
 func (d *OnNewBlockDispatcher) executeMissedValidationRecoveryWithSeed(previousEpochIndex uint64, previousSeed apiconfig.SeedInfo) {
 	if d.validator == nil {
-		logging.Warn("Missed validation recovery skipped: validator not available", types.Validation)
+		logging.Warn("Missed validation recovery skipped: validator not available", types.ValidationRecovery)
 		return
 	}
 
 	// Check for genesis epoch
 	if previousEpochIndex == 0 && previousSeed.EpochIndex == 0 {
-		logging.Info("Missed validation recovery skipped: genesis epoch", types.Validation, "previousEpochIndex", previousEpochIndex)
+		logging.Info("Missed validation recovery skipped: genesis epoch", types.ValidationRecovery, "previousEpochIndex", previousEpochIndex)
 		return
 	}
 
 	// Check if seed is valid
 	if previousSeed.Seed == 0 {
-		logging.Warn("Missed validation recovery skipped: invalid seed", types.Validation,
+		logging.Warn("Missed validation recovery skipped: invalid seed", types.ValidationRecovery,
 			"previousEpochIndex", previousEpochIndex,
 			"seedEpochIndex", previousSeed.EpochIndex)
 		return
@@ -480,31 +480,31 @@ func (d *OnNewBlockDispatcher) executeMissedValidationRecoveryWithSeed(previousE
 
 	// Verify seed epoch matches (this should always be true now, but good to verify)
 	if previousSeed.EpochIndex != previousEpochIndex {
-		logging.Warn("Missed validation recovery skipped: seed epoch mismatch", types.Validation,
+		logging.Warn("Missed validation recovery skipped: seed epoch mismatch", types.ValidationRecovery,
 			"previousEpochIndex", previousEpochIndex,
 			"seedEpochIndex", previousSeed.EpochIndex)
 		return
 	}
 
-	logging.Info("Starting missed validation recovery", types.Validation,
+	logging.Info("Starting missed validation recovery", types.ValidationRecovery,
 		"previousEpochIndex", previousEpochIndex,
 		"seed", previousSeed.Seed)
 
 	// Detect missed validations for the previous epoch
 	missedInferences, err := d.validator.DetectMissedValidations(previousEpochIndex, previousSeed.Seed)
 	if err != nil {
-		logging.Error("Failed to detect missed validations", types.Validation,
+		logging.Error("Failed to detect missed validations", types.ValidationRecovery,
 			"previousEpochIndex", previousEpochIndex,
 			"error", err)
 		return
 	}
 
 	if len(missedInferences) == 0 {
-		logging.Info("No missed validations found for recovery", types.Validation, "previousEpochIndex", previousEpochIndex)
+		logging.Info("No missed validations found for recovery", types.ValidationRecovery, "previousEpochIndex", previousEpochIndex)
 		return
 	}
 
-	logging.Info("Found missed validations, executing recovery", types.Validation,
+	logging.Info("Found missed validations, executing recovery", types.ValidationRecovery,
 		"previousEpochIndex", previousEpochIndex,
 		"missedCount", len(missedInferences))
 
@@ -513,7 +513,7 @@ func (d *OnNewBlockDispatcher) executeMissedValidationRecoveryWithSeed(previousE
 
 	time.Sleep(4 * time.Minute)
 
-	logging.Info("Missed validation recovery completed", types.Validation,
+	logging.Info("Missed validation recovery completed", types.ValidationRecovery,
 		"previousEpochIndex", previousEpochIndex,
 		"recoveredCount", len(missedInferences))
 }

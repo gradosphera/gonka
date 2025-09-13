@@ -54,7 +54,8 @@ data class ChainNode(
 data class SeedInfo(
     val epochIndex: Long,
     val seed: Long,
-    val signature: String
+    val signature: String,
+    val claimed: Boolean,
 )
 
 data class MlNodeKeyConfig(

@@ -197,13 +197,15 @@ func (k msgServer) validateAdjustments(adjustments []calculations.Adjustment, ms
 			if adjustment.WorkAdjustment < 0 {
 				k.LogError("Validation adjustment for new validator cannot be negative", types.Validation, "adjustment", adjustment)
 			} else {
+				// must be a positive number or zero
 				positiveAdjustmentTotal += adjustment.WorkAdjustment
 			}
 		} else {
 			if adjustment.WorkAdjustment > 0 {
 				k.LogError("Validation adjustment for existing validator cannot be positive", types.Validation, "adjustment", adjustment)
 			} else {
-				negativeAdjustmentTotal -= adjustment.WorkAdjustment
+				// must be a negative number or zero
+				negativeAdjustmentTotal += -adjustment.WorkAdjustment
 			}
 		}
 	}
