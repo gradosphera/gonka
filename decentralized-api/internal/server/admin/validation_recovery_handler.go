@@ -5,7 +5,6 @@ import (
 	"decentralized-api/logging"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/productscience/inference/api/inference/inference"
@@ -86,12 +85,17 @@ func (s *Server) postClaimRewardRecover(ctx echo.Context) error {
 
 	// Execute recovery validations
 	if missedCount > 0 {
-		s.validator.ExecuteRecoveryValidations(missedInferences)
+		recoveredCount, _ := s.validator.ExecuteRecoveryValidations(missedInferences)
+
 		logging.Info("Manual recovery validations completed", types.Validation,
 			"epochIndex", epochIndex,
-			"recoveredCount", missedCount)
+			"recoveredCount", recoveredCount,
+			"missedCount", missedCount,
+		)
 
-		time.Sleep(4 * time.Minute)
+		if recoveredCount > 0 {
+			s.validator.WaitForValidationsToBeRecorded()
+		}
 	}
 
 	// Claim rewards if not already claimed or if forced

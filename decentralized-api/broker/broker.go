@@ -316,6 +316,10 @@ func (b *Broker) TriggerStatusQuery() {
 	}
 }
 
+func (b *Broker) GetChainBridge() BrokerChainBridge {
+	return b.chainBridge
+}
+
 func (b *Broker) LoadNodeToBroker(node *apiconfig.InferenceNodeConfig) chan *apiconfig.InferenceNodeConfig {
 	if node == nil {
 		return nil
