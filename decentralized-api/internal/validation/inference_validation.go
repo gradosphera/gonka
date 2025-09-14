@@ -24,6 +24,8 @@ import (
 	"github.com/productscience/inference/api/inference/inference"
 	"github.com/productscience/inference/x/inference/calculations"
 	"github.com/productscience/inference/x/inference/types"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type InferenceValidator struct {
@@ -170,7 +172,11 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 			alreadyValidated[inferenceId] = true
 		}
 	} else {
-		logging.Warn("Failed to get epoch group validations or no validations found", types.ValidationRecovery, "error", err, "participant", address, "epochIndex", epochIndex)
+		if status.Code(err) == codes.NotFound {
+			logging.Info("No epoch group validations found", types.ValidationRecovery, "participant", address, "epochIndex", epochIndex)
+		} else {
+			logging.Warn("Failed to get epoch group validations", types.ValidationRecovery, "error", err, "participant", address, "epochIndex", epochIndex)
+		}
 	}
 
 	nodes := s.configManager.GetNodes()

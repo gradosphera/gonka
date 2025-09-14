@@ -21,7 +21,7 @@ data class InferencePayload(
     val actualCost: Long?,
     val escrowAmount: Long?,
     val assignedTo: String?,
-    val validatedBy: List<String> = listOf(),
+    val validatedBy: List<String>? = listOf(),
     val transferredBy: String? = null,
     val requestTimestamp: Long? = null,
     val transferSignature: String? = null,
