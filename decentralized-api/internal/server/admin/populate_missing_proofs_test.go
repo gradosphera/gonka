@@ -2,11 +2,14 @@ package admin
 
 /*func TestCalculateActiveParticipantsEpoch0(t *testing.T) {
 	const (
-		getParticipantsFirstEpochUrl = "http://89.169.103.180:8000/v1/epochs/1/participants"
+		// getParticipantsFirstEpochUrl = "http://89.169.103.180:8000/v1/epochs/1/participants"
+		// archiveNodeEndpoint          = "http://89.169.103.180:26657"
+		getParticipantsFirstEpochUrl = "http://localhost:9000/v1/epochs/1/participants"
+		archiveNodeEndpoint          = "http://localhost:26657"
 	)
 	var genesisBlockHeight = int64(1)
 
-	archiveClient, err := rpcclient.New("http://89.169.103.180:26657", "/websocket")
+	archiveClient, err := rpcclient.New(archiveNodeEndpoint, "/websocket")
 	assert.NoError(t, err)
 
 	validatorsResp, err := archiveClient.Validators(context.Background(), &genesisBlockHeight, nil, nil)
