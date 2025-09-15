@@ -80,69 +80,90 @@ private suspend fun handleChatCompletions(call: ApplicationCall, responseService
     // Get the endpoint path
     val path = call.request.path()
 
-    // Get the response from the ResponseService
-    val responseData = responseService.getInferenceResponse(path)
-    logger.info("Retrieved response data for path $path: ${responseData != null}")
+    // Get the response configuration from the ResponseService
+    val responseConfig = responseService.getInferenceResponseConfig(path)
+    logger.info("Retrieved response config for path $path: ${responseConfig != null}")
 
     // Default stream delay if not provided in the response
     var streamDelayMs = 0L
 
-    if (responseData != null) {
-        val (responseBody, delayMs, responseStreamDelayMs) = responseData
-        streamDelayMs = responseStreamDelayMs
-        logger.info("Using configured response with delay: ${delayMs}ms, stream delay: ${streamDelayMs}ms")
+    when (responseConfig) {
+        is com.productscience.mockserver.service.ResponseConfig.Success -> {
+            val responseBody = responseConfig.responseBody
+            val delayMs = responseConfig.delay
+            streamDelayMs = responseConfig.streamDelay
+            logger.info("Using configured success response with delay: ${delayMs}ms, stream delay: ${streamDelayMs}ms")
 
-        // Apply delay if specified
-        if (delayMs > 0) {
-            delay(delayMs.toLong())
+            // Apply delay if specified
+            if (delayMs > 0) {
+                delay(delayMs.toLong())
+            }
+
+            if (isStreaming) {
+                // Stream the response using SSE
+                logger.info("Streaming response using SSE with delay: ${streamDelayMs}ms")
+                sseService.streamResponse(call, responseBody, streamDelayMs)
+            } else {
+                // Set content type to application/json for non-streaming response
+                call.response.header("Content-Type", "application/json")
+
+                // Respond with the stored response
+                logger.info("Responding with configured response: $responseBody")
+                call.respondText(responseBody, ContentType.Application.Json)
+            }
         }
+        is com.productscience.mockserver.service.ResponseConfig.Error -> {
+            val errorResponse = responseConfig.errorResponse
+            val delayMs = responseConfig.delay
+            logger.info("Using configured error response with status ${errorResponse.statusCode} and delay: ${delayMs}ms")
 
-        if (isStreaming) {
-            // Stream the response using SSE
-            logger.info("Streaming response using SSE with delay: ${streamDelayMs}ms")
-            sseService.streamResponse(call, responseBody, streamDelayMs)
-        } else {
-            // Set content type to application/json for non-streaming response
+            // Apply delay if specified
+            if (delayMs > 0) {
+                delay(delayMs.toLong())
+            }
+
+            // Set content type to application/json
             call.response.header("Content-Type", "application/json")
 
-            // Respond with the stored response
-            logger.info("Responding with configured response: $responseBody")
-            call.respondText(responseBody, ContentType.Application.Json)
+            // Respond with the error
+            logger.info("Responding with error status ${errorResponse.statusCode}: ${errorResponse.toJsonBody()}")
+            call.respondText(errorResponse.toJsonBody(), ContentType.Application.Json, HttpStatusCode.fromValue(errorResponse.statusCode))
         }
-    } else {
-        logger.warn("No configured response found, using default response")
+        null -> {
+            logger.warn("No configured response found, using default response")
 
-        // Create a default response
-        val defaultResponse = mapOf(
-            "choices" to listOf(
-                mapOf(
-                    "message" to mapOf(
-                        "content" to "This is a default response from the mock server.",
-                        "role" to "assistant"
-                    ),
-                    "finish_reason" to "stop",
-                    "index" to 0
+            // Create a default response
+            val defaultResponse = mapOf(
+                "choices" to listOf(
+                    mapOf(
+                        "message" to mapOf(
+                            "content" to "This is a default response from the mock server.",
+                            "role" to "assistant"
+                        ),
+                        "finish_reason" to "stop",
+                        "index" to 0
+                    )
+                ),
+                "created" to System.currentTimeMillis() / 1000,
+                "id" to "mock-${System.currentTimeMillis()}",
+                "model" to "mock-model",
+                "object" to "chat.completion",
+                "usage" to mapOf(
+                    "completion_tokens" to 10,
+                    "prompt_tokens" to 10,
+                    "total_tokens" to 20
                 )
-            ),
-            "created" to System.currentTimeMillis() / 1000,
-            "id" to "mock-${System.currentTimeMillis()}",
-            "model" to "mock-model",
-            "object" to "chat.completion",
-            "usage" to mapOf(
-                "completion_tokens" to 10,
-                "prompt_tokens" to 10,
-                "total_tokens" to 20
             )
-        )
 
-        if (isStreaming) {
-            // Stream the default response using SSE
-            logger.info("Streaming default response using SSE with delay: ${streamDelayMs}ms")
-            val defaultResponseJson = objectMapper.writeValueAsString(defaultResponse)
-            sseService.streamResponse(call, defaultResponseJson, streamDelayMs)
-        } else {
-            // Respond with the default response as JSON
-            call.respond(HttpStatusCode.OK, defaultResponse)
+            if (isStreaming) {
+                // Stream the default response using SSE
+                logger.info("Streaming default response using SSE with delay: ${streamDelayMs}ms")
+                val defaultResponseJson = objectMapper.writeValueAsString(defaultResponse)
+                sseService.streamResponse(call, defaultResponseJson, streamDelayMs)
+            } else {
+                // Respond with the default response as JSON
+                call.respond(HttpStatusCode.OK, defaultResponse)
+            }
         }
     }
 }

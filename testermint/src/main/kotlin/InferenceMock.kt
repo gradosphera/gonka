@@ -22,6 +22,16 @@ interface IInferenceMock {
         model: String? = null
     ): StubMapping?
 
+    fun setInferenceErrorResponse(
+        statusCode: Int,
+        errorMessage: String? = null,
+        errorType: String? = null,
+        delay: Duration = Duration.ZERO,
+        streamDelay: Duration = Duration.ZERO,
+        segment: String = "",
+        model: String? = null
+    ): StubMapping?
+
     fun setPocResponse(weight: Long, scenarioName: String = "ModelState")
     fun setPocValidationResponse(weight: Long, scenarioName: String = "ModelState")
     fun getLastInferenceRequest(): InferenceRequestPayload?
@@ -64,6 +74,68 @@ class InferenceMock(port: Int, val name: String) : IInferenceMock {
     ): StubMapping? =
         this.setInferenceResponse(
             openAiJson.toJson(openAIResponse), delay, streamDelay, segment, model)
+
+    override fun setInferenceErrorResponse(
+        statusCode: Int,
+        errorMessage: String?,
+        errorType: String?,
+        delay: Duration,
+        streamDelay: Duration,
+        segment: String,
+        model: String?
+    ): StubMapping? {
+        // Generate error response body similar to the mock server's ErrorResponse
+        val message = errorMessage ?: getDefaultErrorMessage(statusCode)
+        val type = errorType ?: getDefaultErrorType(statusCode)
+        
+        val errorResponseBody = """
+            {
+              "error": {
+                "message": "$message",
+                "type": "$type",
+                "code": $statusCode
+              }
+            }
+        """.trimIndent()
+        
+        return this.givenThat(
+            post(urlEqualTo("$segment/v1/chat/completions"))
+                .apply {
+                    if (model != null) {
+                        withRequestBody(equalToJson("""{"model": "$model"}""", true, true))
+                    }
+                }
+                .willReturn(
+                    aResponse()
+                        .withFixedDelay(delay.toMillis().toInt())
+                        .withStatus(statusCode)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(errorResponseBody)
+                )
+        )
+    }
+    
+    private fun getDefaultErrorMessage(code: Int): String {
+        return when (code) {
+            400 -> "Bad Request"
+            401 -> "Unauthorized"
+            403 -> "Forbidden"
+            404 -> "Not Found"
+            429 -> "Too Many Requests"
+            500 -> "Internal Server Error"
+            502 -> "Bad Gateway"
+            503 -> "Service Unavailable"
+            else -> "Error"
+        }
+    }
+    
+    private fun getDefaultErrorType(code: Int): String {
+        return when {
+            code in 400..499 -> "invalid_request_error"
+            code in 500..599 -> "server_error"
+            else -> "error"
+        }
+    }
 
     override fun setPocResponse(weight: Long, scenarioName: String) {
         // Generate 'weight' number of nonces

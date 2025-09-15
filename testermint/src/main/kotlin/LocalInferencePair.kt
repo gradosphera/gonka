@@ -110,10 +110,14 @@ fun getLocalInferencePairs(config: ApplicationConfig): List<LocalInferencePair> 
             chainContainer.id,
             configWithName
         )
+        val apiExecutor = DockerExecutor(
+            apiContainer.id,
+            configWithName
+        )
 
         LocalInferencePair(
             node = ApplicationCLI(configWithName, nodeLogs, executor, listOf()),
-            api = ApplicationAPI(apiUrls, configWithName, dapiLogs),
+            api = ApplicationAPI(apiUrls, configWithName, dapiLogs, apiExecutor),
             mock = mockContainer?.let {
                 MockServerInferenceMock(
                     baseUrl = "http://localhost:${it.getMappedPort(8080)!!}", name = it.names.first()
@@ -343,8 +347,8 @@ data class LocalInferencePair(
         if (epochData.phase != EpochPhase.Inference ||
             startOfNextPoc - currentBlockHeight < windowSizeInBlocks
         ) {
-            logSection("Waiting for SET_NEW_VALIDATORS stage before running inference")
-            return waitForStage(EpochStage.SET_NEW_VALIDATORS)
+            logSection("Waiting for CLAIM_REWARDS stage before running inference")
+            return waitForStage(EpochStage.CLAIM_REWARDS)
         } else {
             Logger.info("Skipping wait for SET_NEW_VALIDATORS, current phase is ${epochData.phase}")
             return null

@@ -1,12 +1,12 @@
 package poc
 
 import (
+	"crypto/rand"
 	"decentralized-api/apiconfig"
 	"decentralized-api/cosmosclient"
 	"decentralized-api/logging"
 	"encoding/binary"
 	"encoding/hex"
-	"math/rand"
 
 	"github.com/productscience/inference/api/inference/inference"
 	"github.com/productscience/inference/x/inference/types"
@@ -95,17 +95,41 @@ func createNewSeed(
 	epoch uint64,
 	transactionRecorder cosmosclient.CosmosMessageClient,
 ) (*apiconfig.SeedInfo, error) {
-	newSeed := rand.Int63()
+
+	newSeed, err := getRandomSeed()
+	if err != nil {
+		logging.Error("Failed to get random seed", types.Claims, "error", err)
+		return nil, err
+	}
+	// Encode seed for signing
 	seedBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(seedBytes, uint64(newSeed))
+
 	signature, err := transactionRecorder.SignBytes(seedBytes)
 	if err != nil {
 		logging.Error("Failed to sign bytes", types.Claims, "error", err)
 		return nil, err
 	}
+
 	return &apiconfig.SeedInfo{
 		Seed:       newSeed,
 		EpochIndex: epoch,
 		Signature:  hex.EncodeToString(signature),
 	}, nil
+}
+
+func getRandomSeed() (int64, error) {
+	// Secure 8 random bytes
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		logging.Error("Failed to read crypto/rand", types.Claims, "error", err)
+		return 0, err
+	}
+
+	newSeed := int64(binary.BigEndian.Uint64(b[:]) & ((1 << 63) - 1))
+	if newSeed == 0 {
+		newSeed = 1
+	}
+	return newSeed, nil
+
 }

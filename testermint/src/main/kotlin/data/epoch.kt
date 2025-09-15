@@ -14,7 +14,16 @@ data class EpochResponse(
     val nextEpochStages: EpochStages,
     @SerializedName("epoch_params")
     val epochParams: EpochParams
-)
+) {
+    val safeForInference: Boolean =
+        if (phase == EpochPhase.Inference) {
+            val blocksUntilEnd = nextEpochStages.pocStart - blockHeight
+            blocksUntilEnd > 3
+        } else {
+            false
+        }
+
+}
 
 data class LatestEpochDto(
     val index: Long,

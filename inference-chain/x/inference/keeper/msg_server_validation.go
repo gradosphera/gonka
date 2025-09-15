@@ -7,6 +7,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/productscience/inference/x/inference/calculations"
+	"github.com/productscience/inference/x/inference/epochgroup"
 	"github.com/productscience/inference/x/inference/types"
 )
 
@@ -52,6 +53,13 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 		return nil, types.ErrParticipantCannotValidateOwnInference
 	}
 
+	for _, validator := range inference.ValidatedBy {
+		if validator == msg.Creator {
+			k.LogError("Participant has already validated this inference", types.Validation, "participant", msg.Creator, "inferenceId", msg.InferenceId)
+			return nil, types.ErrDuplicateValidation
+		}
+	}
+
 	model, err := k.GetEpochModel(ctx, inference.Model)
 	if err != nil {
 		k.LogError("Failed to get epoch model", types.Validation,
@@ -83,33 +91,12 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 		return epochGroup.Revalidate(passed, inference, msg, ctx)
 	} else if passed {
 		inference.Status = types.InferenceStatus_VALIDATED
-		originalWorkers := append([]string{inference.ExecutedBy}, inference.ValidatedBy...)
-		adjustments := calculations.ShareWork(originalWorkers, []string{msg.Creator}, inference.ActualCost)
-		inference.ValidatedBy = append(inference.ValidatedBy, msg.Creator)
-		for _, adjustment := range adjustments {
-			if adjustment.ParticipantId == executor.Address {
-				executor.CoinBalance += adjustment.WorkAdjustment
-				k.LogInfo("Adjusting executor balance for validation", types.Validation, "executor", executor.Address, "adjustment", adjustment.WorkAdjustment)
-				k.LogInfo("Adjusting executor CoinBalance for validation", types.Balances, "executor", executor.Address, "adjustment", adjustment.WorkAdjustment, "coin_balance", executor.CoinBalance)
-				if adjustment.WorkAdjustment < 0 {
-					k.SafeLogSubAccountTransaction(ctx, msg.Creator, adjustment.ParticipantId, types.OwedSubAccount, -adjustment.WorkAdjustment, "share_validation_executor:"+inference.InferenceId)
-				}
-			} else {
-				worker, found := k.GetParticipant(ctx, adjustment.ParticipantId)
-				if !found {
-					k.LogError("Participant not found for redistribution", types.Validation, "participantId", adjustment.ParticipantId)
-					continue
-				}
-				worker.CoinBalance += adjustment.WorkAdjustment
-				k.LogInfo("Adjusting worker balance for validation", types.Validation, "worker", worker.Address, "adjustment", adjustment.WorkAdjustment)
-				k.LogInfo("Adjusting worker CoinBalance for validation", types.Balances, "worker", worker.Address, "adjustment", adjustment.WorkAdjustment, "coin_balance", worker.CoinBalance)
-				if adjustment.WorkAdjustment < 0 {
-					k.SafeLogSubAccountTransaction(ctx, msg.Creator, adjustment.ParticipantId, types.OwedSubAccount, -adjustment.WorkAdjustment, "share_validation_executor:"+inference.InferenceId)
-				}
-				k.SetParticipant(ctx, worker)
-			}
+		shouldShare, information := k.inferenceIsBeforeClaimsSet(ctx, inference, epochGroup)
+		k.LogInfo("Validation sharing decision", types.Validation, "inferenceId", inference.InferenceId, "validator", msg.Creator, "shouldShare", shouldShare, "information", information)
+		if shouldShare {
+			k.shareWorkWithValidators(ctx, inference, msg, &executor)
+			inference.ValidatedBy = append(inference.ValidatedBy, msg.Creator)
 		}
-
 		executor.ConsecutiveInvalidInferences = 0
 		executor.CurrentEpochStats.ValidatedInferences++
 	} else {
@@ -146,6 +133,87 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 	return &types.MsgValidationResponse{}, nil
 }
 
+func (k msgServer) inferenceIsBeforeClaimsSet(ctx sdk.Context, inference types.Inference, group *epochgroup.EpochGroup) (bool, string) {
+	// Submitted after epoch changeover (onSetNewValidatorsStage)
+	if inference.EpochId < group.GroupData.EpochIndex {
+		return false, "Validation submitted in next epoch. InferenceEpoch: " + strconv.FormatUint(inference.EpochId, 10) + ", EpochGroupEpoch: " + strconv.FormatUint(group.GroupData.EpochIndex, 10)
+	}
+	upcomingEpoch, found := k.GetUpcomingEpoch(ctx)
+	// During regular inference time (majority case)
+	if !found {
+		// This would be before IsStartOfPocStage
+		return true, "Validation during inference epoch"
+	}
+	// Somewhere inbetween StartOfPocStage and SetNewValidatorsStage
+	// ActiveParticipants are set during EndOfPoCValidationStage, which is also when we set claims
+	_, found = k.GetActiveParticipants(ctx, upcomingEpoch.Index)
+	if found {
+		// We're AFTER EndOfPocValidationStage
+		return false, "Validation submitted after claims set but before next epoch starts"
+	} else {
+		// We're in between StartOfPocStage and EndOfPocValidationStage, before claims
+		return true, "Validation submitted after PoC start but before claims set"
+	}
+}
+
+func (k msgServer) shareWorkWithValidators(ctx sdk.Context, inference types.Inference, msg *types.MsgValidation, executor *types.Participant) {
+	originalWorkers := append([]string{inference.ExecutedBy}, inference.ValidatedBy...)
+	adjustments := calculations.ShareWork(originalWorkers, []string{msg.Creator}, inference.ActualCost)
+	k.validateAdjustments(adjustments, msg)
+	for _, adjustment := range adjustments {
+		// A note about the bookkeeping here:
+		// ShareWork will return negative adjustments for all existing shareholders, and a positive for the new (msg.Creator)
+		// We account for this by adding a negative amount to the CoinBalance. BUT, we only register the NEGATIVE adjustments,
+		// and we model them as moving money from the existing worker TO the positive
+		if adjustment.ParticipantId == executor.Address {
+			executor.CoinBalance += adjustment.WorkAdjustment
+			k.LogInfo("Adjusting executor balance for validation", types.Validation, "executor", executor.Address, "adjustment", adjustment.WorkAdjustment)
+			k.LogInfo("Adjusting executor CoinBalance for validation", types.Balances, "executor", executor.Address, "adjustment", adjustment.WorkAdjustment, "coin_balance", executor.CoinBalance)
+			if adjustment.WorkAdjustment < 0 {
+				k.SafeLogSubAccountTransaction(ctx, msg.Creator, adjustment.ParticipantId, types.OwedSubAccount, -adjustment.WorkAdjustment, "share_validation_executor:"+inference.InferenceId)
+			}
+		} else {
+			worker, found := k.GetParticipant(ctx, adjustment.ParticipantId)
+			if !found {
+				k.LogError("Participant not found for redistribution", types.Validation, "participantId", adjustment.ParticipantId)
+				continue
+			}
+			worker.CoinBalance += adjustment.WorkAdjustment
+			k.LogInfo("Adjusting worker balance for validation", types.Validation, "worker", worker.Address, "adjustment", adjustment.WorkAdjustment)
+			k.LogInfo("Adjusting worker CoinBalance for validation", types.Balances, "worker", worker.Address, "adjustment", adjustment.WorkAdjustment, "coin_balance", worker.CoinBalance)
+			if adjustment.WorkAdjustment < 0 {
+				k.SafeLogSubAccountTransaction(ctx, msg.Creator, adjustment.ParticipantId, types.OwedSubAccount, -adjustment.WorkAdjustment, "share_validation_worker:"+inference.InferenceId)
+			}
+			k.SetParticipant(ctx, worker)
+		}
+	}
+}
+
+func (k msgServer) validateAdjustments(adjustments []calculations.Adjustment, msg *types.MsgValidation) {
+	positiveAdjustmentTotal := int64(0)
+	negativeAdjustmentTotal := int64(0)
+	for _, adjustment := range adjustments {
+		if adjustment.ParticipantId == msg.Creator {
+			if adjustment.WorkAdjustment < 0 {
+				k.LogError("Validation adjustment for new validator cannot be negative", types.Validation, "adjustment", adjustment)
+			} else {
+				// must be a positive number or zero
+				positiveAdjustmentTotal += adjustment.WorkAdjustment
+			}
+		} else {
+			if adjustment.WorkAdjustment > 0 {
+				k.LogError("Validation adjustment for existing validator cannot be positive", types.Validation, "adjustment", adjustment)
+			} else {
+				// must be a negative number or zero
+				negativeAdjustmentTotal += -adjustment.WorkAdjustment
+			}
+		}
+	}
+	if positiveAdjustmentTotal != negativeAdjustmentTotal {
+		k.LogError("Validation adjustment totals do not match", types.Validation, "positiveAdjustmentTotal", positiveAdjustmentTotal, "negativeAdjustmentTotal", negativeAdjustmentTotal)
+	}
+}
+
 func (k msgServer) addInferenceToEpochGroupValidations(ctx sdk.Context, msg *types.MsgValidation, inference types.Inference) {
 	epochGroupValidations, validationsFound := k.GetEpochGroupValidations(ctx, msg.Creator, inference.EpochId)
 	if !validationsFound {
@@ -167,11 +235,13 @@ func calculateStatus(validationParameters *types.ValidationParams, participant t
 	if ProbabilityOfConsecutiveFailures(falsePositiveRate, participant.ConsecutiveInvalidInferences) < 0.000001 {
 		return types.ParticipantStatus_INVALID
 	}
+
 	zScore := CalculateZScoreFromFPR(falsePositiveRate, participant.CurrentEpochStats.ValidatedInferences, participant.CurrentEpochStats.InvalidatedInferences)
 	measurementsNeeded := MeasurementsNeeded(falsePositiveRate, uint64(validationParameters.MinRampUpMeasurements))
 	if participant.CurrentEpochStats.InferenceCount < measurementsNeeded {
 		return types.ParticipantStatus_RAMPING
 	}
+
 	if zScore > 1 {
 		return types.ParticipantStatus_INVALID
 	}

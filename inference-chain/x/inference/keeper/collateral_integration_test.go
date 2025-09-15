@@ -37,7 +37,7 @@ func setupKeeperWithMocksForIntegration(t testing.TB) (keeper.Keeper, types.MsgS
 	return k, keeper.NewMsgServerImpl(k), ctx, &mock
 }
 
-func setupRealKeepers(t testing.TB) (sdk.Context, keeper.Keeper, collateralKeeper.Keeper, types.MsgServer, collateralTypes.MsgServer) {
+func setupRealKeepers(t testing.TB) (sdk.Context, keeper.Keeper, collateralKeeper.Keeper, types.MsgServer, collateralTypes.MsgServer, *keepertest.InferenceMocks) {
 	// --- Store and Codec Setup ---
 	inferenceStoreKey := storetypes.NewKVStoreKey(types.StoreKey)
 	collateralStoreKey := storetypes.NewKVStoreKey(collateralTypes.StoreKey)
@@ -55,14 +55,23 @@ func setupRealKeepers(t testing.TB) (sdk.Context, keeper.Keeper, collateralKeepe
 
 	// --- Mock Keepers ---
 	ctrl := gomock.NewController(t)
-	bookkepingBankKeeper := keepertest.NewMockBookkeepingBankKeeper(ctrl)
-	bankViewKeeper := keepertest.NewMockBankKeeper(ctrl)
-	accountKeeper := keepertest.NewMockAccountKeeper(ctrl)
-	validatorSet := keepertest.NewMockValidatorSet(ctrl)
+	bookkepingBankMock := keepertest.NewMockBookkeepingBankKeeper(ctrl)
+	bankViewMock := keepertest.NewMockBankKeeper(ctrl)
+	accountMock := keepertest.NewMockAccountKeeper(ctrl)
+	validatorSetMock := keepertest.NewMockValidatorSet(ctrl)
 	groupMock := keepertest.NewMockGroupMessageKeeper(ctrl)
-	stakingKeeper := keepertest.NewMockStakingKeeper(ctrl)
-	streamvestingKeeper := keepertest.NewMockStreamVestingKeeper(ctrl)
-	authzKeeper := keepertest.NewMockAuthzKeeper(ctrl)
+	stakingMock := keepertest.NewMockStakingKeeper(ctrl)
+	streamvestingMock := keepertest.NewMockStreamVestingKeeper(ctrl)
+	authzMock := keepertest.NewMockAuthzKeeper(ctrl)
+	mocks := &keepertest.InferenceMocks{
+		BankKeeper:          bookkepingBankMock,
+		AccountKeeper:       accountMock,
+		GroupKeeper:         groupMock,
+		StakingKeeper:       stakingMock,
+		StreamVestingKeeper: streamvestingMock,
+		BankViewKeeper:      bankViewMock,
+		AuthzKeeper:         authzMock,
+	}
 
 	// --- Real Keepers ---
 	cKeeper := collateralKeeper.NewKeeper(
@@ -70,8 +79,8 @@ func setupRealKeepers(t testing.TB) (sdk.Context, keeper.Keeper, collateralKeepe
 		runtime.NewKVStoreService(collateralStoreKey),
 		keepertest.PrintlnLogger{},
 		authority.String(),
-		nil,                  // bank keeper
-		bookkepingBankKeeper, // bookkeeping bank keeper
+		nil,                // bank keeper
+		bookkepingBankMock, // bookkeeping bank keeper
 	)
 
 	// Create a BLS keeper for testing (similar to testutil/keeper/inference.go)
@@ -89,16 +98,16 @@ func setupRealKeepers(t testing.TB) (sdk.Context, keeper.Keeper, collateralKeepe
 		runtime.NewKVStoreService(inferenceStoreKey),
 		keepertest.PrintlnLogger{},
 		authority.String(),
-		bookkepingBankKeeper,
-		bankViewKeeper,
+		bookkepingBankMock,
+		bankViewMock,
 		groupMock,
-		validatorSet,
-		stakingKeeper,
-		accountKeeper,
+		validatorSetMock,
+		stakingMock,
+		accountMock,
 		blsKeeper,
 		cKeeper,
-		streamvestingKeeper,
-		authzKeeper,
+		streamvestingMock,
+		authzMock,
 		nil,
 	)
 
@@ -110,11 +119,11 @@ func setupRealKeepers(t testing.TB) (sdk.Context, keeper.Keeper, collateralKeepe
 	collateralMsgSrv := collateralKeeper.NewMsgServerImpl(cKeeper)
 
 	// Mock necessary bank calls
-	bookkepingBankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
-	bookkepingBankKeeper.EXPECT().SendCoinsFromModuleToAccount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
-	bookkepingBankKeeper.EXPECT().BurnCoins(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
-	bookkepingBankKeeper.EXPECT().LogSubAccountTransaction(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-	return ctx, inferenceKeeper, cKeeper, inferenceMsgSrv, collateralMsgSrv
+	bookkepingBankMock.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	bookkepingBankMock.EXPECT().SendCoinsFromModuleToAccount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	bookkepingBankMock.EXPECT().BurnCoins(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	bookkepingBankMock.EXPECT().LogSubAccountTransaction(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	return ctx, inferenceKeeper, cKeeper, inferenceMsgSrv, collateralMsgSrv, mocks
 }
 
 func TestSlashingForInvalidStatus_Integration(t *testing.T) {
@@ -190,10 +199,8 @@ func TestInvalidateInference_FullFlow_WithStatefulMock(t *testing.T) {
 
 	// --- Test Setup ---
 	// Set the epoch, which is critical for many keeper functions
-	k.SetEpoch(ctx, &types.Epoch{
-		Index: 1,
-	})
-	k.SetEffectiveEpochIndex(ctx, 1)
+	ee := setEffectiveEpoch(ctx, k, 1, mocks)
+	require.NoError(t, ee)
 
 	// Set parameters for slashing and validation
 	params := types.DefaultParams()
@@ -242,7 +249,8 @@ func TestInvalidateInference_FullFlow_WithStatefulMock(t *testing.T) {
 
 	// Mock bank keeper for the refund logic, even though cost is 0
 	mocks.BankKeeper.EXPECT().SendCoinsFromModuleToAccount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-
+	mocks.GroupKeeper.EXPECT().UpdateGroupMembers(gomock.Any(), gomock.Any())
+	mocks.GroupKeeper.EXPECT().UpdateGroupMetadata(gomock.Any(), gomock.Any())
 	// Setup the inference object that will be invalidated
 	inferenceId := "test-inference-to-trigger-invalid"
 	k.SetInference(ctx, types.Inference{
@@ -285,7 +293,7 @@ func TestInvalidateInference_FullFlow_WithStatefulMock(t *testing.T) {
 }
 
 func TestDoubleJeopardy_DowntimeThenInvalidSlash(t *testing.T) {
-	ctx, k, ck, ms, collateralMsgSrv := setupRealKeepers(t)
+	ctx, k, ck, ms, collateralMsgSrv, mocks := setupRealKeepers(t)
 	authority := k.GetAuthority()
 
 	// --- Setup Parameters ---
@@ -305,8 +313,8 @@ func TestDoubleJeopardy_DowntimeThenInvalidSlash(t *testing.T) {
 		Amount:      sdk.NewCoin(types.BaseCoin, initialCollateralAmount),
 	})
 	require.NoError(t, err)
-	k.SetEpoch(ctx, &types.Epoch{Index: 1})
-	k.SetEffectiveEpochIndex(ctx, 1)
+	ee := setEffectiveEpoch(ctx, k, 1, mocks)
+	require.NoError(t, ee)
 
 	// --- 1. First Jeopardy: Downtime Slash ---
 	// Set the participant's epoch stats to trigger downtime slashing.
@@ -362,6 +370,8 @@ func TestDoubleJeopardy_DowntimeThenInvalidSlash(t *testing.T) {
 		},
 	})
 
+	mocks.GroupKeeper.EXPECT().UpdateGroupMembers(gomock.Any(), gomock.Any())
+	mocks.GroupKeeper.EXPECT().UpdateGroupMetadata(gomock.Any(), gomock.Any())
 	// Execute the invalidation to trigger the second slash
 	_, err = ms.InvalidateInference(ctx, &types.MsgInvalidateInference{
 		Creator:     authority,

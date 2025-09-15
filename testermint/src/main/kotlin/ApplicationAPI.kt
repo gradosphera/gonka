@@ -18,6 +18,9 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 
 const val SERVER_TYPE_PUBLIC = "public"
 const val SERVER_TYPE_ML = "ml"
@@ -26,12 +29,14 @@ const val SERVER_TYPE_ADMIN = "admin"
 data class ApplicationAPI(
     val urls: Map<String, String>,
     override val config: ApplicationConfig,
-    val logOutput: LogOutput
+    val logOutput: LogOutput,
+    val executor: CliExecutor,
 ) : HasConfig {
     private fun urlFor(type: String): String =
         urls[type] ?: error("URL for type \"$type\" not found in ApplicationAPI")
 
     fun getPublicUrl() = urlFor(SERVER_TYPE_PUBLIC)
+
 
     fun getParticipants(): List<Participant> = wrapLog("GetParticipants", false) {
         val url = urlFor(SERVER_TYPE_PUBLIC)
@@ -40,6 +45,15 @@ data class ApplicationAPI(
             .responseObject<ParticipantsResponse>(gsonDeserializer(cosmosJson))
         logResponse(resp)
         resp.third.get().participants
+    }
+
+    fun getActiveParticipants(): ActiveParticipantsResponse = wrapLog("GetActiveParticipants", false) {
+        val url = urlFor(SERVER_TYPE_PUBLIC)
+        val resp = Fuel.get("$url/v1/epochs/current/participants")
+            .timeoutRead(1000 * 60)
+            .responseObject<ActiveParticipantsResponse>(gsonDeserializer(cosmosJson))
+        logResponse(resp)
+        resp.third.get()
     }
 
     fun addInferenceParticipant(inferenceParticipant: InferenceParticipant) = wrapLog("AddInferenceParticipant", true) {
@@ -313,10 +327,11 @@ data class ApplicationAPI(
     // BLS via Decentralized API
     // -----------------------
 
-    fun requestThresholdSignature(request: RequestThresholdSignatureDto): String = wrapLog("RequestThresholdSignature", true) {
-        val url = urlFor(SERVER_TYPE_ADMIN)
-        postWithStringResponse(url, "admin/v1/bls/request", request)
-    }
+    fun requestThresholdSignature(request: RequestThresholdSignatureDto): String =
+        wrapLog("RequestThresholdSignature", true) {
+            val url = urlFor(SERVER_TYPE_ADMIN)
+            postWithStringResponse(url, "admin/v1/bls/request", request)
+        }
 
     fun queryBLSSigningStatus(requestId: String): SigningStatusWrapper = wrapLog("QueryBLSSigningStatus", true) {
         val url = urlFor(SERVER_TYPE_PUBLIC)
@@ -357,6 +372,26 @@ data class ApplicationAPI(
 
         return response.third.get()
     }
+
+    /**
+     * Retrieves the API configuration from /root/.dapi/api-config.yaml using the CliExecutor.
+     * Parses the YAML content directly into an ApiConfig data class using Jackson.
+     *
+     * @return ApiConfig containing the parsed configuration
+     */
+    fun getConfig(): ApiConfig = wrapLog("GetConfig", false) {
+        val yamlOutput = executor.exec(listOf("cat", "/root/.dapi/api-config.yaml"), null)
+        val yamlContent = yamlOutput.joinToString("")
+
+        val mapper = ObjectMapper(YAMLFactory())
+            .registerKotlinModule()
+
+        // Configure Jackson to automatically convert between snake_case YAML and camelCase Kotlin properties
+        mapper.propertyNamingStrategy = com.fasterxml.jackson.databind.PropertyNamingStrategies.SNAKE_CASE
+
+        mapper.readValue(yamlContent, ApiConfig::class.java)
+    }
+
 }
 
 
@@ -431,7 +466,13 @@ fun stream(url: String, address: String, signature: String, jsonBody: String): L
  * @param jsonBody The JSON request body
  * @return A StreamConnection object that can be used to read from the stream and interrupt it
  */
-fun createStreamConnection(url: String, address: String, signature: String, jsonBody: String, timestamp: Long): StreamConnection {
+fun createStreamConnection(
+    url: String,
+    address: String,
+    signature: String,
+    jsonBody: String,
+    timestamp: Long
+): StreamConnection {
     // Set up the URL and connection
     val url = URL(url)
     val connection = url.openConnection() as HttpURLConnection

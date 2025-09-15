@@ -3,9 +3,30 @@ package com.productscience.mockserver.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.productscience.mockserver.model.OpenAIResponse
+import com.productscience.mockserver.model.ErrorResponse
 import io.ktor.http.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
+
+/**
+ * Data class to represent either a successful response or an error response configuration.
+ */
+sealed class ResponseConfig {
+    abstract val delay: Int
+    abstract val streamDelay: Long
+    
+    data class Success(
+        val responseBody: String,
+        override val delay: Int,
+        override val streamDelay: Long
+    ) : ResponseConfig()
+    
+    data class Error(
+        val errorResponse: ErrorResponse,
+        override val delay: Int,
+        override val streamDelay: Long
+    ) : ResponseConfig()
+}
 
 /**
  * Service for managing and modifying responses for various endpoints.
@@ -15,8 +36,8 @@ class ResponseService {
         .registerKotlinModule()
         .setPropertyNamingStrategy(com.fasterxml.jackson.databind.PropertyNamingStrategies.SNAKE_CASE)
 
-    // Store for inference responses by endpoint path: response body, delay, stream_delay
-    private val inferenceResponses = ConcurrentHashMap<String, Triple<String, Int, Long>>()
+    // Store for inference responses by endpoint path
+    private val inferenceResponses = ConcurrentHashMap<String, ResponseConfig>()
 
     // Store for POC responses
     private val pocResponses = ConcurrentHashMap<String, Long>()
@@ -36,7 +57,7 @@ class ResponseService {
      */
     fun setInferenceResponse(response: String, delay: Int = 0, streamDelay: Long = 0, segment: String = "", model: String? = null): String {
         val endpoint = "$segment/v1/chat/completions"
-        inferenceResponses[endpoint] = Triple(response, delay, streamDelay)
+        inferenceResponses[endpoint] = ResponseConfig.Success(response, delay, streamDelay)
         return endpoint
     }
 
@@ -62,13 +83,51 @@ class ResponseService {
     }
 
     /**
-     * Gets the response for the inference endpoint.
+     * Sets an error response for the inference endpoint.
+     * 
+     * @param statusCode The HTTP status code to return
+     * @param errorMessage Optional custom error message
+     * @param errorType Optional custom error type
+     * @param delay The delay in milliseconds before responding
+     * @param streamDelay The delay in milliseconds between SSE events when streaming
+     * @param segment Optional URL segment to prepend to the endpoint path
+     * @return The endpoint path where the error response is set
+     */
+    fun setInferenceErrorResponse(
+        statusCode: Int,
+        errorMessage: String? = null,
+        errorType: String? = null,
+        delay: Int = 0,
+        streamDelay: Long = 0,
+        segment: String = ""
+    ): String {
+        val endpoint = "$segment/v1/chat/completions"
+        val errorResponse = ErrorResponse(statusCode, errorMessage, errorType)
+        inferenceResponses[endpoint] = ResponseConfig.Error(errorResponse, delay, streamDelay)
+        return endpoint
+    }
+
+    /**
+     * Gets the response configuration for the inference endpoint.
      * 
      * @param endpoint The endpoint path
-     * @return Triple of response body, delay, and stream delay, or null if not found
+     * @return ResponseConfig object, or null if not found
+     */
+    fun getInferenceResponseConfig(endpoint: String): ResponseConfig? {
+        return inferenceResponses[endpoint]
+    }
+
+    /**
+     * Gets the response for the inference endpoint (backward compatibility).
+     * 
+     * @param endpoint The endpoint path
+     * @return Triple of response body, delay, and stream delay, or null if not found or if it's an error response
      */
     fun getInferenceResponse(endpoint: String): Triple<String, Int, Long>? {
-        return inferenceResponses[endpoint]
+        return when (val config = inferenceResponses[endpoint]) {
+            is ResponseConfig.Success -> Triple(config.responseBody, config.delay, config.streamDelay)
+            else -> null
+        }
     }
 
     /**

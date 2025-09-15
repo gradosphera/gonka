@@ -20,10 +20,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/google/uuid"
 	"github.com/productscience/inference/api/inference/inference"
 	"github.com/productscience/inference/x/inference/calculations"
 	"github.com/productscience/inference/x/inference/types"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type InferenceValidator struct {
@@ -103,35 +106,109 @@ func (s *InferenceValidator) shouldValidateInference(
 	return shouldValidate, message
 }
 
+func (s *InferenceValidator) getNodeModelsAtEpoch(epochIndex uint64, address string) (map[string]bool, error) {
+	supportedModels := make(map[string]bool)
+	parentEpochData, err := s.nodeBroker.GetChainBridge().GetEpochGroupDataByModelId(epochIndex, "")
+	if err != nil {
+		logging.Error("Failed to get epoch group data by model id", types.ValidationRecovery, "error", err)
+		return nil, fmt.Errorf("failed to get epoch group data by model id: %w", err)
+	}
+	for _, modelId := range parentEpochData.EpochGroupData.SubGroupModels {
+		subgroupResp, err := s.nodeBroker.GetChainBridge().GetEpochGroupDataByModelId(parentEpochData.EpochGroupData.EpochIndex, modelId)
+		if err != nil {
+			logging.Error("Failed to get subgroup epoch data", types.ValidationRecovery, "model_id", modelId, "error", err)
+			continue
+		}
+		if subgroupResp == nil {
+			logging.Warn("Subgroup epoch data response is nil", types.ValidationRecovery, "model_id", modelId)
+			continue
+		}
+
+		subgroup := subgroupResp.EpochGroupData
+		if subgroup.ModelSnapshot == nil {
+			logging.Error("ModelSnapshot is nil in subgroup", types.ValidationRecovery, "model_id", modelId)
+			continue
+		}
+
+		for _, weightInfo := range subgroup.ValidationWeights {
+			if weightInfo.MemberAddress == address {
+				supportedModels[modelId] = true
+			}
+		}
+	}
+	logging.Info("Supported models at epoch", types.ValidationRecovery, "epochIndex", epochIndex, "supportedModels", supportedModels, "address", address)
+
+	return supportedModels, nil
+}
+
+func (s *InferenceValidator) getCurrentSupportedModels() (map[string]bool, error) {
+	supportedModels := make(map[string]bool)
+	nodes, err := s.nodeBroker.GetNodes()
+	if err != nil {
+		logging.Error("Failed to get nodes from broker", types.ValidationRecovery, "error", err)
+		return nil, fmt.Errorf("failed to get nodes: %w", err)
+	}
+	for _, node := range nodes {
+		nodeState := node.State
+		for model := range nodeState.EpochModels {
+			supportedModels[model] = true
+		}
+	}
+	logging.Debug("Supported models", types.ValidationRecovery, "supportedModels", supportedModels)
+	return supportedModels, nil
+}
+
 // DetectMissedValidations identifies which validations were missed for a specific epoch
 // Returns a list of inference objects that the current participant should have validated but didn't
 func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int64) ([]types.Inference, error) {
-	logging.Info("Starting missed validation detection", types.Validation, "epochIndex", epochIndex, "seed", seed)
+	logging.Info("Starting missed validation detection", types.ValidationRecovery, "epochIndex", epochIndex, "seed", seed)
 
 	queryClient := s.recorder.NewInferenceQueryClient()
 	address := s.recorder.GetAddress()
 
-	// Get all inferences (automatically pruned to recent 2-3 epochs)
-	allInferencesResp, err := queryClient.InferenceAll(s.recorder.GetContext(), &types.QueryAllInferenceRequest{})
-	if err != nil {
-		logging.Error("Failed to query all inferences", types.Validation, "error", err)
-		return nil, fmt.Errorf("failed to query all inferences: %w", err)
+	// Get all inferences (automatically pruned to recent 2-3 epochs) with pagination
+	var allInferences []types.Inference
+	var nextKey []byte
+
+	for {
+		req := &types.QueryAllInferenceRequest{
+			Pagination: &query.PageRequest{
+				Key:   nextKey,
+				Limit: 1000, // Use larger page size for efficiency
+			},
+		}
+
+		resp, err := queryClient.InferenceAll(s.recorder.GetContext(), req)
+		if err != nil {
+			logging.Error("Failed to query inferences page", types.ValidationRecovery, "error", err)
+			return nil, fmt.Errorf("failed to query inferences: %w", err)
+		}
+
+		allInferences = append(allInferences, resp.Inference...)
+
+		// Check if there are more pages
+		if resp.Pagination == nil || len(resp.Pagination.NextKey) == 0 {
+			break
+		}
+		nextKey = resp.Pagination.NextKey
 	}
+
+	logging.Debug("Retrieved all inferences", types.ValidationRecovery, "totalCount", len(allInferences))
 
 	// Filter inferences by epoch
 	var epochInferences []types.Inference
-	for _, inf := range allInferencesResp.Inference {
+	for _, inf := range allInferences {
 		if inf.EpochId == epochIndex {
 			epochInferences = append(epochInferences, inf)
 		}
 	}
 
 	if len(epochInferences) == 0 {
-		logging.Info("No inferences found for epoch", types.Validation, "epochIndex", epochIndex)
+		logging.Info("No inferences found for epoch", types.ValidationRecovery, "epochIndex", epochIndex)
 		return []types.Inference{}, nil
 	}
 
-	logging.Info("Found inferences for epoch", types.Validation, "epochIndex", epochIndex, "count", len(epochInferences))
+	logging.Info("Found inferences for epoch", types.ValidationRecovery, "epochIndex", epochIndex, "count", len(epochInferences))
 
 	// Create a map for quick lookup of inferences by ID
 	inferenceMap := make(map[string]types.Inference)
@@ -146,14 +223,14 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 		Requester: address,
 	})
 	if err != nil {
-		logging.Error("Failed to get validation parameters", types.Validation, "error", err)
+		logging.Error("Failed to get validation parameters", types.ValidationRecovery, "error", err)
 		return nil, fmt.Errorf("failed to get validation parameters: %w", err)
 	}
 
 	// Get validation params
 	params, err := queryClient.Params(s.recorder.GetContext(), &types.QueryParamsRequest{})
 	if err != nil {
-		logging.Error("Failed to get params", types.Validation, "error", err)
+		logging.Error("Failed to get params", types.ValidationRecovery, "error", err)
 		return nil, fmt.Errorf("failed to get params: %w", err)
 	}
 
@@ -170,12 +247,25 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 			alreadyValidated[inferenceId] = true
 		}
 	} else {
-		logging.Warn("Failed to get epoch group validations or no validations found", types.Validation, "error", err, "participant", address, "epochIndex", epochIndex)
+		if status.Code(err) == codes.NotFound {
+			logging.Info("No epoch group validations found", types.ValidationRecovery, "participant", address, "epochIndex", epochIndex)
+		} else {
+			logging.Warn("Failed to get epoch group validations", types.ValidationRecovery, "error", err, "participant", address, "epochIndex", epochIndex)
+		}
+	}
+	supportedModels, err := s.getNodeModelsAtEpoch(epochIndex, address)
+	if err != nil {
+		logging.Error("Failed to get supported models at epoch", types.ValidationRecovery, "error", err)
+		return nil, fmt.Errorf("failed to get supported models at epoch: %w", err)
 	}
 
 	// Check each inference to see if it should have been validated but wasn't
 	var missedValidations []types.Inference
 	for _, inferenceDetails := range validationParamsResp.Details {
+		if !supportedModels[inferenceDetails.Model] {
+			logging.Info("Skipping inference - model not supported by any node", types.ValidationRecovery, "inferenceId", inferenceDetails.InferenceId, "model", inferenceDetails.Model)
+			continue
+		}
 		// Check if this participant should validate this inference
 		shouldValidate, message := s.shouldValidateInference(
 			inferenceDetails,
@@ -184,7 +274,7 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 			address,
 			params.Params.ValidationParams)
 
-		logging.Debug("Validation check result", types.Validation,
+		logging.Debug("Validation check result", types.ValidationRecovery,
 			"inferenceId", inferenceDetails.InferenceId,
 			"shouldValidate", shouldValidate,
 			"message", message,
@@ -194,14 +284,14 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 		if shouldValidate && !alreadyValidated[inferenceDetails.InferenceId] {
 			if inference, exists := inferenceMap[inferenceDetails.InferenceId]; exists {
 				missedValidations = append(missedValidations, inference)
-				logging.Info("Found missed validation", types.Validation, "inferenceId", inferenceDetails.InferenceId)
+				logging.Info("Found missed validation", types.ValidationRecovery, "inferenceId", inferenceDetails.InferenceId)
 			} else {
-				logging.Warn("Inference not found in map", types.Validation, "inferenceId", inferenceDetails.InferenceId)
+				logging.Warn("Inference not found in map", types.ValidationRecovery, "inferenceId", inferenceDetails.InferenceId)
 			}
 		}
 	}
 
-	logging.Info("Missed validation detection complete", types.Validation,
+	logging.Info("Missed validation detection complete", types.ValidationRecovery,
 		"epochIndex", epochIndex,
 		"totalInferences", len(epochInferences),
 		"missedValidations", len(missedValidations))
@@ -212,23 +302,43 @@ func (s *InferenceValidator) DetectMissedValidations(epochIndex uint64, seed int
 // ExecuteRecoveryValidations executes validation for a list of missed inferences
 // This function uses the inference data already obtained and executes validations in parallel goroutines
 // It waits for all validations to complete before returning
-func (s *InferenceValidator) ExecuteRecoveryValidations(missedInferences []types.Inference) {
-	if len(missedInferences) == 0 {
-		logging.Info("No missed validations to execute", types.Validation)
-		return
+func (s *InferenceValidator) ExecuteRecoveryValidations(missedInferences []types.Inference) (int, error) {
+
+	availableModels, err := s.getCurrentSupportedModels()
+	if err != nil {
+		logging.Error("Failed to get currently available models", types.ValidationRecovery, "error", err)
+		return 0, fmt.Errorf("failed to get currently available models: %w", err)
 	}
 
-	logging.Info("Starting recovery validation execution", types.Validation, "missedValidations", len(missedInferences))
+	missedInferencesToValidate := []types.Inference{}
+	for _, inf := range missedInferences {
+		if availableModels[inf.Model] {
+			missedInferencesToValidate = append(missedInferencesToValidate, inf)
+		} else {
+			logging.Info("Can't recover validation for inference, model not available", types.ValidationRecovery, "inferenceId", inf.InferenceId, "model", inf.Model)
+		}
+	}
+
+	if len(missedInferences) > len(missedInferencesToValidate) {
+		logging.Warn("Some inferences can't be recovered, model not available", types.ValidationRecovery, "missedInferences", len(missedInferences), "missedInferencesToValidate", len(missedInferencesToValidate))
+	}
+
+	if len(missedInferencesToValidate) == 0 {
+		logging.Info("No missed validations to execute", types.ValidationRecovery)
+		return 0, nil
+	}
+
+	logging.Info("Starting recovery validation execution", types.ValidationRecovery, "missedValidations", len(missedInferencesToValidate))
 
 	var wg sync.WaitGroup
 
 	// Execute recovery validations in parallel goroutines with WaitGroup synchronization
-	for _, inf := range missedInferences {
+	for _, inf := range missedInferencesToValidate {
 		wg.Add(1)
 		go func(inference types.Inference) {
 			defer wg.Done()
 
-			logging.Info("Executing recovery validation", types.Validation, "inferenceId", inference.InferenceId)
+			logging.Info("Executing recovery validation", types.ValidationRecovery, "inferenceId", inference.InferenceId)
 
 			// Use existing validation infrastructure
 			// The validateInferenceAndSendValMessage function handles all validation logic, node locking, and message sending
@@ -236,15 +346,24 @@ func (s *InferenceValidator) ExecuteRecoveryValidations(missedInferences []types
 			concreteRecorder := s.recorder.(*cosmosclient.InferenceCosmosClient)
 			s.validateInferenceAndSendValMessage(inference, *concreteRecorder, false)
 
-			logging.Info("Recovery validation completed", types.Validation, "inferenceId", inference.InferenceId)
+			logging.Info("Recovery validation completed", types.ValidationRecovery, "inferenceId", inference.InferenceId)
 		}(inf)
 	}
 
 	// Wait for all recovery validations to complete
-	logging.Info("Waiting for all recovery validations to complete", types.Validation, "count", len(missedInferences))
+	logging.Info("Waiting for all recovery validations to complete", types.ValidationRecovery, "count", len(missedInferences))
 	wg.Wait()
 
-	logging.Info("All recovery validations completed", types.Validation, "count", len(missedInferences))
+	logging.Info("All recovery validations completed", types.ValidationRecovery, "count", len(missedInferences))
+	return len(missedInferencesToValidate), nil
+}
+
+func (s *InferenceValidator) WaitForValidationsToBeRecorded() {
+	const maxTimeoutBlocks = 60
+	epochLength := s.phaseTracker.GetEpochParams().EpochLength
+	timeoutBlocks := min(epochLength/10, maxTimeoutBlocks)
+
+	time.Sleep(5 * time.Duration(timeoutBlocks) * time.Second)
 }
 
 func (s *InferenceValidator) SampleInferenceToValidate(ids []string, transactionRecorder cosmosclient.InferenceCosmosClient) {
@@ -273,6 +392,12 @@ func (s *InferenceValidator) SampleInferenceToValidate(ids []string, transaction
 		return
 	}
 
+	supportedModels, err := s.getCurrentSupportedModels()
+	if err != nil {
+		logging.Error("Failed to get currently available models", types.Validation, "error", err)
+		return
+	}
+
 	logInferencesToSample(r.Details)
 
 	address := transactionRecorder.GetAddress()
@@ -280,6 +405,10 @@ func (s *InferenceValidator) SampleInferenceToValidate(ids []string, transaction
 	var toValidateIds []string
 
 	for _, inferenceWithExecutor := range r.Details {
+		if !supportedModels[inferenceWithExecutor.Model] {
+			logging.Debug("Skipping inference by not supported model", types.Validation, "inferenceId", inferenceWithExecutor.InferenceId, "model", inferenceWithExecutor.Model)
+			continue
+		}
 		// Use the extracted validation decision logic
 		shouldValidate, message := s.shouldValidateInference(
 			inferenceWithExecutor,
@@ -365,11 +494,8 @@ func (s *InferenceValidator) validateInferenceAndSendValMessage(inf types.Infere
 		} else {
 			// Final attempt failed - check if it's ErrNoNodesAvailable for special handling
 			if errors.Is(err, broker.ErrNoNodesAvailable) {
-				logging.Error("Failed to validate inference after all retry attempts. No nodes available, probably unsupported model.", types.Validation, "id", inf.InferenceId, "attempts", maxRetries, "error", err)
-				valResult = ModelNotSupportedValidationResult{
-					InferenceId: inf.InferenceId,
-				}
-				break
+				logging.Warn("Failed to validate inference after all retry attempts. No nodes available, probably unsupported model.", types.Validation, "id", inf.InferenceId, "attempts", maxRetries, "error", err)
+				return
 			} else {
 				logging.Error("Failed to validate inference after all retry attempts", types.Validation,
 					"id", inf.InferenceId,
@@ -405,20 +531,20 @@ func (s *InferenceValidator) validate(inference types.Inference, inferenceNode *
 
 	var requestMap map[string]interface{}
 	if err := json.Unmarshal([]byte(inference.PromptPayload), &requestMap); err != nil {
-		logging.Error("Failed to unmarshal inference.PromptPayload.", types.Validation, "id", inference.InferenceId, "error", err)
-		return nil, err
+		return &InvalidInferenceResult{inference.InferenceId, "Failed to unmarshal inference.PromptPayload.", err}, nil
 	}
 
 	originalResponse, err := unmarshalResponse(&inference)
 	if err != nil {
-		logging.Error("Failed to unmarshal inference.ResponsePayload.", types.Validation, "id", inference.InferenceId, "error", err)
-		return nil, err
+		return &InvalidInferenceResult{inference.InferenceId, "Failed to unmarshal inference.ResponsePayload.", err}, nil
 	}
 
 	enforcedTokens, err := originalResponse.GetEnforcedTokens()
 	if err != nil {
-		return nil, err
+		return &InvalidInferenceResult{inference.InferenceId, "Failed to get enforced string.", err}, nil
 	}
+
+	// From here on, errors are on the part of the validator, not the inference that was passed in
 	requestMap["enforced_tokens"] = enforcedTokens
 	requestMap["stream"] = false
 	delete(requestMap, "stream_options")
@@ -534,6 +660,24 @@ func (r SimilarityValidationResult) IsSuccessful() bool {
 	return r.Value > 0.99
 }
 
+type InvalidInferenceResult struct {
+	InferenceId string
+	Reason      string
+	Error       error
+}
+
+func (r InvalidInferenceResult) IsSuccessful() bool {
+	return false
+}
+
+func (r InvalidInferenceResult) GetInferenceId() string {
+	return r.InferenceId
+}
+
+func (r InvalidInferenceResult) GetValidationResponseBytes() []byte {
+	return []byte{}
+}
+
 func compareLogits(
 	originalLogits []completionapi.Logprob,
 	validationLogits []completionapi.Logprob,
@@ -639,22 +783,6 @@ func positionDistance(
 	return distance, nil
 }
 
-type ModelNotSupportedValidationResult struct {
-	InferenceId string
-}
-
-func (r ModelNotSupportedValidationResult) GetInferenceId() string {
-	return r.InferenceId
-}
-
-func (r ModelNotSupportedValidationResult) GetValidationResponseBytes() []byte {
-	return nil
-}
-
-func (ModelNotSupportedValidationResult) IsSuccessful() bool {
-	return false
-}
-
 func ToMsgValidation(result ValidationResult) (*inference.MsgValidation, error) {
 	// Match type of result from implementations of ValidationResult
 	var simVal float64
@@ -668,9 +796,9 @@ func ToMsgValidation(result ValidationResult) (*inference.MsgValidation, error) 
 	case *SimilarityValidationResult:
 		simVal = result.(*SimilarityValidationResult).Value
 		logging.Info("Cosine similarity validation result", types.Validation, "cosineSimValue", simVal)
-	case ModelNotSupportedValidationResult:
-		simVal = 1
-		logging.Info("Model not supported validation result. Assuming is valid", types.Validation, "inference_id", result.GetInferenceId())
+	case *InvalidInferenceResult:
+		simVal = 0
+		logging.Warn("Invalid inference result", types.Validation, "reason", result.(*InvalidInferenceResult).Reason, "inferenceId", result.GetInferenceId(), "error", result.(*InvalidInferenceResult).Error)
 	default:
 		logging.Error("Unknown validation result type", types.Validation, "type", fmt.Sprintf("%T", result), "result", result)
 		return nil, errors.New("unknown validation result type")
@@ -678,6 +806,7 @@ func ToMsgValidation(result ValidationResult) (*inference.MsgValidation, error) 
 
 	responseHash, _, err := utils.GetResponseHash(result.GetValidationResponseBytes())
 	if err != nil {
+		logging.Error("Failed to get response hash", types.Validation, "error", err)
 		return nil, err
 	}
 

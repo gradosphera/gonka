@@ -48,4 +48,5 @@ var (
 	ErrIllegalState                            = sdkerrors.Register(ModuleName, 1137, "illegal state for the operation requested")
 	ErrInvalidValidationThreshold              = sdkerrors.Register(ModuleName, 1138, "validation threshold must be in [0, 100] range")
 	ErrNegativeRewardAmount                    = sdkerrors.Register(ModuleName, 1139, "negative reward amount")
+	ErrDuplicateValidation                     = sdkerrors.Register(ModuleName, 1140, "participant has already validated this inference")
 )

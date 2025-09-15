@@ -352,7 +352,7 @@ fun createDockerGroup(
                 "poc_port": 8080,
                 "max_concurrent": 10,
                 "models": [
-                  "Qwen/Qwen2.5-7B-Instruct"
+                  "$defaultModel"
                 ]
               }
             ]
