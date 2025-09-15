@@ -278,18 +278,15 @@ func (ma *ModelAssigner) distributeLegacyWeight(originalMLNodes []*types.MLNodeI
 	for _, mlNode := range newMLNodes {
 		newMlNodesMap[mlNode.NodeId] = mlNode
 	}
-	var remainderCounter = int64(0)
+	remainder := &Remainder{RemainderWeightRemaining: remainderWeight}
 	// Distribute weight among hardware nodes
 	// Give weightPerNode to each, then distribute remainder by giving +1 to first nodes until remainder is over
 	for _, hwNode := range hardwareNodes.HardwareNodes {
 		preservedNode, _ := preservedNodes[hwNode.LocalId]
 		nodeId := hwNode.LocalId
 		distributedWeight := weightPerNode
-		if remainderCounter < remainderWeight {
-			distributedWeight++ // Give +1 to first remainderWeight nodes
-		}
 
-		if distributedWeight <= 0 {
+		if distributedWeight <= 0 && !remainder.RemainderLeft() {
 			continue
 		}
 		ma.LogInfo("Distributing weight to hardware node", types.PoC, "flow_context", FlowContext, "sub_flow_context", SubFlowContext, "step", "distribute_to_node", "node_id", nodeId, "distributed_weight", distributedWeight)
@@ -298,10 +295,7 @@ func (ma *ModelAssigner) distributeLegacyWeight(originalMLNodes []*types.MLNodeI
 		existingMLNode := newMlNodesMap[nodeId]
 		if existingMLNode != nil {
 			if preservedNode == nil {
-				if remainderCounter < remainderWeight {
-					distributedWeight++
-					remainderCounter++
-				}
+				distributedWeight += remainder.GetRemainder()
 				existingMLNode.PocWeight += distributedWeight
 			} else {
 				// If preserved node, just set the weight without adding
@@ -319,10 +313,7 @@ func (ma *ModelAssigner) distributeLegacyWeight(originalMLNodes []*types.MLNodeI
 				newMLNode.TimeslotAllocation = []bool{true, false} // Ensure preserved nodes are set to PRE_POC_SLOT=true, POC_SLOT=false
 				ma.LogInfo("Created new ML node from PRESERVED hardware node", types.PoC, "flow_context", FlowContext, "sub_flow_context", SubFlowContext, "step", "create_new_ml_node", "node_id", newMLNode.NodeId, "weight", newMLNode.PocWeight)
 			} else {
-				if remainderCounter < remainderWeight {
-					distributedWeight++
-					remainderCounter++
-				}
+				distributedWeight += remainder.GetRemainder()
 				newMLNode = &types.MLNodeInfo{
 					NodeId:     nodeId,
 					PocWeight:  distributedWeight,
@@ -342,6 +333,23 @@ func (ma *ModelAssigner) distributeLegacyWeight(originalMLNodes []*types.MLNodeI
 		"final_ml_nodes", newMLNodes)
 
 	return newMLNodes
+}
+
+type Remainder struct {
+	RemainderWeightRemaining int64
+}
+
+func (r *Remainder) GetRemainder() int64 {
+	if r.RemainderWeightRemaining > 0 {
+		r.RemainderWeightRemaining--
+		return 1
+	} else {
+		return 0
+	}
+}
+
+func (r *Remainder) RemainderLeft() bool {
+	return r.RemainderWeightRemaining > 0
 }
 
 func (ma *ModelAssigner) getPreservedNodes(ctx context.Context, upcomingEpoch uint64) map[string]map[string]*types.MLNodeInfo {

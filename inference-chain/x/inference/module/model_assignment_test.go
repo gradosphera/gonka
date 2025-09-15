@@ -2,6 +2,7 @@ package inference
 
 import (
 	"context"
+	"sort"
 	"testing"
 
 	"github.com/productscience/inference/x/inference/keeper"
@@ -314,4 +315,105 @@ func TestSetModelsForParticipants_ManyNodesManyModels(t *testing.T) {
 	assertTimeslotAllocationCount(t, groupA.MlNodes, []bool{true, false}, 2)
 	assertTimeslotAllocationCount(t, groupB.MlNodes, []bool{true, true}, 0)
 	assertTimeslotAllocationCount(t, groupB.MlNodes, []bool{true, false}, 1)
+}
+
+// noopKeeper satisfies KeeperForModelAssigner but is not used by distributeLegacyWeight directly.
+type noopKeeper struct{}
+
+func (noopKeeper) GetGovernanceModelsSorted(ctx context.Context) ([]*types.Model,
+	error) {
+	return nil, nil
+}
+func (noopKeeper) GetHardwareNodes(ctx context.Context, participantId string) (*types.HardwareNodes, bool) {
+	return nil, false
+}
+func (noopKeeper) GetActiveParticipants(ctx context.Context, epochId uint64) (val types.ActiveParticipants, found bool) {
+	return types.ActiveParticipants{}, false
+}
+
+// This test demonstrates the current buggy behavior: it double-applies the remainder
+// when there are no preserved nodes, resulting in an over-allocation.
+func TestDistributeLegacyWeight_RemainderBug_NoPreserved(t *testing.T) {
+	assigner := NewModelAssigner(noopKeeper{}, mockLogger{})
+	// Legacy placeholder with total weight 10
+	original := []*types.MLNodeInfo{{NodeId: "", PocWeight: 10}}
+	// 4 hardware nodes; current buggy code yields weights {4,4,2,2} (sum 12)
+	hw := &types.HardwareNodes{HardwareNodes: []*types.HardwareNode{{LocalId: "n1"},
+		{LocalId: "n2"}, {LocalId: "n3"}, {LocalId: "n4"}}}
+	out := assigner.distributeLegacyWeight(original, hw,
+		map[string]*types.MLNodeInfo{})
+	if len(out) != 4 {
+		t.Fatalf("expected 4 ML nodes, got %d", len(out))
+	}
+	var weights []int
+	var sum int
+	for _, n := range out {
+		weights = append(weights, int(n.PocWeight))
+		sum += int(n.PocWeight)
+	}
+	sort.Ints(weights)
+	require.Equal(t, 10, sum)
+	require.EqualValues(t, []int{2, 2, 3, 3}, weights)
+}
+
+// This test demonstrates the current buggy behavior in the presence of a preserved node.
+// The pre-increment is lost on the preserved node (without advancing the counter), and the first
+// non-preserved node receives +2, resulting in non-preserved weights {5,3} for total = 7 across 2 targets.
+func TestDistributeLegacyWeight_RemainderBug_WithPreserved(t *testing.T) {
+	assigner := NewModelAssigner(noopKeeper{}, mockLogger{})
+	// Legacy placeholder with total weight 7
+	original := []*types.MLNodeInfo{{NodeId: "", PocWeight: 7}}
+	// Hardware nodes in order: preserved first to exercise the bug deterministically
+	hw := &types.HardwareNodes{HardwareNodes: []*types.HardwareNode{{LocalId: "n1"},
+		{LocalId: "n2"}, {LocalId: "n3"}}}
+	preserved := map[string]*types.MLNodeInfo{
+		"n1": {NodeId: "n1", PocWeight: 100, TimeslotAllocation: []bool{true,
+			true}},
+	}
+	out := assigner.distributeLegacyWeight(original, hw, preserved)
+	if len(out) != 3 {
+		t.Fatalf("expected 3 ML nodes, got %d", len(out))
+	}
+	var nonPreserved []int
+	for _, n := range out {
+		if n.NodeId == "n1" {
+			if n.PocWeight != 100 {
+				t.Fatalf("preserved node weight should remain 100, got %d",
+					n.PocWeight)
+			}
+			continue
+		}
+		nonPreserved = append(nonPreserved, int(n.PocWeight))
+	}
+	sort.Ints(nonPreserved)
+	require.EqualValues(t, []int{3, 4}, nonPreserved)
+}
+
+func TestDistributeLegacyWeight_LowWeight(t *testing.T) {
+	assigner := NewModelAssigner(noopKeeper{}, mockLogger{})
+	// Legacy placeholder with total weight 2 (less than number of nodes)
+	original := []*types.MLNodeInfo{{NodeId: "", PocWeight: 2}}
+	// 5 hardware nodes
+	hw := &types.HardwareNodes{HardwareNodes: []*types.HardwareNode{
+		{LocalId: "n1"},
+		{LocalId: "n2"},
+		{LocalId: "n3"},
+		{LocalId: "n4"},
+		{LocalId: "n5"},
+	}}
+	out := assigner.distributeLegacyWeight(original, hw, map[string]*types.MLNodeInfo{})
+
+	require.Len(t, out, 2, "should have 2 nodes (power remainder)")
+
+	var weights []int
+	var sum int
+	for _, n := range out {
+		weights = append(weights, int(n.PocWeight))
+		sum += int(n.PocWeight)
+	}
+	sort.Ints(weights)
+
+	require.Equal(t, 2, sum, "total weight should remain 2")
+	require.NotEqual(t, []int{0, 0, 0, 0, 2}, weights, "weight should not be allocated to single node")
+	require.True(t, weights[len(weights)-1] <= 1, "no node should have weight > 1")
 }
