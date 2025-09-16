@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"time"
 
 	"encoding/base64"
 
@@ -12,7 +13,7 @@ import (
 )
 
 func (k msgServer) StartInference(goCtx context.Context, msg *types.MsgStartInference) (*types.MsgStartInferenceResponse, error) {
-	ctx := sdk.UnwrapSDKContext(goCtx)
+	var ctx sdk.Context = sdk.UnwrapSDKContext(goCtx)
 	k.LogInfo("StartInference", types.Inferences, "inferenceId", msg.InferenceId, "creator", msg.Creator, "requestedBy", msg.RequestedBy, "model", msg.Model)
 
 	transferAgent, found := k.GetParticipant(ctx, msg.Creator)
@@ -74,9 +75,13 @@ func (k msgServer) StartInference(goCtx context.Context, msg *types.MsgStartInfe
 	}, nil
 }
 
-func (k msgServer) verifyKeys(ctx context.Context, msg *types.MsgStartInference, agent types.Participant, dev types.Participant) error {
+func (k msgServer) verifyKeys(ctx sdk.Context, msg *types.MsgStartInference, agent types.Participant, dev types.Participant) error {
 	components := getSignatureComponents(msg)
 
+	err := k.validateTimestamp(ctx, components, msg.InferenceId, 60)
+	if err != nil {
+		return err
+	}
 	// Create SignatureData with the necessary participants and signatures
 	sigData := calculations.SignatureData{
 		DevSignature:      msg.InferenceId, // Using InferenceId as the dev signature
@@ -86,13 +91,46 @@ func (k msgServer) verifyKeys(ctx context.Context, msg *types.MsgStartInference,
 	}
 
 	// Use the generic VerifyKeys function
-	err := calculations.VerifyKeys(ctx, components, sigData, k)
+	err = calculations.VerifyKeys(ctx, components, sigData, k)
 	if err != nil {
 		k.LogError("StartInference: verifyKeys failed", types.Inferences, "error", err)
 		return err
 	}
 
 	return nil
+}
+
+func (k msgServer) validateTimestamp(
+	ctx sdk.Context,
+	components calculations.SignatureComponents,
+	inferenceId string,
+	extraSeconds int64,
+) error {
+	params, err := k.GetParamsSafe(ctx)
+	if err != nil {
+		return err
+	}
+	k.LogInfo("Validating timestamp for StartInference:", types.Inferences,
+		"timestamp", components.Timestamp,
+		"inferenceId", inferenceId,
+		"currentBlockTime", ctx.BlockTime().UnixNano(),
+		"timestampExpiration", params.ValidationParams.TimestampExpiration,
+		"timestampAdvance", params.ValidationParams.TimestampAdvance,
+	)
+	err = calculations.ValidateTimestamp(
+		components.Timestamp,
+		ctx.BlockTime().UnixNano(),
+		params.ValidationParams.TimestampExpiration,
+		params.ValidationParams.TimestampAdvance,
+		// signature dedupe (via inferenceID) will prevent most replay, this is for
+		// replay attacks of pruned inferences only
+		extraSeconds*int64(time.Second),
+	)
+	if err != nil {
+		k.LogError("StartInference: validateTimestamp failed", types.Inferences, "error", err)
+		return err
+	}
+	return err
 }
 
 func (k msgServer) addTimeout(ctx sdk.Context, inference *types.Inference) {

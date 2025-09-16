@@ -43,4 +43,6 @@ var (
 	ErrIllegalState                          = sdkerrors.Register(ModuleName, 1137, "illegal state for the operation requested")
 	ErrPubKeyUnavailable                     = sdkerrors.Register(ModuleName, 1139, "account has no public key")
 	ErrPubKeyDoesNotMatchAddress             = sdkerrors.Register(ModuleName, 1140, "public key does not match address")
+	ErrSignatureTooOld                       = sdkerrors.Register(ModuleName, 1141, "signature is too old")
+	ErrSignatureInFuture                     = sdkerrors.Register(ModuleName, 1142, "signature is in the future")
 )

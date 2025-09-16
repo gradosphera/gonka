@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"testing"
+	"time"
 
 	"github.com/cosmos/cosmos-sdk/x/group"
 	"github.com/productscience/inference/testutil"
@@ -25,7 +26,7 @@ func TestMsgServer_Validation(t *testing.T) {
 	k.SetModel(ctx, model)
 	StubModelSubgroup(t, ctx, k, inferenceHelper.Mocks, model)
 
-	expected, err := inferenceHelper.StartInference("promptPayload", model.Id, 10020220, calculations.DefaultMaxTokens)
+	expected, err := inferenceHelper.StartInference("promptPayload", model.Id, time.Now().UnixNano(), calculations.DefaultMaxTokens)
 	require.NoError(t, err)
 	_, err = inferenceHelper.FinishInference()
 	require.NoError(t, err)
@@ -58,7 +59,7 @@ func TestMsgServer_Validation_Invalidate(t *testing.T) {
 	k.SetModel(ctx, model)
 	StubModelSubgroup(t, ctx, k, inferenceHelper.Mocks, model)
 
-	expected, err := inferenceHelper.StartInference("promptPayload", model.Id, 10020220, calculations.DefaultMaxTokens)
+	expected, err := inferenceHelper.StartInference("promptPayload", model.Id, time.Now().UnixNano(), calculations.DefaultMaxTokens)
 	require.NoError(t, err)
 	_, err = inferenceHelper.FinishInference()
 	require.NoError(t, err)
@@ -120,7 +121,7 @@ func TestMsgServer_NoInference(t *testing.T) {
 
 func TestMsgServer_NotFinished(t *testing.T) {
 	inferenceHelper, _, ctx := NewMockInferenceHelper(t)
-	requestTimestamp := int64(10020220)
+	requestTimestamp := time.Now().UnixNano()
 	expected, err := inferenceHelper.StartInference("promptPayload", "model1", requestTimestamp, calculations.DefaultMaxTokens)
 	require.NoError(t, err)
 	_, err = inferenceHelper.MessageServer.Validation(ctx, &types.MsgValidation{
