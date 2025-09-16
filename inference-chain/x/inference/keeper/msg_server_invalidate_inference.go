@@ -45,7 +45,10 @@ func (k msgServer) InvalidateInference(goCtx context.Context, msg *types.MsgInva
 	// Check for a status transition and slash if necessary.
 	k.CheckAndSlashForInvalidStatus(goCtx, originalStatus, &executor)
 
-	k.SetInference(ctx, inference)
+	err = k.SetInference(ctx, inference)
+	if err != nil {
+		return nil, err
+	}
 	err = k.SetParticipant(ctx, executor)
 	if err != nil {
 		return nil, err

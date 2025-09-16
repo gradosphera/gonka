@@ -141,7 +141,11 @@ func (k msgServer) Validation(goCtx context.Context, msg *types.MsgValidation) (
 	}
 
 	k.LogInfo("Saving inference", types.Validation, "inferenceId", inference.InferenceId, "status", inference.Status, "proposalDetails", inference.ProposalDetails)
-	k.SetInference(ctx, inference)
+	err = k.SetInference(ctx, inference)
+	if err != nil {
+		k.LogError("Failed to set inference", types.Validation, "inferenceId", inference.InferenceId, "error", err)
+		return nil, err
+	}
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(

@@ -7,10 +7,10 @@ import (
 )
 
 // SetInference set a specific inference in the store from its index
-func (k Keeper) SetInference(ctx context.Context, inference types.Inference) {
+func (k Keeper) SetInference(ctx context.Context, inference types.Inference) error {
 	// store via collections
 	if err := k.Inferences.Set(ctx, inference.Index, inference); err != nil {
-		panic(err)
+		return err
 	}
 
 	err := k.SetDeveloperStats(ctx, inference)
@@ -19,12 +19,11 @@ func (k Keeper) SetInference(ctx context.Context, inference types.Inference) {
 	} else {
 		k.LogInfo("updated developer stat", types.Stat, "inference_id", inference.InferenceId, "inference_status", inference.Status.String(), "developer", inference.RequestedBy)
 	}
+	return nil
 }
 
-func (k Keeper) SetInferenceWithoutDevStatComputation(ctx context.Context, inference types.Inference) {
-	if err := k.Inferences.Set(ctx, inference.Index, inference); err != nil {
-		panic(err)
-	}
+func (k Keeper) SetInferenceWithoutDevStatComputation(ctx context.Context, inference types.Inference) error {
+	return k.Inferences.Set(ctx, inference.Index, inference)
 }
 
 // GetInference returns a inference from its index

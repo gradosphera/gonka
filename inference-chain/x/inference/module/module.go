@@ -203,7 +203,10 @@ func (am AppModule) handleExpiredInference(ctx context.Context, inference types.
 	if err != nil {
 		am.LogError("Error issuing refund", types.Inferences, "error", err)
 	}
-	am.keeper.SetInference(ctx, inference)
+	err = am.keeper.SetInference(ctx, inference)
+	if err != nil {
+		am.LogError("Error updating inference", types.Inferences, "error", err)
+	}
 	executor.CurrentEpochStats.MissedRequests++
 	err = am.keeper.SetParticipant(ctx, executor)
 	if err != nil {

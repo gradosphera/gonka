@@ -8,8 +8,8 @@ import (
 )
 
 // SetInferenceTimeout sets a specific inferenceTimeout into the collections map
-func (k Keeper) SetInferenceTimeout(ctx context.Context, inferenceTimeout types.InferenceTimeout) {
-	_ = k.InferenceTimeouts.Set(ctx, collections.Join(inferenceTimeout.ExpirationHeight, inferenceTimeout.InferenceId), inferenceTimeout)
+func (k Keeper) SetInferenceTimeout(ctx context.Context, inferenceTimeout types.InferenceTimeout) error {
+	return k.InferenceTimeouts.Set(ctx, collections.Join(inferenceTimeout.ExpirationHeight, inferenceTimeout.InferenceId), inferenceTimeout)
 }
 
 // GetInferenceTimeout returns an inferenceTimeout from its composite key (expirationHeight, inferenceId)

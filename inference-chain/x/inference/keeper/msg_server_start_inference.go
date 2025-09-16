@@ -56,7 +56,10 @@ func (k msgServer) StartInference(goCtx context.Context, msg *types.MsgStartInfe
 	if err != nil {
 		return nil, err
 	}
-	k.SetInference(ctx, *finalInference)
+	err = k.SetInference(ctx, *finalInference)
+	if err != nil {
+		return nil, err
+	}
 	k.addTimeout(ctx, inference)
 
 	if inference.IsCompleted() {
@@ -95,10 +98,15 @@ func (k msgServer) verifyKeys(ctx context.Context, msg *types.MsgStartInference,
 func (k msgServer) addTimeout(ctx sdk.Context, inference *types.Inference) {
 	expirationBlocks := k.GetParams(ctx).ValidationParams.ExpirationBlocks
 	expirationHeight := uint64(inference.StartBlockHeight + expirationBlocks)
-	k.SetInferenceTimeout(ctx, types.InferenceTimeout{
+	err := k.SetInferenceTimeout(ctx, types.InferenceTimeout{
 		ExpirationHeight: expirationHeight,
 		InferenceId:      inference.InferenceId,
 	})
+
+	if err != nil {
+		// Not fatal, we try to continue
+		k.LogError("Unable to set inference timeout", types.Inferences, err)
+	}
 
 	k.LogInfo("Inference Timeout Set:", types.Inferences,
 		"InferenceId", inference.InferenceId,

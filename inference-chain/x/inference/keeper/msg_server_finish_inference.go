@@ -76,7 +76,10 @@ func (k msgServer) FinishInference(goCtx context.Context, msg *types.MsgFinishIn
 	if err != nil {
 		return nil, err
 	}
-	k.SetInference(ctx, *finalInference)
+	err = k.SetInference(ctx, *finalInference)
+	if err != nil {
+		return nil, err
+	}
 	if existingInference.IsCompleted() {
 		err := k.handleInferenceCompleted(ctx, finalInference)
 		if err != nil {
@@ -190,7 +193,10 @@ func (k msgServer) handleInferenceCompleted(ctx sdk.Context, existingInference *
 		"traffic_basis", inferenceDetails.TrafficBasis,
 	)
 	k.SetInferenceValidationDetails(ctx, inferenceDetails)
-	k.SetInference(ctx, *existingInference)
+	err = k.SetInference(ctx, *existingInference)
+	if err != nil {
+		return err
+	}
 	k.SetEpochGroupData(ctx, *currentEpochGroup.GroupData)
 	return nil
 }

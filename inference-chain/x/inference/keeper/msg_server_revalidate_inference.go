@@ -44,7 +44,10 @@ func (k msgServer) RevalidateInference(goCtx context.Context, msg *types.MsgReva
 	}
 
 	k.LogInfo("Saving inference", types.Validation, "inferenceId", inference.InferenceId, "status", inference.Status, "authority", inference.ProposalDetails.PolicyAddress)
-	k.SetInference(ctx, inference)
+	err = k.SetInference(ctx, inference)
+	if err != nil {
+		return nil, err
+	}
 
 	return &types.MsgRevalidateInferenceResponse{}, nil
 }

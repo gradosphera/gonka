@@ -7,9 +7,9 @@ import (
 )
 
 // SetPartialUpgrade set a specific partialUpgrade in the store from its index
-func (k Keeper) SetPartialUpgrade(ctx context.Context, partialUpgrade types.PartialUpgrade) {
+func (k Keeper) SetPartialUpgrade(ctx context.Context, partialUpgrade types.PartialUpgrade) error {
 	// key is the height
-	_ = k.PartialUpgrades.Set(ctx, partialUpgrade.Height, partialUpgrade)
+	return k.PartialUpgrades.Set(ctx, partialUpgrade.Height, partialUpgrade)
 }
 
 // GetPartialUpgrade returns a partialUpgrade from its index

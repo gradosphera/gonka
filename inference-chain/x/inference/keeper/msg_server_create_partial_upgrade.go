@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+
 	errorsmod "cosmossdk.io/errors"
 	"github.com/productscience/inference/x/inference/types"
 
@@ -15,11 +16,15 @@ func (k msgServer) CreatePartialUpgrade(goCtx context.Context, msg *types.MsgCre
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	k.LogInfo("CreatePartialUpgrade", types.Upgrades, "height", msg.Height, "node_version", msg.NodeVersion, "api_binaries_json", msg.ApiBinariesJson)
-	k.SetPartialUpgrade(ctx, types.PartialUpgrade{
+	err := k.SetPartialUpgrade(ctx, types.PartialUpgrade{
 		Height:          msg.Height,
 		NodeVersion:     msg.NodeVersion,
 		ApiBinariesJson: msg.ApiBinariesJson,
 	})
+
+	if err != nil {
+		return nil, err
+	}
 
 	return &types.MsgCreatePartialUpgradeResponse{}, nil
 }
