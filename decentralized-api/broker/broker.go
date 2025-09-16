@@ -969,7 +969,7 @@ func (b *Broker) getCommandForState(nodeState *NodeState, pocGenParams *pocParam
 		}
 	case types.HardwareNodeStatus_STOPPED:
 		return StopNodeCommand{}
-	case types.Training:
+	case types.HardwareNodeStatus_TRAINING:
 		if nodeState.TrainingTask == nil {
 			logging.Error("Training task ID is nil, cannot create StartTrainingCommand", types.Nodes)
 			return nil

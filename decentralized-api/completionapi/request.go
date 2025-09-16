@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/productscience/inference/x/inference/keeper"
+	"github.com/productscience/inference/x/inference/calculations"
 )
 
 type ModifiedRequest struct {
@@ -74,7 +74,7 @@ func getMaxTokens(requestMap map[string]interface{}) int {
 			return maxCompletionTokensInt
 		}
 	}
-	return keeper.DefaultMaxTokens // Default value if not specified
+	return calculations.DefaultMaxTokens // Default value if not specified
 }
 
 func getOriginalLogprobs(requestMap map[string]interface{}) *bool {
