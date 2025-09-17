@@ -76,7 +76,6 @@ type InferenceNodeConfig struct {
 	Id               string                 `koanf:"id" json:"id"`
 	MaxConcurrent    int                    `koanf:"max_concurrent" json:"max_concurrent"`
 	Hardware         []Hardware             `koanf:"hardware" json:"hardware"`
-	Version          string                 `koanf:"version" json:"version"`
 }
 
 type ModelConfig struct {
