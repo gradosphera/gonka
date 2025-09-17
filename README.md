@@ -7,7 +7,7 @@ We introduce a novel consensus mechanism, **Proof of Work 2.0**, that ensures ne
 ## Key Roles
 
 - **Developers** — Use the decentralized network to run inference and LLM training.
-- **Participants (Hardware Providers or Nodes)**  — Contribute computational resources and earn rewards based on their input.
+- **Hosts (Hardware Providers or Nodes)**  — Contribute computational resources and earn rewards based on their input.
 ## Key Features
 
 1. A novel **“Sprint”** mechanism, where participants compete in time-bound computational Races to solve AI-relevant tasks. Instead of traditional Proof of Work (e.g., compute hashes), these Races use **transformer-based models**, aligning the computation with AI model workloads. The number of successful computations a node generates during the Race determines its **voting weight**, directly linking computational contribution to governance and task validation rights. This voting weight not only determines consensus power but also controls task allocation: nodes with higher weight are assigned a larger share of AI inferences and training workloads, and are proportionally responsible for validating others’ results. This ensures that system resources are used efficiently, with real-world tasks assigned in proportion to each node’s proven compute capacity, enabling a “one-computational-power-one-vote” principle rather than capital-based influence (see diagram 1).
@@ -27,7 +27,7 @@ For the most up-to-date documentation, please visit [https://gonka.ai/introducti
 
 To join Testnet:
 - **As Developer**: Explore the [Quickstart Guide](https://gonka.ai/developer/quickstart/) to understand how to create a user account and submit an inference request using the `inferenced` CLI tool.
-- **As Participant (Hardware Providers or Nodes)**:
+- **As Host (Hardware Provider or Node)**:
     - Review the [Hardware Specifications](https://gonka.ai/participant/hardware-specifications/) to ensure your equipment meets the requirements.
     - Follow the [Participant Quickstart Guide](https://gonka.ai/participant/quickstart/) to set up your node and start contributing computational resources.
 ### Local Quickstart
