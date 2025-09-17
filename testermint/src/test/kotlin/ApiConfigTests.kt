@@ -169,7 +169,6 @@ validation_params:
         assertEquals(0, config.nats.port)
 
         // Test node_versions
-        assertEquals(emptyList<String>(), config.nodeVersions.versions)
 
         // Test nodes
         assertEquals(1, config.nodes.size)

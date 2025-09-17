@@ -8,11 +8,13 @@ data class ApiConfig(
     val chainNode: ChainNode,
     val currentHeight: Long,
     val currentNodeVersion: String,
+    val lastUsedVersion: String?,
     val currentSeed: SeedInfo,
     val mergedNodeConfig: Boolean,
     val mlNodeKeyConfig: MlNodeKeyConfig,
     val nats: NatsConfig,
-    val nodeVersions: NodeVersions,
+    @Deprecated("Use upgradePlan.nodeVersion instead")
+    val nodeVersions: NodeVersions?,
     val nodes: List<NodeConfig>,
     val previousSeed: SeedInfo,
     val upcomingSeed: SeedInfo,
@@ -68,6 +70,7 @@ data class NatsConfig(
     val port: Int
 )
 
+@Deprecated("Use upgradePlan.nodeVersion instead")
 data class NodeVersions(
     val versions: List<String>
 )
@@ -93,7 +96,8 @@ data class ApiModelConfig(
 data class UpgradePlan(
     val binaries: Map<String, String>,
     val height: Long,
-    val name: String
+    val name: String,
+    val nodeVersion: String = ""
 )
 
 data class ApiValidationParams(

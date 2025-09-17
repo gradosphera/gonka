@@ -36,7 +36,7 @@ interface IInferenceMock {
         errorType: String? = null,
         delay: Duration = Duration.ZERO,
         streamDelay: Duration = Duration.ZERO,
-        segment: String = "",
+        segment: String = "v3.0.8",
         model: String? = null
     ): StubMapping?
 

@@ -114,7 +114,9 @@ class ResponseService {
         streamDelay: Long = 0,
         segment: String = ""
     ): String {
-        val endpoint = "$segment/v1/chat/completions"
+        val cleanedSegment = segment.trim('/').takeIf { it.isNotEmpty() }
+        val segment1 = if (cleanedSegment != null) "/$cleanedSegment" else ""
+        val endpoint = "$segment1/v1/chat/completions"
         val errorResponse = ErrorResponse(statusCode, errorMessage, errorType)
         inferenceResponses[endpoint] = ResponseConfig.Error(errorResponse, delay, streamDelay)
         return endpoint
