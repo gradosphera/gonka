@@ -81,7 +81,6 @@ COPY packages/train/scripts /app/packages/train/scripts
 COPY packages/train/resources /app/packages/train/resources
 
 COPY packages/common/src /app/packages/common/src
-COPY .git /app/.git
 
 ENV PYTHONPATH="/app"
 ENV PYTHONPATH="${PYTHONPATH}:/app/packages/api/src"

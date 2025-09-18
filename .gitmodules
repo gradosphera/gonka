@@ -1,0 +1,3 @@
+[submodule "mlnode/packages/train/third_party/gorilla"]
+	path = mlnode/packages/train/third_party/gorilla
+	url = https://github.com/product-science/gorilla.git

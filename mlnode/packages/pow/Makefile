@@ -1,6 +1,6 @@
 .PHONY: all
 
-export PROJECT_ROOT := $(shell git rev-parse --show-toplevel)
+export PROJECT_ROOT := $(shell git rev-parse --show-toplevel)/mlnode
 
 ENV_FILES := $(wildcard $(PROJECT_ROOT)/.env ./.env)
 ifneq ($(ENV_FILES),)
