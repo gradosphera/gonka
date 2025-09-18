@@ -16,6 +16,9 @@ func CreateUpgradeHandler(
 	return func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
 
 		k.Logger().Info("starting upgrade to " + UpgradeName)
+		if _, ok := fromVM["capability"]; !ok {
+			fromVM["capability"] = mm.Modules["capability"].(module.HasConsensusVersion).ConsensusVersion()
+		}
 
 		toVM, err := mm.RunMigrations(ctx, configurator, fromVM)
 		if err != nil {
