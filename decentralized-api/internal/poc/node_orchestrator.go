@@ -161,11 +161,6 @@ func (o *NodePoCOrchestratorImpl) ValidateReceivedBatches(startOfValStageHeight 
 	successfulValidations := 0
 	failedValidations := 0
 
-	type DistAndNonce struct {
-		Dist  float64
-		Nonce int64
-	}
-
 	// Iterating over participants
 	for _, batch := range batches.PocBatch {
 		joinedBatch := mlnodeclient.ProofBatch{
