@@ -631,9 +631,7 @@ func calculateParticipantWeight(batches []types.PoCBatch) ([]nodeWeight, int64) 
 	for _, batch := range batches {
 		weight := int64(0)
 		for _, nonce := range batch.Nonces {
-			if _, ok := uniqueNonces[nonce]; ok {
-				continue
-			} else {
+			if _, exists := uniqueNonces[nonce]; !exists {
 				uniqueNonces[nonce] = struct{}{}
 				weight++
 			}
