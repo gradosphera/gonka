@@ -5,7 +5,6 @@ import (
 	"math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/productscience/inference/x/inference/types"
 	"github.com/shopspring/decimal"
 )
@@ -97,17 +96,7 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 	k.LogInfo("SettleAccounts", types.Settle, "currentEpochIndex", currentEpochIndex)
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	blockHeight := sdkCtx.BlockHeight()
-	allParticipants, err := GetAllWithPagination(func(pageReq *query.PageRequest) ([]types.Participant, *query.PageResponse, error) {
-		resp, err := k.ParticipantAll(ctx, &types.QueryAllParticipantRequest{Pagination: pageReq})
-		if err != nil {
-			return nil, nil, err
-		}
-		return resp.Participant, resp.Pagination, nil
-	})
-	if err != nil {
-		k.LogError("Error getting all participants", types.Settle, "error", err)
-		return err
-	}
+	allParticipants := k.GetAllParticipant(ctx)
 
 	k.LogInfo("Block height", types.Settle, "height", blockHeight)
 	k.LogInfo("Got all participants", types.Settle, "participants", len(allParticipants))
@@ -134,6 +123,7 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 		// Use Bitcoin-style fixed reward system with its own parameters
 		k.LogInfo("Using Bitcoin-style reward system", types.Settle)
 		var bitcoinResult BitcoinResult
+		var err error
 		amounts, bitcoinResult, err = GetBitcoinSettleAmounts(allParticipants, &data, params.BitcoinRewardParams, settleParameters)
 		if err != nil {
 			k.LogError("Error getting Bitcoin settle amounts", types.Settle, "error", err)
@@ -147,6 +137,7 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 		// Use current WorkCoins-based variable reward system with its own parameters
 		k.LogInfo("Using current WorkCoins-based reward system", types.Settle)
 		var subsidyResult SubsidyResult
+		var err error
 		amounts, subsidyResult, err = GetSettleAmounts(allParticipants, settleParameters)
 		if err != nil {
 			k.LogError("Error getting settle amounts", types.Settle, "error", err)
@@ -163,7 +154,7 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 		}
 	}
 
-	err = k.MintRewardCoins(ctx, rewardAmount, "reward_distribution")
+	err := k.MintRewardCoins(ctx, rewardAmount, "reward_distribution")
 	if err != nil {
 		k.LogError("Error minting reward coins", types.Settle, "error", err)
 		return err
