@@ -311,13 +311,6 @@ Before implementing, ensure you understand:
 
 ## FUTURE
 
-### Other Queries Missing Pagination
-Several other queries in the codebase may have similar pagination issues where they should be using paginated requests but currently don't. These need to be identified and fixed in future iterations:
-
-- Review all `QueryAll*` calls across the codebase
-- Look for queries that could return large datasets (>100 items)
-- Add pagination support where needed following the same patterns established here
-
 ### Active Participant Query Optimization
 Currently, when querying "active participants", the system actually queries ALL participants and then filters them, which can be inefficient with large participant sets. This should be optimized:
 
