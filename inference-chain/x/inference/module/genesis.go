@@ -233,7 +233,7 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 		genesis.MlnodeVersion = &mlnodeVersion
 	} else {
 		genesis.MlnodeVersion = &types.MLNodeVersion{
-			CurrentVersion: "v3.0.9",
+			CurrentVersion: "v3.0.8",
 		}
 	}
 	genesis.ModelList = getModels(&ctx, &k)
