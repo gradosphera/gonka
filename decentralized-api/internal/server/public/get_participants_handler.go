@@ -19,6 +19,7 @@ import (
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/labstack/echo/v4"
 	"github.com/productscience/inference/x/inference/types"
 )
@@ -189,8 +190,16 @@ func (s *Server) verifyProof(epoch uint64, result *coretypes.ResultABCIQuery, bl
 }
 
 func (s *Server) getAllParticipants(ctx echo.Context) error {
+	// Parse pagination parameters from query string
+	pagination, err := parsePaginationParams(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid pagination parameters: "+err.Error())
+	}
+
 	queryClient := s.recorder.NewInferenceQueryClient()
-	r, err := queryClient.ParticipantAll(ctx.Request().Context(), &types.QueryAllParticipantRequest{})
+	r, err := queryClient.ParticipantAll(ctx.Request().Context(), &types.QueryAllParticipantRequest{
+		Pagination: pagination,
+	})
 	if err != nil {
 		return err
 	}
@@ -223,6 +232,7 @@ func (s *Server) getAllParticipants(ctx echo.Context) error {
 	return ctx.JSON(http.StatusOK, &ParticipantsDto{
 		Participants: participants,
 		BlockHeight:  r.BlockHeight,
+		Pagination:   r.Pagination,
 	})
 }
 
@@ -279,4 +289,56 @@ func pubKeyToAddress3(pubKey string) (string, error) {
 	valAddr := tmhash.SumTruncated(pubKeyBytes)
 	valAddrHex := strings.ToUpper(hex.EncodeToString(valAddr))
 	return valAddrHex, nil
+}
+
+// parsePaginationParams extracts pagination parameters from query string
+func parsePaginationParams(ctx echo.Context) (*query.PageRequest, error) {
+	pagination := &query.PageRequest{}
+
+	// Parse limit parameter
+	if limitStr := ctx.QueryParam("limit"); limitStr != "" {
+		limit, err := strconv.ParseUint(limitStr, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		pagination.Limit = limit
+	}
+
+	// Parse offset parameter
+	if offsetStr := ctx.QueryParam("offset"); offsetStr != "" {
+		offset, err := strconv.ParseUint(offsetStr, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		pagination.Offset = offset
+	}
+
+	// Parse key parameter (base64 encoded)
+	if keyStr := ctx.QueryParam("key"); keyStr != "" {
+		key, err := base64.StdEncoding.DecodeString(keyStr)
+		if err != nil {
+			return nil, err
+		}
+		pagination.Key = key
+	}
+
+	// Parse count_total parameter
+	if countTotalStr := ctx.QueryParam("count_total"); countTotalStr != "" {
+		countTotal, err := strconv.ParseBool(countTotalStr)
+		if err != nil {
+			return nil, err
+		}
+		pagination.CountTotal = countTotal
+	}
+
+	// Parse reverse parameter
+	if reverseStr := ctx.QueryParam("reverse"); reverseStr != "" {
+		reverse, err := strconv.ParseBool(reverseStr)
+		if err != nil {
+			return nil, err
+		}
+		pagination.Reverse = reverse
+	}
+
+	return pagination, nil
 }

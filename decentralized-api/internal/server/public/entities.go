@@ -5,6 +5,7 @@ import (
 
 	cryptotypes "github.com/cometbft/cometbft/proto/tendermint/crypto"
 	comettypes "github.com/cometbft/cometbft/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/productscience/inference/x/inference/types"
 )
 
@@ -63,8 +64,9 @@ type ParticipantDto struct {
 }
 
 type ParticipantsDto struct {
-	Participants []ParticipantDto `json:"participants"`
-	BlockHeight  int64            `json:"block_height"`
+	Participants []ParticipantDto    `json:"participants"`
+	BlockHeight  int64               `json:"block_height"`
+	Pagination   *query.PageResponse `json:"pagination,omitempty"`
 }
 
 type StartTrainingDto struct {
