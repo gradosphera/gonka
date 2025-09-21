@@ -231,6 +231,10 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	mlnodeVersion, found := k.GetMLNodeVersion(ctx)
 	if found {
 		genesis.MlnodeVersion = &mlnodeVersion
+	} else {
+		genesis.MlnodeVersion = &types.MLNodeVersion{
+			CurrentVersion: "v3.0.9",
+		}
 	}
 	genesis.ModelList = getModels(&ctx, &k)
 	// Export participants
