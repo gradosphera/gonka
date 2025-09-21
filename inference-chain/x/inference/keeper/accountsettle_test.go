@@ -305,3 +305,57 @@ func TestActualSettle(t *testing.T) {
 	require.Equal(t, uint64(1000), settleAmount2.WorkCoins)
 	require.Equal(t, uint64(expectedRewardCoin/2), settleAmount2.RewardCoins)
 }
+
+func TestActualSettleWithManyParticipants(t *testing.T) {
+	keeper, ctx, mocks := keeper2.InferenceKeeperReturningMocks(t)
+
+	// Configure to use legacy reward system for this test
+	params := keeper.GetParams(ctx)
+	params.BitcoinRewardParams.UseBitcoinRewards = false
+	keeper.SetParams(ctx, params)
+
+	// Create 150 participants to test pagination (>100 default page size)
+	participants := make([]types.Participant, 150)
+	for i := 0; i < 150; i++ {
+		address := testutil.Bech32Addr(i)
+		participant := types.Participant{
+			Index:             address,
+			Address:           address,
+			CoinBalance:       1000,
+			Status:            types.ParticipantStatus_ACTIVE,
+			CurrentEpochStats: &types.CurrentEpochStats{},
+		}
+		participants[i] = participant
+		keeper.SetParticipant(ctx, participant)
+	}
+
+	keeper.SetEpochGroupData(ctx, types.EpochGroupData{
+		EpochIndex: 10,
+	})
+
+	expectedRewardCoin := calcExpectedRewards(participants)
+	coins, err2 := types.GetCoins(expectedRewardCoin)
+	require.NoError(t, err2)
+	mocks.BankKeeper.EXPECT().MintCoins(ctx, types.ModuleName, coins, gomock.Any()).Return(nil)
+	mocks.BankKeeper.EXPECT().LogSubAccountTransaction(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+
+	// This should work with pagination and process all 150 participants
+	err := keeper.SettleAccounts(ctx, 10, 0)
+	require.NoError(t, err)
+
+	// Verify all participants were processed
+	expectedRewardPerParticipant := expectedRewardCoin / 150
+	for i := 0; i < 150; i++ {
+		address := testutil.Bech32Addr(i)
+		updated, found := keeper.GetParticipant(ctx, address)
+		require.True(t, found, "Participant %d should be found", i)
+		require.Equal(t, int64(0), updated.CoinBalance, "Participant %d coin balance should be reset", i)
+		require.Equal(t, uint32(1), updated.EpochsCompleted, "Participant %d should have 1 epoch completed", i)
+
+		settleAmount, found := keeper.GetSettleAmount(ctx, address)
+		require.True(t, found, "Settle amount for participant %d should be found", i)
+		require.Equal(t, uint64(1000), settleAmount.WorkCoins, "Participant %d work coins", i)
+		require.Equal(t, uint64(expectedRewardPerParticipant), settleAmount.RewardCoins, "Participant %d reward coins", i)
+		require.Equal(t, uint64(10), settleAmount.EpochIndex, "Participant %d epoch index", i)
+	}
+}

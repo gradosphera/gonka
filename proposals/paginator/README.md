@@ -309,6 +309,22 @@ Create comprehensive tests for each fix:
 
 This fixes the critical data integrity issue where only first 100 items are returned, using minimal, safe patterns already proven in the codebase.
 
+## Files Modified/Created
+
+### New Files Created
+- `decentralized-api/utils/pagination.go` - Pagination utility wrapper for decentralized-api
+- `decentralized-api/utils/pagination_test.go` - Comprehensive tests for pagination utility
+- `inference-chain/x/inference/keeper/pagination.go` - Pagination utility wrapper for keeper
+- `inference-chain/x/inference/keeper/pagination_test.go` - Tests for keeper pagination utility
+- `decentralized-api/cosmosclient/cosmosclient_test.go` - Tests for GetPartialUpgrades pagination
+- `decentralized-api/internal/server/public/get_participants_handler_test.go` - Tests for getAllParticipants pagination and height pinning
+
+### Modified Files
+- `inference-chain/x/inference/keeper/accountsettle.go` - Fixed SettleAccounts to use pagination wrapper
+- `inference-chain/x/inference/keeper/accountsettle_test.go` - Added test for >100 participants settlement
+- `decentralized-api/internal/server/public/get_participants_handler.go` - Fixed getAllParticipants with height pinning pagination
+- `decentralized-api/cosmosclient/cosmosclient.go` - Fixed GetPartialUpgrades to use pagination wrapper
+
 ### Implementation Checklist
 
 Before implementing, ensure you understand:
@@ -317,5 +333,27 @@ Before implementing, ensure you understand:
 3. **Context usage**: Use `pinnedCtx` for all subsequent gRPC calls after height capture
 4. **Error handling**: Maintain existing error patterns while adding pagination context
 5. **Testing**: Run tests after each change to verify no regressions
-6. **Bank queries**: Include bank balance queries in participant conversion logic
-7. **DTO fields**: Populate all ParticipantDto fields including RefundsOwed and Reputation
+6. **DTO fields**: Only populate ParticipantDto fields that actually exist in the source struct
+
+---
+
+## FUTURE
+
+### Other Queries Missing Pagination
+Several other queries in the codebase may have similar pagination issues where they should be using paginated requests but currently don't. These need to be identified and fixed in future iterations:
+
+- Review all `QueryAll*` calls across the codebase
+- Look for queries that could return large datasets (>100 items)
+- Add pagination support where needed following the same patterns established here
+
+### Active Participant Query Optimization
+Currently, when querying "active participants", the system actually queries ALL participants and then filters them, which can be inefficient with large participant sets. This should be optimized:
+
+- **Current behavior**: Query all participants, then filter for active ones
+- **Problem**: Inefficient when there are many inactive participants
+- **Solution needed**: Either:
+  - Create a dedicated index/query for active participants only
+  - Or implement server-side filtering in the query layer
+  - Or use more efficient pagination strategies for this specific use case
+
+These optimizations should be addressed in a separate implementation phase to avoid scope creep while ensuring the current critical pagination fixes are stable.

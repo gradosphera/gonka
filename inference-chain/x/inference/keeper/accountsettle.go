@@ -5,6 +5,7 @@ import (
 	"math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/productscience/inference/x/inference/types"
 	"github.com/shopspring/decimal"
 )
@@ -96,14 +97,20 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 	k.LogInfo("SettleAccounts", types.Settle, "currentEpochIndex", currentEpochIndex)
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	blockHeight := sdkCtx.BlockHeight()
-	participants, err := k.ParticipantAll(ctx, &types.QueryAllParticipantRequest{})
+	allParticipants, err := GetAllWithPagination(func(pageReq *query.PageRequest) ([]types.Participant, *query.PageResponse, error) {
+		resp, err := k.ParticipantAll(ctx, &types.QueryAllParticipantRequest{Pagination: pageReq})
+		if err != nil {
+			return nil, nil, err
+		}
+		return resp.Participant, resp.Pagination, nil
+	})
 	if err != nil {
-		k.LogError("Error getting participants", types.Settle, "error", err)
+		k.LogError("Error getting all participants", types.Settle, "error", err)
 		return err
 	}
 
 	k.LogInfo("Block height", types.Settle, "height", blockHeight)
-	k.LogInfo("Got participants", types.Settle, "participants", len(participants.Participant))
+	k.LogInfo("Got all participants", types.Settle, "participants", len(allParticipants))
 
 	data, found := k.GetEpochGroupData(ctx, currentEpochIndex, "")
 	k.LogInfo("Settling for block", types.Settle, "height", currentEpochIndex)
@@ -127,7 +134,7 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 		// Use Bitcoin-style fixed reward system with its own parameters
 		k.LogInfo("Using Bitcoin-style reward system", types.Settle)
 		var bitcoinResult BitcoinResult
-		amounts, bitcoinResult, err = GetBitcoinSettleAmounts(participants.Participant, &data, params.BitcoinRewardParams, settleParameters)
+		amounts, bitcoinResult, err = GetBitcoinSettleAmounts(allParticipants, &data, params.BitcoinRewardParams, settleParameters)
 		if err != nil {
 			k.LogError("Error getting Bitcoin settle amounts", types.Settle, "error", err)
 		}
@@ -140,7 +147,7 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 		// Use current WorkCoins-based variable reward system with its own parameters
 		k.LogInfo("Using current WorkCoins-based reward system", types.Settle)
 		var subsidyResult SubsidyResult
-		amounts, subsidyResult, err = GetSettleAmounts(participants.Participant, settleParameters)
+		amounts, subsidyResult, err = GetSettleAmounts(allParticipants, settleParameters)
 		if err != nil {
 			k.LogError("Error getting settle amounts", types.Settle, "error", err)
 		}
@@ -163,15 +170,15 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 	}
 	k.AddTokenomicsData(ctx, &types.TokenomicsData{TotalSubsidies: uint64(rewardAmount)})
 
-	k.LogInfo("Checking downtime for participants", types.Settle, "participants", len(participants.Participant))
-	for _, participant := range participants.Participant {
+	k.LogInfo("Checking downtime for participants", types.Settle, "participants", len(allParticipants))
+	for _, participant := range allParticipants {
 		k.LogDebug("Checking downtime for participant", types.Settle, "participant", participant.Address, "missed_requests", participant.CurrentEpochStats.MissedRequests, "inference_count", participant.CurrentEpochStats.InferenceCount)
 		// TODO: Check if it is better to move this function outside the settleAccounts function.
 		// Check for downtime and slash if necessary.
 		k.CheckAndSlashForDowntime(ctx, &participant)
 	}
 
-	for i, participant := range participants.Participant {
+	for i, participant := range allParticipants {
 		// amount should have the same order as participants
 		amount := amounts[i]
 
