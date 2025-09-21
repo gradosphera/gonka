@@ -15,7 +15,7 @@
 
 In Cosmos SDK, when `PageRequest` is nil or `Limit` is 0, the default page size is 100. These calls return only the first 100 items and silently miss the rest:
 
-1. **`inference-chain/x/inference/keeper/accountsettle.go:99`** - `SettleAccounts` misses participants beyond first 100
+1. **`inference-chain/x/inference/keeper/accountsettle.go:99`** - `SettleAccounts` misses participants beyond first 100. There's no point to use a paginated query here at all, since it happens inside the chain code and we can just read all participants directly from the store.
 2. **`decentralized-api/internal/server/public/get_participants_handler.go:193`** - HTTP endpoint returns incomplete data
 3. **`decentralized-api/cosmosclient/cosmosclient.go:395`** - `GetPartialUpgrades` misses upgrade plans
 
@@ -62,19 +62,10 @@ func GetAllWithPagination[T any](
 ```
 
 **Required file creation:**
-1. Create `decentralized-api/utils/pagination.go` with package declaration:
+
+Create `decentralized-api/utils/pagination.go` with package declaration:
    ```go
    package utils
-   
-   import (
-       "fmt"
-       "github.com/cosmos/cosmos-sdk/types/query"
-   )
-   ```
-
-2. Create `inference-chain/x/inference/keeper/pagination.go` with package declaration:
-   ```go
-   package keeper
    
    import (
        "fmt"
@@ -91,36 +82,18 @@ func GetAllWithPagination[T any](
 
 ## Fixes
 
-### 1. SettleAccounts - Use Wrapper (Read All, Same Block)
+### 1. SettleAccounts - Call the keeper directly
 
 **Current:**
 ```go
 participants, err := k.ParticipantAll(ctx, &types.QueryAllParticipantRequest{})
 ```
 
-**Fixed (runs entirely within the settlement block `sdk.Context`):**
-Note: Ensure the helper is available in the keeper package (e.g., `x/inference/keeper/pagination.go`).
+**Fixed:**
+Just using the keeper method to read all participants directly from the store:
 ```go
-allParticipants, err := GetAllWithPagination(func(pageReq *query.PageRequest) ([]types.Participant, *query.PageResponse, error) {
-	resp, err := k.ParticipantAll(ctx, &types.QueryAllParticipantRequest{Pagination: pageReq})
-	if err != nil {
-		return nil, nil, err
-	}
-	return resp.Participant, resp.Pagination, nil
-})
-if err != nil {
-	k.LogError("Error getting all participants", types.Settle, "error", err)
-	return err
-}
-
-k.LogInfo("Got all participants", types.Settle, "participants", len(allParticipants))
-// Continue with existing logic using allParticipants instead of participants.Participant
-// Update all references from participants.Participant to allParticipants in the settlement logic
+allParticipants := k.GetAllParticipant(ctx)
 ```
-
-Notes:
-- This code executes inside keeper logic using the same `ctx` provided to the settlement, guaranteeing a consistent snapshot for the entire pagination.
-- Do not perform external network queries from settlement logic.
 
 ### 2. getAllParticipants - Process Per Page (Pinned Height)
 
@@ -267,10 +240,11 @@ func (icc *InferenceCosmosClient) GetPartialUpgrades() (*types.QueryAllPartialUp
 
 ## Implementation Notes
 
-- **Utility location**: Place `GetAllWithPagination` in `decentralized-api/utils/pagination.go`; copy the same function into `inference-chain/x/inference/keeper/pagination.go` for on-chain usage.
+- **Utility location**: Place `GetAllWithPagination` in `decentralized-api/utils/pagination.go`
 - **Error context**: Enhanced error messages show progress when failures occur
-- **Two strategies**:
-  - Use wrapper for business logic needing complete datasets (SettleAccounts, GetPartialUpgrades)
+- **Three strategies**:
+  - Use direct store read for on-chain logic (SettleAccounts)
+  - Use wrapper for business logic needing complete datasets (GetPartialUpgrades)
   - Process per-page for memory-efficient transformations (getAllParticipants)
 - **Page size 1000**: Efficient balance between API calls and memory usage
 - **Pattern proven**: Based on existing successful implementation in `inference_validation.go`
@@ -280,7 +254,7 @@ func (icc *InferenceCosmosClient) GetPartialUpgrades() (*types.QueryAllPartialUp
 Create comprehensive tests for each fix:
 
 1. **SettleAccounts tests** (`inference-chain/x/inference/keeper/accountsettle_test.go`):
-   - Test with >100 participants to verify pagination works
+   - Test with >100 participants to verify we don't miss any of the participants
    - Test settlement consistency across pages
    - Test error handling during pagination
 
@@ -314,8 +288,6 @@ This fixes the critical data integrity issue where only first 100 items are retu
 ### New Files Created
 - `decentralized-api/utils/pagination.go` - Pagination utility wrapper for decentralized-api
 - `decentralized-api/utils/pagination_test.go` - Comprehensive tests for pagination utility
-- `inference-chain/x/inference/keeper/pagination.go` - Pagination utility wrapper for keeper
-- `inference-chain/x/inference/keeper/pagination_test.go` - Tests for keeper pagination utility
 - `decentralized-api/cosmosclient/cosmosclient_test.go` - Tests for GetPartialUpgrades pagination
 - `decentralized-api/internal/server/public/get_participants_handler_test.go` - Tests for getAllParticipants pagination and height pinning
 
