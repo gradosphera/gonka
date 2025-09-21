@@ -5339,7 +5339,8 @@
           "validator_key": "LLqBxOz+vD3p7sQsdEhBfrFH2QFMjy3fMasB9yBGSqs=",
           "current_epoch_stats": {}
         }
-      ]
+      ],
+      "mlnode_version": "v3.0.9"
     },
     "interchainaccounts": {
       "controller_genesis_state": {
