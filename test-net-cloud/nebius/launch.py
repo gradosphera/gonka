@@ -139,7 +139,7 @@ def docker_compose_down():
         print("Deploy directory doesn't exist, skipping Docker cleanup")
 
 
-def clone_repo(branch="main"):
+def clone_repo(branch="gm/test-upgrade-proposal-2"):
     if not GONKA_REPO_DIR.exists():
         print(f"Cloning {GONKA_REPO_DIR}")
         os.system(f"git clone https://github.com/gonka-ai/gonka.git {GONKA_REPO_DIR}")
