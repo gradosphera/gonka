@@ -33,6 +33,7 @@ func ModifyRequestBody(requestBytes []byte, defaultSeed int32) (*ModifiedRequest
 
 	requestMap["max_tokens"] = maxTokens
 	requestMap["max_completion_tokens"] = maxTokens
+	requestMap["skip_special_tokens"] = false
 	if _, ok := requestMap["seed"]; !ok {
 		requestMap["seed"] = defaultSeed
 	}

@@ -547,6 +547,7 @@ func (s *InferenceValidator) validate(inference types.Inference, inferenceNode *
 	// From here on, errors are on the part of the validator, not the inference that was passed in
 	requestMap["enforced_tokens"] = enforcedTokens
 	requestMap["stream"] = false
+	requestMap["skip_special_tokens"] = false
 	delete(requestMap, "stream_options")
 
 	requestBody, err := json.Marshal(requestMap)
