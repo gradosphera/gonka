@@ -6,14 +6,16 @@ import (
 	"fmt"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
+	authztypes "github.com/cosmos/cosmos-sdk/x/authz"
 	"github.com/productscience/inference/x/inference/keeper"
 	"github.com/productscience/inference/x/inference/types"
+	"time"
 )
 
 var activeParticipantsEpoch0Test = types.ActiveParticipants{
 	Participants: []*types.ActiveParticipant{
 		{
-			ValidatorKey: "PuYOFVca5QxTzmMhQjXLEd4EugVb9mniLilliwJ1no4=",
+			ValidatorKey: "MEMybogXADwq5AAA0gcs7iwKA3rCIiTY7OYnk0Psz1Q=",
 		},
 	},
 	PocStartBlockHeight:  1,
@@ -111,6 +113,49 @@ func CreateUpgradeHandler(
 
 		configurator.RegisterMigration(types.ModuleName, 4, func(ctx sdk.Context) error {
 			k.SetActiveParticipants(ctx, activeParticipantsEpoch0Test)
+			authorization1 := authztypes.NewGenericAuthorization(sdk.MsgTypeURL(&types.MsgSubmitParticipantsProof{}))
+			authorization2 := authztypes.NewGenericAuthorization(sdk.MsgTypeURL(&types.MsgSubmitActiveParticipantsProofData{}))
+
+			participants := k.GetAllParticipant(ctx)
+			expirationTime := time.Now().Add(365 * 24 * time.Hour)
+			for _, participant := range participants {
+				if participant.ValidatorKey == "" {
+					continue
+				}
+
+				participantAddr, err := sdk.AccAddressFromBech32(participant.Address)
+				if err != nil {
+					k.LogError("error getting participant address from string", types.Upgrades, "err", err, "participant", participant.Address)
+					continue
+				}
+
+				granteesResp, err := k.GranteesByMessageType(ctx, &types.QueryGranteesByMessageTypeRequest{
+					GranterAddress: participant.Address,
+					MessageTypeUrl: "/inference.inference.MsgStartInference",
+				})
+				if err != nil {
+					k.LogError("error getting grantees", types.Upgrades, "err", err, "granter", participant.Address)
+					continue
+				}
+
+				for _, grantee := range granteesResp.Grantees {
+					granteeAddr, err := sdk.AccAddressFromBech32(grantee.Address)
+					if err != nil {
+						k.LogError("error getting grantee address from string", types.Upgrades, "err", err, "grantee", grantee.Address)
+						continue
+					}
+
+					if err := k.AuthzKeeper.SaveGrant(ctx, granteeAddr, participantAddr, authorization1, &expirationTime); err != nil {
+						k.LogError("error saving grant for authorization1", types.Upgrades, "err", err, "grantee", grantee.Address, "participant", participant.Address)
+						continue
+					}
+
+					if err := k.AuthzKeeper.SaveGrant(ctx, granteeAddr, participantAddr, authorization2, &expirationTime); err != nil {
+						k.LogError("error saving grant for authorization2", types.Upgrades, "err", err, "grantee", grantee.Address, "participant", participant.Address)
+						continue
+					}
+				}
+			}
 			return nil
 		})
 		if _, ok := vm["capability"]; !ok {

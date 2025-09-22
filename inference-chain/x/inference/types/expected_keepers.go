@@ -2,6 +2,7 @@ package types
 
 import (
 	"context"
+	"time"
 
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -124,6 +125,7 @@ type ModelKeeper interface {
 
 type AuthzKeeper interface {
 	GranterGrants(ctx context.Context, req *authztypes.QueryGranterGrantsRequest) (*authztypes.QueryGranterGrantsResponse, error)
+	SaveGrant(ctx context.Context, grantee, granter sdk.AccAddress, authorization authztypes.Authorization, expiration *time.Time) error
 }
 
 // BlsKeeper defines the expected interface for the BLS module.
