@@ -231,46 +231,51 @@ The broker populates epoch-specific data in `NodeState.EpochModels` and `NodeSta
 - **Purpose**: Return all alternative model IDs for a given governance model
 - **Usage**: Support debugging and administrative queries about model relationships
 
-### 3. Comprehensive Node Disabling
+### 3. Comprehensive Node Disabling and On-Chain Admin State
 
-**Problem**: The current system has inconsistent node disabling behavior. While `AdminState.Enabled = false` in broker prevents local operations, disabled nodes are still included in on-chain epoch formation through `setModelsForParticipants()` and can receive PoC weight regardless of their operational status. Disabled nodes with `HardwareNode.status = STOPPED` or `FAILED` can still be assigned PoC weight during epoch formation, and nodes that remain inactive during PoC phases can still participate in consensus calculations.
+**Problem**: The current system has inconsistent node disabling behavior. While `AdminState.Enabled = false` in the broker prevents local operations, disabled nodes might still be included in on-chain epoch formation if their status is not updated to `STOPPED` in time. The timing of this status update is also critical; it should not prevent a node from finishing its duties in the current epoch.
 
-**Solution**: Implement a comprehensive node status filtering system that operates at three levels: (1) Filter hardware nodes by status during epoch formation before any processing, (2) Cross-reference MLNode IDs with hardware node status during weight distribution to exclude disabled nodes, (3) Update broker synchronization to explicitly mark disabled nodes for removal in hardware diffs, and (4) Add hardware node status validation in PoC batch submission to reject batches from disabled nodes.
+**Solution**: Implement a comprehensive node status management system by persisting the administrative state on-chain. This allows the system to proactively exclude nodes from upcoming work assignments before they are formally `STOPPED`. The transition to the `STOPPED` status will be delayed until the node has completed its obligations for the current epoch, specifically during the `ClaimReward` stage.
 
 **Changes Required**:
 
-**File**: `inference-chain/x/inference/module/model_assignment.go`
-- **Function**: `setModelsForParticipants()`
-- **Current Logic**: Processes all hardware nodes from `GetHardwareNodes(ctx, p.Index)` without status filtering
-- **New Logic**: 
-  1. After retrieving hardware nodes with `GetHardwareNodes(ctx, p.Index)`, filter hardware nodes
-  2. Create `activeHardwareNodes` by excluding nodes where `node.Status == types.HardwareNodeStatus_STOPPED || node.Status == types.HardwareNodeStatus_FAILED`
-  3. Use `activeHardwareNodes` instead of `hardwareNodes` for all subsequent processing
-  4. Log exclusions: `ma.LogInfo("Excluding disabled hardware node from epoch", "participant", p.Index, "node_id", node.LocalId, "status", node.Status)`
-
-**File**: `inference-chain/x/inference/module/model_assignment.go`
-- **Function**: `distributeLegacyWeight()`
-- **Current Logic**: Distributes weight among all `originalMLNodes` without status checks
-- **New Logic**: 
-  1. Before weight distribution, cross-reference MLNode IDs with hardware node status from `hardwareNodes.HardwareNodes`
-  2. Skip weight distribution for MLNodes whose corresponding hardware node has `STOPPED` or `FAILED` status
-  3. Recalculate total weight distribution excluding disabled nodes
-  4. Log weight exclusions: `ma.LogInfo("Excluding disabled MLNode from PoC weight", "node_id", mlNode.NodeId, "hardware_status", hardwareNode.Status)`
+**File**: `inference-chain/proto/inference/inference/hardware_node.proto`
+- **Message**: `HardwareNode`
+- **Addition**: Add a new field `AdminState admin_state = 8;` (assuming 8 is the next available field number).
+- **New Message**: `AdminState`
+  - `HardwareNodeStatus target_status = 1;` (e.g., `STOPPED`)
+  - `int64 effective_epoch = 2;` (epoch when status should apply)
+- **Regeneration**: Run `make proto-gen`.
+- **Purpose**: To record the intended state of a node from an administrative action, and when that state should take effect.
 
 **File**: `decentralized-api/broker/broker.go`
 - **Function**: `syncNodes()`
-- **Current Logic**: Submits all local nodes to chain via `calculateNodesDiff()` regardless of admin state
-- **New Logic**: 
-  1. Before calculating node differences with `calculateNodesDiff()`, filter local nodes based on admin state
-  2. In `calculateNodesDiff()`, exclude nodes where `!nodeWithState.State.ShouldBeOperational(latestEpoch, currentPhase)`
-  3. For disabled nodes, explicitly add them to `diff.Removed` to update on-chain status to `STOPPED`
-  4. This ensures next epoch formation excludes disabled nodes
+- **Current Logic**: Submits all local nodes to chain via `calculateNodesDiff()` regardless of admin state, marking them for removal if disabled.
+- **New Logic**:
+  1. When a node is administratively disabled, `syncNodes` immediately submits a `HardwareDiff` to update the new `admin_state` field on-chain.
+  2. The `target_status` would be set to `STOPPED` and `effective_epoch` to the next epoch.
+  3. The node's main `status` field remains `INFERENCE` or its current operational state. This separates intended state from current state.
+
+**File**: `inference-chain/x/inference/module/model_assignment.go`
+- **Function**: `setModelsForParticipants()`
+- **Current Logic**: The original proposal suggests filtering by `status`.
+- **New Logic**:
+  1. Before assigning work, filter out nodes based on their on-chain `admin_state`.
+  2. Exclude any node where `admin_state.effective_epoch <= current_epoch`.
+  3. This ensures nodes scheduled for disabling are not assigned new inference work for the upcoming epoch.
+  4. Log exclusions: `ma.LogInfo("Excluding node with pending admin state from new epoch assignments", "node_id", node.LocalId, "effective_epoch", node.AdminState.EffectiveEpoch)`
+
+**File**: `inference-chain/x/inference/module/end_blocker.go` (or similar epoch transition logic)
+- **New Logic**:
+  1. Add a new step that runs during the `ClaimReward` phase of the epoch.
+  2. This step iterates through all `HardwareNode`s.
+  3. If `current_epoch >= node.AdminState.effective_epoch` and `node.status != node.AdminState.target_status`, update `node.status` to `node.AdminState.target_status` (e.g., `STOPPED`).
+  4. This correctly times the final state transition after the node has fulfilled its duties for the epoch it was active in.
 
 **File**: `inference-chain/x/inference/keeper/msg_server_submit_poc_batch.go`
 - **Function**: `SubmitPocBatch()`
-- **Enhancement**: After validating NodeId exists in epoch snapshots (from requirement #1), also verify the corresponding hardware node status is not `STOPPED` or `FAILED`
-- **Implementation**: Query hardware nodes and check status before accepting PoC batch
-- **Error**: Return `types.ErrNodeDisabled` for batches from disabled nodes
+- **Enhancement**: After validating NodeId exists in epoch snapshots (from requirement #1), also verify the corresponding hardware node `status` is not `STOPPED` or `FAILED`.
+- **Error**: Return `types.ErrNodeDisabled` for batches from disabled nodes.
 
 **Implementation Priority**:
 1. **PoC Batch Validation** - Immediate security concern requiring strict enforcement
@@ -407,3 +412,27 @@ The broker populates epoch-specific data in `NodeState.EpochModels` and `NodeSta
   - `MajorThreshold` (default: 5.0% - matches current collateral slashing, full penalty)
 - `SequentialMissedInferenceThreshold` (default: 50)
 - `OrphanedRequestTimeout` (default: 30 seconds)
+
+### 8. Handling Validation Debt for Offline Nodes
+
+**Problem**: A participant might turn off their nodes, making them unable to fulfill their inference validation responsibilities. This can lead to an accumulation of "validation debt" that is not currently accounted for, especially if the node is disabled before penalties for missed validations can be applied. This is a rare edge case but could affect network integrity.
+
+**Solution**: Introduce a mechanism to track and penalize outstanding validation debt. This ensures that participants cannot evade their responsibilities by simply going offline.
+
+**Changes Required**:
+
+**File**: `inference-chain/proto/inference/inference/participant.proto`
+- **Message**: `Participant`
+- **Addition**: Add a field `int64 validation_debt = 17;` to track the number of missed validations that have not yet been penalized.
+
+**File**: `inference-chain/x/inference/keeper/ slashing.go` (or a relevant keeper)
+- **Logic**: When a participant misses a validation, increment their `validation_debt` counter.
+- **New Function**: `SettleValidationDebt()`
+  - This function would be called when a participant's node is being disabled or at other key lifecycle events.
+  - It would apply a slash to the participant's collateral proportional to the accumulated `validation_debt`.
+  - Once the penalty is applied, the `validation_debt` is reset to zero.
+
+**File**: `inference-chain/x/inference/keeper/msg_server_submit_hardware_diff.go`
+- **Function**: `SubmitHardwareDiff()`
+- **Enhancement**: When a request is made to re-enable a node (e.g., move from `STOPPED` to `INFERENCE`), check if the participant has any outstanding `validation_debt`.
+- **New Logic**: Reject the re-enabling request until the validation debt is settled, potentially through a manual transaction by the participant to clear it.
