@@ -12,6 +12,13 @@ import (
 func (k msgServer) SubmitPocBatch(goCtx context.Context, msg *types.MsgSubmitPocBatch) (*types.MsgSubmitPocBatchResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	if msg.NodeId == "" {
+		k.LogError(PocFailureTag+"[SubmitPocBatch] NodeId is empty", types.PoC,
+			"participant", msg.Creator,
+			"msg.NodeId", msg.NodeId)
+		return nil, sdkerrors.Wrap(types.ErrPocNodeIdEmpty, "NodeId is empty")
+	}
+
 	currentBlockHeight := ctx.BlockHeight()
 	startBlockHeight := msg.PocStageStartBlockHeight
 	epochParams := k.Keeper.GetParams(goCtx).EpochParams

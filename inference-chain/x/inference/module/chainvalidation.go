@@ -100,6 +100,10 @@ func (am AppModule) GetPreviousEpochMLNodesWithInferenceAllocation(ctx context.C
 		"len(validationWeight)", len(currentEpochGroup.GroupData.ValidationWeights))
 
 	preservedNodesByParticipant, err := am.GetPreservedNodesByParticipant(ctx, currentEpochGroup.GroupData.EpochIndex)
+	if err != nil {
+		am.LogError("GetPreviousEpochMLNodesWithInferenceAllocation: Error getting preserved nodes by participant", types.PoC, "error", err)
+		return nil
+	}
 
 	// Iterate through all validation weights in current epoch to find inference-serving MLNodes
 	for _, validationWeight := range currentEpochGroup.GroupData.ValidationWeights {
@@ -131,13 +135,18 @@ func (am AppModule) GetPreviousEpochMLNodesWithInferenceAllocation(ctx context.C
 
 		// Calculate total weight from preserved MLNodes
 		totalWeight := int64(0)
+		filteredInferenceMLNodes := make([]*types.MLNodeInfo, 0)
 		for _, mlNode := range inferenceMLNodes {
+			if mlNode.NodeId == "" {
+				continue
+			}
 			totalWeight += mlNode.PocWeight
+			filteredInferenceMLNodes = append(filteredInferenceMLNodes, mlNode)
 		}
 
 		// Create the double repeated structure with all MLNodes in the first array (index 0)
 		firstMLNodeArray := &types.ModelMLNodes{
-			MlNodes: inferenceMLNodes,
+			MlNodes: filteredInferenceMLNodes,
 		}
 		modelMLNodesArray := []*types.ModelMLNodes{firstMLNodeArray}
 
@@ -157,7 +166,7 @@ func (am AppModule) GetPreviousEpochMLNodesWithInferenceAllocation(ctx context.C
 		am.LogInfo("GetPreviousEpochMLNodesWithInferenceAllocation: Created preserved participant", types.PoC,
 			"participantAddress", participantAddress,
 			"totalWeight", totalWeight,
-			"numMLNodes", len(inferenceMLNodes))
+			"numMLNodes", len(filteredInferenceMLNodes))
 	}
 
 	am.LogInfo("GetPreviousEpochMLNodesWithInferenceAllocation: Summary", types.PoC,
@@ -353,8 +362,11 @@ func (am AppModule) ComputeNewWeights(ctx context.Context, upcomingEpoch types.E
 		// Check if this participant also has PoC mining activity
 		if pocParticipant := findParticipantByAddress(pocMiningParticipants, participantAddress); pocParticipant != nil {
 			// Merge: combine weights and MLNodes from both sources
-			combinedWeight := preservedParticipant.Weight + pocParticipant.Weight
 			combinedMLNodes := mergeMLNodeArrays(preservedParticipant.MlNodes, pocParticipant.MlNodes)
+			combinedWeight := int64(0)
+			for _, mlNode := range combinedMLNodes[0].MlNodes {
+				combinedWeight += mlNode.PocWeight
+			}
 
 			mergedParticipant := &types.ActiveParticipant{
 				Index:        participantAddress,
@@ -372,7 +384,8 @@ func (am AppModule) ComputeNewWeights(ctx context.Context, upcomingEpoch types.E
 				"participantAddress", participantAddress,
 				"preservedWeight", preservedParticipant.Weight,
 				"pocWeight", pocParticipant.Weight,
-				"combinedWeight", combinedWeight)
+				"combinedWeight", combinedWeight,
+				"combinedMLNodes", combinedMLNodes)
 		} else {
 			// Only preserved participant (no PoC mining activity)
 			allActiveParticipants = append(allActiveParticipants, preservedParticipant)
@@ -448,8 +461,33 @@ func mergeMLNodeArrays(preservedMLNodes, pocMLNodes []*types.ModelMLNodes) []*ty
 		}
 	}
 
+	filteredMergedMLNodes := make([]*types.MLNodeInfo, 0)
+	for _, mlNode := range mergedMLNodes {
+		if mlNode.NodeId == "" {
+			continue
+		}
+		filteredMergedMLNodes = append(filteredMergedMLNodes, mlNode)
+	}
+
 	// Return merged array in the first position
-	return []*types.ModelMLNodes{{MlNodes: mergedMLNodes}}
+	return []*types.ModelMLNodes{{MlNodes: filteredMergedMLNodes}}
+}
+
+func RecalculateWeight(p *types.ActiveParticipant) int64 {
+	weight := int64(0)
+	countedNodeIds := make(map[string]bool)
+	for _, nodeMLNodes := range p.MlNodes {
+		for _, mlNode := range nodeMLNodes.MlNodes {
+			if mlNode.NodeId == "" {
+				continue
+			}
+			if _, ok := countedNodeIds[mlNode.NodeId]; !ok {
+				countedNodeIds[mlNode.NodeId] = true
+				weight += mlNode.PocWeight
+			}
+		}
+	}
+	return weight
 }
 
 // Calculate computes the new weights for active participants based on the data in the WeightCalculator
@@ -521,6 +559,8 @@ func (wc *WeightCalculator) validatedParticipant(participantAddress string) *typ
 			PocWeight: n.weight,
 		})
 	}
+
+	wc.Logger.LogInfo("Calculate: mlNodes", types.PoC, "mlNodes", mlNodes)
 
 	// Create the double repeated structure with all MLNodes in the first array (index 0)
 	firstMLNodeArray := &types.ModelMLNodes{

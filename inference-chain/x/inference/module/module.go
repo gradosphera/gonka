@@ -403,6 +403,9 @@ func (am AppModule) onEndOfPoCValidationStage(ctx context.Context, blockHeight i
 		return
 	}
 
+	modelAssigner := NewModelAssigner(am.keeper, am.keeper)
+	modelAssigner.setModelsForParticipants(ctx, activeParticipants, *upcomingEpoch)
+
 	// Adjust weights based on collateral after the grace period. This modifies the weights in-place.
 	if err := am.keeper.AdjustWeightsByCollateral(ctx, activeParticipants); err != nil {
 		am.LogError("onSetNewValidatorsStage: failed to adjust weights by collateral", types.Tokenomics, "error", err)
@@ -412,9 +415,6 @@ func (am AppModule) onEndOfPoCValidationStage(ctx context.Context, blockHeight i
 
 	// Apply universal power capping to epoch powers
 	activeParticipants = am.applyEpochPowerCapping(ctx, activeParticipants)
-
-	modelAssigner := NewModelAssigner(am.keeper, am.keeper)
-	modelAssigner.setModelsForParticipants(ctx, activeParticipants, *upcomingEpoch)
 
 	err = am.RegisterTopMiners(ctx, activeParticipants, blockTime)
 	if err != nil {
