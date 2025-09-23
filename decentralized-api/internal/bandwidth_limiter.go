@@ -311,5 +311,5 @@ type ConfigManager interface {
 }
 
 type ChainPhaseTracker interface {
-	GetCurrentEpochState() *chainphase.EpochState
+	State() *chainphase.EpochState
 }

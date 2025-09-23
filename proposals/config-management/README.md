@@ -137,28 +137,57 @@ CREATE TABLE inference_nodes (
 
 ### Implementation Strategy
 
-#### Phase 1: Database Integration
-1. Add embedded SQLite database to the project
-2. Create database schema and migration system
-3. Implement database operations layer
-4. Add database initialization to startup process
+#### Single-Step Automatic Migration
+The system will perform automatic migration on first startup with the new code:
 
-#### Phase 2: Hybrid ConfigManager
-1. Modify ConfigManager to use both static config and database
-2. Implement read operations from appropriate sources
-3. Route write operations to database for dynamic data
-4. Add periodic export functionality for debugging
-5. Maintain backward compatibility during transition
+1. **Add embedded SQLite database to the project**
+2. **Create database schema and automatic migration system**
+3. **Implement hybrid ConfigManager with automatic migration**
+4. **System automatically migrates on startup and switches to hybrid mode**
 
-#### Phase 3: Migration and Cleanup
-1. Create migration tool to move dynamic data from YAML to database
-2. **Update all callers** to use new ConfigManager API:
+#### Migration Process (Automatic)
+```go
+func (cm *ConfigManager) Initialize() error {
+    // 1. Load static config from YAML (always required)
+    staticConfig, err := cm.loadStaticConfig()
+    if err != nil {
+        return fmt.Errorf("failed to load static config: %w", err)
+    }
+    
+    // 2. Initialize database
+    if err := cm.initDatabase(); err != nil {
+        return fmt.Errorf("failed to initialize database: %w", err)
+    }
+    
+    // 3. Check if migration is needed (empty database = needs migration)
+    if cm.needsMigration() {
+        logging.Info("Performing automatic migration from YAML to hybrid system", types.Config)
+        
+        // 4. Migrate all dynamic data from YAML to database
+        if err := cm.migrateFromYAML(staticConfig); err != nil {
+            return fmt.Errorf("automatic migration failed: %w", err)
+        }
+        
+        // 5. Clean up YAML - remove dynamic fields, keep only static config
+        if err := cm.saveCleanStaticConfig(staticConfig); err != nil {
+            logging.Warn("Failed to clean up YAML config", types.Config, "error", err)
+        }
+        
+        logging.Info("Automatic migration completed successfully", types.Config)
+    }
+    
+    return nil
+}
+```
+
+#### Post-Migration Cleanup
+1. **Update all callers** to use new ConfigManager API (no changes needed - same interface):
    - `node_handlers.go:37` - `syncNodesWithConfig()` calls
    - `node_handlers.go:65,120` - `config.SetNodes()` calls  
    - All height update locations that call `SetHeight()`
    - All seed update locations calling `SetCurrentSeed()`, etc.
-3. Remove dynamic data fields from YAML structure (`config.go:5,6,8-12,14,17-18`)
-4. Add database backup/restore capabilities
+2. **Dynamic data fields automatically removed from YAML** (`config.go:5,6,8-12,14,17-18`)
+3. **Database backup/restore capabilities included**
 
 ### Technical Specifications
 
@@ -199,9 +228,10 @@ func initDatabase(dbPath string) (*sql.DB, error) {
 #### Configuration Structure
 
 ```go
-type HybridConfig struct {
-    Static   StaticConfig
-    Database *StateDatabase
+type HybridConfigManager struct {
+    staticConfig StaticConfig
+    database     *StateDatabase
+    mutex        sync.RWMutex
 }
 
 type StaticConfig struct {
@@ -267,27 +297,83 @@ func (cm *ConfigManager) StartPeriodicExport(interval time.Duration) // backgrou
 9. **Transactional Node Updates**: Multiple node operations can be batched atomically (vs current `syncNodesWithConfig()` in `node_handlers.go:42`)
 10. **Debug Visibility**: Periodic full config exports provide complete system state snapshots
 
-### Migration Path
+### Automatic Migration Implementation
 
-#### Step 1: Preparation
-- Add database dependency to `go.mod`
-- Create database initialization code
-- Implement schema migration system
+#### Migration Detection
+```go
+func (cm *HybridConfigManager) needsMigration() bool {
+    // Check if database has been initialized with dynamic data
+    var count int
+    err := cm.database.db.QueryRow("SELECT COUNT(*) FROM chain_state").Scan(&count)
+    if err != nil {
+        // If table doesn't exist or query fails, we need migration
+        return true
+    }
+    return count == 0 // Empty database = needs migration
+}
+```
 
-#### Step 2: Parallel Operation  
-- Run both systems side-by-side
-- Write to both YAML and database
-- Read from database with YAML fallback
+#### Automatic Migration Function
+```go
+func (cm *HybridConfigManager) migrateFromYAML(originalConfig Config) error {
+    // Create backup before migration
+    backupPath := fmt.Sprintf("%s.pre-migration.%d", cm.configPath, time.Now().Unix())
+    if err := cm.backupConfigFile(backupPath); err != nil {
+        logging.Warn("Failed to create backup", types.Config, "error", err)
+    }
+    
+    // Perform migration in single transaction
+    tx, err := cm.database.db.Begin()
+    if err != nil {
+        return fmt.Errorf("failed to start migration transaction: %w", err)
+    }
+    defer tx.Rollback()
+    
+    // Migrate all dynamic data
+    if err := cm.migrateChainState(tx, originalConfig); err != nil {
+        return fmt.Errorf("failed to migrate chain state: %w", err)
+    }
+    if err := cm.migrateSeeds(tx, originalConfig); err != nil {
+        return fmt.Errorf("failed to migrate seeds: %w", err)
+    }
+    if err := cm.migrateNetworkParams(tx, originalConfig); err != nil {
+        return fmt.Errorf("failed to migrate network params: %w", err)
+    }
+    if err := cm.migrateNodes(tx, originalConfig.Nodes); err != nil {
+        return fmt.Errorf("failed to migrate nodes: %w", err)
+    }
+    if err := cm.migrateNodeVersions(tx, originalConfig.NodeVersions); err != nil {
+        return fmt.Errorf("failed to migrate node versions: %w", err)
+    }
+    if err := cm.migrateUpgradePlans(tx, originalConfig.UpgradePlan); err != nil {
+        return fmt.Errorf("failed to migrate upgrade plans: %w", err)
+    }
+    
+    // Commit all changes atomically
+    if err := tx.Commit(); err != nil {
+        return fmt.Errorf("failed to commit migration: %w", err)
+    }
+    
+    logging.Info("Migration completed successfully", types.Config, 
+        "backup_created", backupPath)
+    return nil
+}
+```
 
-#### Step 3: Database Primary
-- Switch to database-first operations
-- Keep YAML for static config only
-- Remove dynamic fields from YAML
-
-#### Step 4: Cleanup
-- Remove legacy code paths
-- Update documentation
-- Add monitoring for database operations
+#### Clean Config Generation
+```go
+func (cm *HybridConfigManager) saveCleanStaticConfig(originalConfig Config) error {
+    cleanConfig := StaticConfig{
+        Api:             originalConfig.Api,
+        ChainNode:       originalConfig.ChainNode,
+        MLNodeKeyConfig: originalConfig.MLNodeKeyConfig,
+        Nats:            originalConfig.Nats,
+    }
+    
+    // Write clean static-only config back to YAML
+    return cm.writeStaticConfigToYAML(cleanConfig)
+}
+```
 
 ### Operational Considerations
 
@@ -354,18 +440,24 @@ CREATE TABLE mlnode_security (
 
 ### Rollback Plan
 
-If issues arise during migration:
-1. Revert to YAML-only configuration
-2. Export database state back to YAML
-3. Use feature flags to disable database operations
-4. Maintain dual-write capability during transition period
+If issues arise during automatic migration:
+1. **Automatic backup restoration**: Pre-migration backup is created at `{config}.pre-migration.{timestamp}`
+2. **Manual rollback**: Restore backup file and restart with old binary
+3. **Migration retry**: Fix issues and restart - migration will retry automatically
+4. **Database reset**: Delete `state.db` file to force re-migration on next startup
+
+```bash
+# Emergency rollback procedure
+cp config.yaml.pre-migration.1234567890 config.yaml
+# Restart with old binary or delete state.db and restart with new binary
+```
 
 ## Implementation Timeline
 
-- **Week 1**: Database integration and schema creation
-- **Week 2**: Hybrid ConfigManager implementation  
-- **Week 3**: Migration tooling and testing
-- **Week 4**: Production deployment and monitoring
+- **Week 1**: Database integration, schema creation, and automatic migration system
+- **Week 2**: Hybrid ConfigManager implementation with seamless API compatibility  
+- **Week 3**: Testing, validation, and production deployment preparation
+- **Week 4**: Production deployment with automatic migration
 
 ## Current Code Analysis
 
@@ -394,6 +486,16 @@ Each `SetNodes()` call triggers:
 
 **The Problem**: Every REST API node operation (`POST /admin/v1/nodes`, `DELETE /admin/v1/nodes/:id`) rewrites the entire YAML configuration file, creating corruption risk during high-frequency operations.
 
-**The Solution**: Move nodes to database, eliminate file rewrites for dynamic operations.
+**The Solution**: Automatic migration to hybrid system - move nodes and all dynamic data to database, eliminate file rewrites completely.
 
-This approach provides a robust, scalable solution that eliminates file corruption issues while maintaining the simplicity of YAML configuration for static settings.
+## Key Benefits of Automatic Migration
+
+1. **Zero Operator Intervention**: Migration happens automatically on first startup
+2. **Atomic Operation**: Either fully migrated or not - no partial states
+3. **Automatic Backup**: Pre-migration backup created for safety
+4. **Self-Healing**: Failed migrations can be retried by restarting
+5. **Clean Separation**: Post-migration YAML contains only static configuration
+6. **API Compatibility**: No changes needed to existing code using ConfigManager
+7. **Rollback Safety**: Simple rollback procedure using automatic backups
+
+This approach provides a robust, scalable solution that eliminates file corruption issues while maintaining operational simplicity through automatic migration.
