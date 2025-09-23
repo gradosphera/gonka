@@ -239,6 +239,8 @@ func CalculateParticipantBitcoinRewards(participants []types.Participant, epochG
 		totalPoCWeight += pocWeight
 	}
 
+	CheckAndPunishForDowntimeForParticipants(participants, participantWeights)
+
 	// 3. Create settle results for each participant
 	settleResults := make([]*SettleResult, 0, len(participants))
 	var totalDistributed uint64 = 0

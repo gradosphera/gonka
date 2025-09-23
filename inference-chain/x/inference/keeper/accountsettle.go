@@ -5,7 +5,9 @@ import (
 	"math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/productscience/inference/x/inference/calculations"
 	"github.com/productscience/inference/x/inference/types"
+
 	"github.com/shopspring/decimal"
 )
 
@@ -85,6 +87,32 @@ func (k *Keeper) GetSettleParameters(ctx context.Context) *SettleParameters {
 		StageDecrease:            params.TokenomicsParams.SubsidyReductionAmount.ToFloat32(),
 		TotalSubsidySupply:       normalizedTotalSuply.Amount.Int64(),
 	}
+}
+
+func CheckAndPunishForDowntimeForParticipants(participants []types.Participant, rewards map[string]uint64) {
+	for _, participant := range participants {
+		rewards[participant.Address] = CheckAndPunishForDowntimeForParticipant(participant, rewards[participant.Address])
+	}
+}
+
+func CheckAndPunishForDowntimeForParticipant(participant types.Participant, reward uint64) uint64 {
+	totalRequests := participant.CurrentEpochStats.InferenceCount + participant.CurrentEpochStats.MissedRequests
+	missedRequests := participant.CurrentEpochStats.MissedRequests
+	return CheckAndPunishForDowntime(totalRequests, missedRequests, reward)
+}
+
+func CheckAndPunishForDowntime(total, missed, reward uint64) uint64 {
+	if total == 0 {
+		return reward
+	}
+	passed, err := calculations.MissedStatTest(int(missed), int(total))
+	if err != nil {
+		return reward
+	}
+	if !passed {
+		return 0
+	}
+	return reward
 }
 
 func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, previousEpochIndex uint64) error {
@@ -241,7 +269,7 @@ func GetSettleAmounts(participants []types.Participant, tokenParams *SettleParam
 	distributions := make([]DistributedCoinInfo, 0)
 	distributions = append(distributions, rewardDistribution)
 	for _, p := range participants {
-		settle, err := getSettleAmount(&p, distributions)
+		settle, err := getSettleAmount(p, distributions)
 		// We have to create amount record for each participant in the same order as participants
 		amounts = append(amounts, &SettleResult{
 			Settle: settle,
@@ -260,7 +288,8 @@ func getWorkTotals(participants []types.Participant) (int64, int64) {
 	for _, p := range participants {
 		// Do not count invalid participants work as "work", since it should not be part of the distributions
 		if p.CoinBalance > 0 && p.Status != types.ParticipantStatus_INVALID {
-			totalWork += p.CoinBalance
+			newCoinBalance := CheckAndPunishForDowntimeForParticipant(p, uint64(p.CoinBalance))
+			totalWork += int64(newCoinBalance)
 		}
 		if p.CoinBalance > 0 && p.Status == types.ParticipantStatus_INVALID {
 			invalidatedBalance += p.CoinBalance
@@ -269,7 +298,7 @@ func getWorkTotals(participants []types.Participant) (int64, int64) {
 	return totalWork, invalidatedBalance
 }
 
-func getSettleAmount(participant *types.Participant, rewardInfo []DistributedCoinInfo) (*types.SettleAmount, error) {
+func getSettleAmount(participant types.Participant, rewardInfo []DistributedCoinInfo) (*types.SettleAmount, error) {
 	settle := &types.SettleAmount{
 		Participant: participant.Address,
 	}
@@ -279,7 +308,7 @@ func getSettleAmount(participant *types.Participant, rewardInfo []DistributedCoi
 	if participant.Status == types.ParticipantStatus_INVALID {
 		return settle, nil
 	}
-	workCoins := participant.CoinBalance
+	workCoins := int64(CheckAndPunishForDowntimeForParticipant(participant, uint64(participant.CoinBalance)))
 	rewardCoins := int64(0)
 	for _, distribution := range rewardInfo {
 		if participant.Status == types.ParticipantStatus_INVALID {

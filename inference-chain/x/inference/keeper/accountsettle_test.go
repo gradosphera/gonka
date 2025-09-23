@@ -157,6 +157,10 @@ func TestSingleSettle(t *testing.T) {
 		Address:     "participant1",
 		CoinBalance: 1000,
 		Status:      types.ParticipantStatus_ACTIVE,
+		CurrentEpochStats: &types.CurrentEpochStats{
+			InferenceCount: 100,
+			MissedRequests: 0,
+		},
 	}
 	expectedRewardCoin := calcExpectedRewards([]types.Participant{participant1})
 	result, newCoin, err := inference.GetSettleAmounts([]types.Participant{participant1}, &defaultSettleParameters)
@@ -173,11 +177,19 @@ func TestEvenSettle(t *testing.T) {
 		Address:     "participant1",
 		CoinBalance: 1000,
 		Status:      types.ParticipantStatus_ACTIVE,
+		CurrentEpochStats: &types.CurrentEpochStats{
+			InferenceCount: 100,
+			MissedRequests: 0,
+		},
 	}
 	participant2 := types.Participant{
 		Address:     "participant2",
 		CoinBalance: 1000,
 		Status:      types.ParticipantStatus_ACTIVE,
+		CurrentEpochStats: &types.CurrentEpochStats{
+			InferenceCount: 100,
+			MissedRequests: 0,
+		},
 	}
 	expectedRewardCoin := calcExpectedRewards([]types.Participant{participant1, participant2})
 	result, newCoin, err := inference.GetSettleAmounts([]types.Participant{participant1, participant2}, &defaultSettleParameters)
@@ -197,16 +209,28 @@ func TestEvenAmong3(t *testing.T) {
 		Address:     "participant1",
 		CoinBalance: 255000,
 		Status:      types.ParticipantStatus_RAMPING,
+		CurrentEpochStats: &types.CurrentEpochStats{
+			InferenceCount: 100,
+			MissedRequests: 0,
+		},
 	}
 	participant2 := types.Participant{
 		Address:     "participant2",
 		CoinBalance: 340000,
 		Status:      types.ParticipantStatus_ACTIVE,
+		CurrentEpochStats: &types.CurrentEpochStats{
+			InferenceCount: 100,
+			MissedRequests: 0,
+		},
 	}
 	participant3 := types.Participant{
 		Address:     "participant3",
 		CoinBalance: 255000,
 		Status:      types.ParticipantStatus_RAMPING,
+		CurrentEpochStats: &types.CurrentEpochStats{
+			InferenceCount: 100,
+			MissedRequests: 0,
+		},
 	}
 	result, newCoin, err := inference.GetSettleAmounts([]types.Participant{participant1, participant2, participant3}, &defaultSettleParameters)
 	require.NoError(t, err)
@@ -250,23 +274,33 @@ func newParticipant(coinBalance int64, refundBalance int64, id string) types.Par
 		Address:     "participant" + id,
 		CoinBalance: coinBalance,
 		Status:      types.ParticipantStatus_ACTIVE,
+		CurrentEpochStats: &types.CurrentEpochStats{
+			InferenceCount: 100,
+			MissedRequests: 0,
+		},
 	}
 }
 
 func TestActualSettle(t *testing.T) {
 	participant1 := types.Participant{
-		Index:             testutil.Executor,
-		Address:           testutil.Executor,
-		CoinBalance:       1000,
-		Status:            types.ParticipantStatus_ACTIVE,
-		CurrentEpochStats: &types.CurrentEpochStats{},
+		Index:       testutil.Executor,
+		Address:     testutil.Executor,
+		CoinBalance: 1000,
+		Status:      types.ParticipantStatus_ACTIVE,
+		CurrentEpochStats: &types.CurrentEpochStats{
+			InferenceCount: 100,
+			MissedRequests: 0,
+		},
 	}
 	participant2 := types.Participant{
-		Index:             testutil.Executor2,
-		Address:           testutil.Executor2,
-		CoinBalance:       1000,
-		Status:            types.ParticipantStatus_ACTIVE,
-		CurrentEpochStats: &types.CurrentEpochStats{},
+		Index:       testutil.Executor2,
+		Address:     testutil.Executor2,
+		CoinBalance: 1000,
+		Status:      types.ParticipantStatus_ACTIVE,
+		CurrentEpochStats: &types.CurrentEpochStats{
+			InferenceCount: 100,
+			MissedRequests: 0,
+		},
 	}
 	keeper, ctx, mocks := keeper2.InferenceKeeperReturningMocks(t)
 
@@ -319,11 +353,14 @@ func TestActualSettleWithManyParticipants(t *testing.T) {
 	for i := 0; i < 150; i++ {
 		address := testutil.Bech32Addr(i)
 		participant := types.Participant{
-			Index:             address,
-			Address:           address,
-			CoinBalance:       1000,
-			Status:            types.ParticipantStatus_ACTIVE,
-			CurrentEpochStats: &types.CurrentEpochStats{},
+			Index:       address,
+			Address:     address,
+			CoinBalance: 1000,
+			Status:      types.ParticipantStatus_ACTIVE,
+			CurrentEpochStats: &types.CurrentEpochStats{
+				InferenceCount: 100,
+				MissedRequests: 0,
+			},
 		}
 		participants[i] = participant
 		keeper.SetParticipant(ctx, participant)

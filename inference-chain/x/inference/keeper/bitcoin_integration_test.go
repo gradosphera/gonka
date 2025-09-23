@@ -158,11 +158,19 @@ func TestBitcoinRewardIntegration_DistributionLogic(t *testing.T) {
 			Address:     "participant1",
 			CoinBalance: 2000, // WorkCoins from user fees
 			Status:      types.ParticipantStatus_ACTIVE,
+			CurrentEpochStats: &types.CurrentEpochStats{
+				InferenceCount: 100,
+				MissedRequests: 0,
+			},
 		},
 		{
 			Address:     "participant2",
 			CoinBalance: 6000, // WorkCoins from user fees
 			Status:      types.ParticipantStatus_ACTIVE,
+			CurrentEpochStats: &types.CurrentEpochStats{
+				InferenceCount: 100,
+				MissedRequests: 0,
+			},
 		},
 	}
 
@@ -271,6 +279,10 @@ func TestBitcoinRewardIntegration_Phase2Stubs(t *testing.T) {
 		{
 			Address: "participant1",
 			Status:  types.ParticipantStatus_ACTIVE,
+			CurrentEpochStats: &types.CurrentEpochStats{
+				InferenceCount: 100,
+				MissedRequests: 0,
+			},
 		},
 	}
 
