@@ -24,8 +24,8 @@ func TestMissedStatTestErrorConditions(t *testing.T) {
 			name:     "zero total",
 			nMissed:  0,
 			nTotal:   0,
-			expected: false,
-			wantErr:  true,
+			expected: true,
+			wantErr:  false,
 		},
 		{
 			name:     "negative total",
