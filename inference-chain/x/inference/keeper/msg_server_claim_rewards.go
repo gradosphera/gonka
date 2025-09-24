@@ -20,8 +20,10 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 
 	settleAmount, response := k.validateRequest(ctx, msg)
 	if response != nil {
+		k.LogInfo("Validate request failed", types.Claims, "error", response.Result, "account", msg.Creator)
 		return response, nil
 	}
+	k.LogInfo("Validate request succeeded", types.Claims, "account", msg.Creator, "settleAmount", settleAmount)
 
 	response, err := k.validateClaim(ctx, msg, settleAmount)
 	if err != nil {
