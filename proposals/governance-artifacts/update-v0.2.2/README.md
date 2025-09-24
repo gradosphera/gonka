@@ -1,4 +1,4 @@
-# Upgrade Proposal 1
+# Upgrade Proposal: v0.2.2
 
 This document outlines the proposed changes for the first on-chain software upgrade. The `Changes` section details the major modifications, and the `Upgrade Plan` section describes the process for applying these changes.
 
@@ -129,5 +129,58 @@ At the same time, if a node is deleted and re-added in the same epoch, its `Node
 
 This commit fixes this by using `curMaxNodesNum` as `TotalNodes`.
 
-
 ### Proposals for new way to validation inference `dee011bfbc41f43cefde0c64b1efc6746976e01e`
+
+### Paginator fixes `ecdfb135773f1e4854468a0e7585bd54bfe1d9fd`
+
+This PR fixes a critical issue where queries intended to fetch all items were silently truncated to the first 100 results due to default Cosmos SDK pagination settings. This could lead to incomplete data processing and inconsistent state.
+
+#### Key Changes
+
+*   **`SettleAccounts`**: Updated to read all participants directly from the store, which is more appropriate and efficient for on-chain logic. Added tests to make sure we're settling for all the participants in the state and not only for the first 100.
+*   **`get_participants_handler`**: Implemented manual per-page fetching for the public API endpoint. Queries are pinned to a specific block height to ensure data consistency across pages.
+*   **`GetPartialUpgrades`**: Corrected to use a new `GetAllWithPagination` utility, ensuring all partial upgrade plans are fetched from the chain.
+
+
+### Multiple Fixes and Security Improvements (`3ea3e5b5b1aa758e29741d5a5312dd41be10bf95`)
+
+The commit introduces multiple fixes and security improvements:
+
+
+#### Missed `node_id` to PoCBatch (`inference-chain/x/inference/keeper/msg_server_submit_poc_batch.go`)
+
+`node_id` is used to detect which node produced the nonce's batch
+
+
+#### Remove legacy weight distribution from batches without `node_id`
+
+`inference-chain/x/inference/module/model_assignment.go` distributed before batches without `node_id` between another nodes. As now all MLNodes returns `node_id` => that it not needed anymore
+
+
+#### Remove MLNodes without HardwareNodes or models supported by Governance
+
+`unassignedMLNodes` from `inference-chain/x/inference/module/model_assignment.go` are not counted in total weight anymore
+Total weight of participant is recomputed after all filtering 
+
+#### Statistical Validation for Missed inference and validation
+
+Binom test `inference-chain/x/inference/calculations/stats.go` is now used for:   
+- not pay reward if statistically signigicant > 10% of requests are missed (`inference-chain/x/inference/keeper/accountsettle.go`) 
+- not pay claim if statistically signigicant > 10% of validations are missed (`inference-chain/x/inference/keeper/msg_server_claim_rewards.go`) instead of hard check for all validations
+
+#### Set Participant status to `ACTIVE` for all ActiveParticipant when switch epoch
+
+`inference-chain/x/inference/module/module.go:moveUpcomingToEffectiveGroup`
+
+#### Fix counter for successful inferences
+
+`inference-chain/x/inference/keeper/msg_server_start_inference.go`  
+`inference-chain/x/inference/keeper/msg_server_finish_inference.go`  
+
+#### Fix for interrupted inference validation
+
+
+#### Logging 
+
+
+### Accept Claim only from CurrentEpoch -1 (`c8e6aefcf88958f5f2968cc9f305e1d6c0028dcd`)
