@@ -59,7 +59,6 @@ func TestBlockObserver_StressBackpressure(t *testing.T) {
 	const (
 		totalBlocks = 200
 		txsPerBlock = 10
-		totalEvents = totalBlocks * txsPerBlock
 	)
 	bo.tmClient = newMockTmHTTPClient(txsPerBlock)
 
@@ -73,13 +72,14 @@ func TestBlockObserver_StressBackpressure(t *testing.T) {
 	// Simulate slow consumer: delay before starting reads
 	time.Sleep(100 * time.Millisecond)
 
-	// Consume events slowly but ensure we eventually read them all
+	// Consume events slowly but ensure we eventually read them all (including barrier per block)
+	expectedTotal := totalBlocks * (txsPerBlock + 1)
 	received := 0
 	deadline := time.After(5 * time.Second)
-	for received < totalEvents {
+	for received < expectedTotal {
 		select {
 		case <-deadline:
-			t.Fatalf("timed out waiting for events: got %d, want %d", received, totalEvents)
+			t.Fatalf("timed out waiting for events: got %d, want %d", received, expectedTotal)
 		case ev, ok := <-bo.Queue.Out:
 			if !ok {
 				t.Fatalf("queue closed prematurely after %d events", received)
@@ -95,9 +95,9 @@ func TestBlockObserver_StressBackpressure(t *testing.T) {
 		}
 	}
 
-	// Assert: processed all events and advanced last processed height
-	if got := bo.lastProcessedBlockHeight.Load(); got != totalBlocks {
-		t.Fatalf("lastProcessedHeight=%d, want %d", got, totalBlocks)
+	// Assert: queried up to the target height
+	if got := bo.lastQueriedBlockHeight.Load(); got != totalBlocks {
+		t.Fatalf("lastQueriedBlockHeight=%d, want %d", got, totalBlocks)
 	}
 }
 
@@ -110,14 +110,35 @@ func TestBlockObserver_NoSpuriousWakeups(t *testing.T) {
 	defer cancel()
 	go bo.Process(ctx)
 
-	// First update triggers processing of height 1
+	// First update triggers processing of height 1 (1 tx + 1 barrier)
 	bo.updateStatus(1, true)
 
-	// Wait for exactly 1 event
-	select {
-	case <-time.After(2 * time.Second):
-		t.Fatalf("timeout waiting for first event")
-	case <-bo.Queue.Out:
+	// Drain until barrier for height 1 is received; count tx events
+	txCount := 0
+	barrierSeen := false
+	drainDeadline := time.After(2 * time.Second)
+	for !barrierSeen {
+		select {
+		case <-drainDeadline:
+			t.Fatalf("timeout waiting for barrier for height 1")
+		case ev := <-bo.Queue.Out:
+			if ev == nil {
+				t.Fatalf("nil event while draining")
+			}
+			if ev.Result.Data.Type == systemBarrierEventType {
+				heights := ev.Result.Events["barrier.height"]
+				if len(heights) > 0 && heights[0] == "1" {
+					barrierSeen = true
+				}
+				continue
+			}
+			if ev.Result.Data.Type == "tendermint/event/Tx" {
+				txCount++
+			}
+		}
+	}
+	if txCount != 1 {
+		t.Fatalf("expected 1 tx event before barrier, got %d", txCount)
 	}
 
 	// Extra duplicate updates should not produce more events
