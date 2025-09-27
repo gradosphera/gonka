@@ -2,11 +2,14 @@ package event_listener
 
 import (
 	"context"
+	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 
 	"decentralized-api/apiconfig"
+	"decentralized-api/cosmosclient"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
@@ -125,6 +128,97 @@ func TestBlockObserver_NoSpuriousWakeups(t *testing.T) {
 		// ok, no new events
 	case <-bo.Queue.Out:
 		t.Fatalf("received unexpected extra event after duplicate updates")
+	}
+}
+
+// TestProcessBlock_ParsesEvents validates that processBlock enqueues one message per tx
+// and includes flattened keys with "tx.height".
+func TestProcessBlock_ParsesEvents(t *testing.T) {
+	manager := &apiconfig.ConfigManager{}
+	mock := newMockTmHTTPClient(3)
+	bo := NewBlockObserverWithClient(manager, mock)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	height := int64(42)
+	if ok := bo.processBlock(ctx, height); !ok {
+		t.Fatalf("processBlock returned false")
+	}
+
+	// Expect 3 messages (one per tx)
+	for i := 0; i < 3; i++ {
+		select {
+		case <-time.After(1 * time.Second):
+			t.Fatalf("timeout waiting for event %d", i)
+		case ev := <-bo.Queue.Out:
+			if ev == nil {
+				t.Fatalf("nil event")
+			}
+			if ev.Result.Data.Type != "tendermint/event/Tx" {
+				t.Fatalf("unexpected type: %s", ev.Result.Data.Type)
+			}
+			if ev.Result.Events["tx.height"][0] != strconv.FormatInt(height, 10) {
+				t.Fatalf("tx.height mismatch: %v", ev.Result.Events["tx.height"])
+			}
+			// Our mock emits inference_finished.inference_id
+			if len(ev.Result.Events["inference_finished.inference_id"]) == 0 {
+				t.Fatalf("expected inference_finished.inference_id in events")
+			}
+		}
+	}
+}
+
+// TestProcessBlock_RealNodeParse hits a real node if env vars are set.
+// Env: DAPI_TEST_RPC_URL, DAPI_TEST_BLOCK_HEIGHT
+func TestProcessBlock_RealNodeParse(t *testing.T) {
+	url := os.Getenv("DAPI_TEST_RPC_URL")
+	heightStr := os.Getenv("DAPI_TEST_BLOCK_HEIGHT")
+	if url == "" || heightStr == "" {
+		url = "http://node2.gonka.ai:26657"
+		heightStr = "530005"
+		// t.Skip("set DAPI_TEST_RPC_URL and DAPI_TEST_BLOCK_HEIGHT to run this test")
+	}
+
+	h, err := strconv.ParseInt(heightStr, 10, 64)
+	if err != nil {
+		t.Fatalf("invalid DAPI_TEST_BLOCK_HEIGHT: %v", err)
+	}
+
+	client, err := cosmosclient.NewRpcClient(url)
+	if err != nil {
+		t.Fatalf("failed to create rpc client: %v", err)
+	}
+
+	// Probe expected tx count first
+	ctx := context.Background()
+	res, err := client.BlockResults(ctx, &h)
+	if err != nil || res == nil {
+		t.Fatalf("failed BlockResults probe: %v", err)
+	}
+	expected := len(res.TxsResults)
+
+	manager := &apiconfig.ConfigManager{}
+	bo := NewBlockObserverWithClient(manager, client)
+
+	if ok := bo.processBlock(ctx, h); !ok {
+		t.Fatalf("processBlock returned false")
+	}
+
+	received := 0
+	deadline := time.After(5 * time.Second)
+	for received < expected {
+		select {
+		case <-deadline:
+			t.Fatalf("timeout waiting events: got %d, want %d", received, expected)
+		case ev := <-bo.Queue.Out:
+			if ev == nil {
+				t.Fatalf("nil event")
+			}
+			received++
+			// Log parsed event keys for manual inspection
+			t.Logf("event %d: id=%s keys=%d", received, ev.ID, len(ev.Result.Events))
+		}
 	}
 }
 
