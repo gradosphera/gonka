@@ -116,6 +116,16 @@ func (cm *ConfigManager) SetHeight(height int64) error {
 	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
+func (cm *ConfigManager) GetLastProcessedHeight() int64 {
+	return cm.currentConfig.LastProcessedHeight
+}
+
+func (cm *ConfigManager) SetLastProcessedHeight(height int64) error {
+	cm.currentConfig.LastProcessedHeight = height
+	logging.Info("Setting last processed height", types.Config, "height", height)
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
+}
+
 func (cm *ConfigManager) GetCurrentNodeVersion() string {
 	return cm.currentConfig.CurrentNodeVersion
 }

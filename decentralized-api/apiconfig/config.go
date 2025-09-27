@@ -1,21 +1,22 @@
 package apiconfig
 
 type Config struct {
-	Api                ApiConfig             `koanf:"api"`
-	Nodes              []InferenceNodeConfig `koanf:"nodes"`
-	NodeConfigIsMerged bool                  `koanf:"merged_node_config"`
-	ChainNode          ChainNodeConfig       `koanf:"chain_node"`
-	UpcomingSeed       SeedInfo              `koanf:"upcoming_seed"`
-	CurrentSeed        SeedInfo              `koanf:"current_seed"`
-	PreviousSeed       SeedInfo              `koanf:"previous_seed"`
-	CurrentHeight      int64                 `koanf:"current_height"`
-	UpgradePlan        UpgradePlan           `koanf:"upgrade_plan"`
-	MLNodeKeyConfig    MLNodeKeyConfig       `koanf:"ml_node_key_config"`
-	Nats               NatsServerConfig      `koanf:"nats"`
-	CurrentNodeVersion string                `koanf:"current_node_version"`
-	LastUsedVersion    string                `koanf:"last_used_version"`
-	ValidationParams   ValidationParamsCache `koanf:"validation_params"`
-	BandwidthParams    BandwidthParamsCache  `koanf:"bandwidth_params"`
+	Api                 ApiConfig             `koanf:"api"`
+	Nodes               []InferenceNodeConfig `koanf:"nodes"`
+	NodeConfigIsMerged  bool                  `koanf:"merged_node_config"`
+	ChainNode           ChainNodeConfig       `koanf:"chain_node"`
+	UpcomingSeed        SeedInfo              `koanf:"upcoming_seed"`
+	CurrentSeed         SeedInfo              `koanf:"current_seed"`
+	PreviousSeed        SeedInfo              `koanf:"previous_seed"`
+	CurrentHeight       int64                 `koanf:"current_height"`
+	LastProcessedHeight int64                 `koanf:"last_processed_height"`
+	UpgradePlan         UpgradePlan           `koanf:"upgrade_plan"`
+	MLNodeKeyConfig     MLNodeKeyConfig       `koanf:"ml_node_key_config"`
+	Nats                NatsServerConfig      `koanf:"nats"`
+	CurrentNodeVersion  string                `koanf:"current_node_version"`
+	LastUsedVersion     string                `koanf:"last_used_version"`
+	ValidationParams    ValidationParamsCache `koanf:"validation_params"`
+	BandwidthParams     BandwidthParamsCache  `koanf:"bandwidth_params"`
 }
 
 type NatsServerConfig struct {
