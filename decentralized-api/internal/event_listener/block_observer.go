@@ -193,17 +193,24 @@ func (bo *BlockObserver) processBlock(ctx context.Context, height int64) bool {
 func (bo *BlockObserver) signalAllEventsRead(height int64) {
 	// Only advance if this is the next contiguous height
 	for {
-		expected := bo.lastProcessedBlockHeight.Load() + 1
-		if height != expected {
-			return
+		// TODO: check contiguity?
+		bo.lastProcessedBlockHeight.Store(height)
+		if err := bo.ConfigManager.SetLastProcessedHeight(height); err != nil {
+			logging.Warn("Failed to persist last processed height", types.Config, "error", err)
 		}
-		if bo.lastProcessedBlockHeight.CompareAndSwap(expected-1, height) {
-			// Persist after advancing
-			if err := bo.ConfigManager.SetLastProcessedHeight(height); err != nil {
-				logging.Warn("Failed to persist last processed height", types.Config, "error", err)
-			}
-			return
-		}
+		return
+
+		/*		expected := bo.lastProcessedBlockHeight.Load() + 1
+				if height != expected {
+					return
+				}
+				if bo.lastProcessedBlockHeight.CompareAndSwap(expected-1, height) {
+					// Persist after advancing
+					if err := bo.ConfigManager.SetLastProcessedHeight(height); err != nil {
+						logging.Warn("Failed to persist last processed height", types.Config, "error", err)
+					}
+					return
+				}*/
 		// CAS failed due to race; retry loop
 	}
 }
