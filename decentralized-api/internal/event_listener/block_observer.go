@@ -17,6 +17,7 @@ import (
 
 type BlockObserver struct {
 	lastProcessedBlockHeight atomic.Int64
+	lastQueriedBlockHeight   atomic.Int64
 	currentBlockHeight       atomic.Int64
 	ConfigManager            *apiconfig.ConfigManager
 	Queue                    *UnboundedQueue[*chainevents.JSONRPCResponse]
@@ -46,12 +47,15 @@ func NewBlockObserver(manager *apiconfig.ConfigManager) *BlockObserver {
 	}
 
 	bo.lastProcessedBlockHeight.Store(manager.GetLastProcessedHeight())
+	// Start querying from last processed height
+	bo.lastQueriedBlockHeight.Store(bo.lastProcessedBlockHeight.Load())
 	bo.currentBlockHeight.Store(manager.GetHeight())
 	bo.caughtUp.Store(false)
 
 	// If first run and we have a current height but no last processed, start from current-1
 	if bo.lastProcessedBlockHeight.Load() == 0 && bo.currentBlockHeight.Load() > 0 {
 		bo.lastProcessedBlockHeight.Store(bo.currentBlockHeight.Load() - 1)
+		bo.lastQueriedBlockHeight.Store(bo.lastProcessedBlockHeight.Load())
 	}
 
 	return bo
@@ -114,9 +118,9 @@ func (bo *BlockObserver) Process(ctx context.Context) {
 			if !bo.caughtUp.Load() {
 				continue
 			}
-			// Process as many contiguous blocks as available
+			// Process as many contiguous blocks as available (based on lastQueried)
 			for {
-				nextHeight := bo.lastProcessedBlockHeight.Load() + 1
+				nextHeight := bo.lastQueriedBlockHeight.Load() + 1
 				if nextHeight > bo.currentBlockHeight.Load() || nextHeight <= 0 {
 					break
 				}
@@ -124,6 +128,8 @@ func (bo *BlockObserver) Process(ctx context.Context) {
 					// stop on fetch error; next status change will retry
 					break
 				}
+				// Successfully enqueued events for nextHeight; advance lastQueried
+				bo.lastQueriedBlockHeight.Store(nextHeight)
 			}
 		}
 	}
@@ -149,8 +155,8 @@ func (bo *BlockObserver) processBlock(ctx context.Context, height int64) bool {
 		for _, ev := range txRes.Events {
 			evType := ev.Type
 			for _, attr := range ev.Attributes {
-				key := evType + "." + string(attr.Key)
-				val := string(attr.Value)
+				key := evType + "." + attr.Key
+				val := attr.Value
 				events[key] = append(events[key], val)
 			}
 		}
