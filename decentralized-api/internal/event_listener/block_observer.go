@@ -5,7 +5,6 @@ import (
 	"decentralized-api/internal/event_listener/chainevents"
 	"decentralized-api/logging"
 	"strconv"
-	"time"
 
 	"context"
 	"decentralized-api/cosmosclient"
@@ -23,6 +22,7 @@ type BlockObserver struct {
 	Queue                    *UnboundedQueue[*chainevents.JSONRPCResponse]
 	caughtUp                 atomic.Bool
 	tmClient                 TmHTTPClient
+	notify                   chan struct{}
 }
 
 // TmHTTPClient abstracts the subset of RPC methods we need
@@ -42,6 +42,7 @@ func NewBlockObserver(manager *apiconfig.ConfigManager) *BlockObserver {
 		ConfigManager: manager,
 		Queue:         queue,
 		tmClient:      httpClient,
+		notify:        make(chan struct{}, 1),
 	}
 
 	bo.lastProcessedBlockHeight.Store(manager.GetLastProcessedHeight())
@@ -56,37 +57,56 @@ func NewBlockObserver(manager *apiconfig.ConfigManager) *BlockObserver {
 	return bo
 }
 
-func (bo *BlockObserver) UpdateBlockHeight(newHeight int64) {
-	// TODO: do it in a thread-safe manner
-	// We expect the update called from a different goroutine from Process
+// UpdateStatus sets both height and caughtUp atomically and signals processing only if changed
+func (bo *BlockObserver) updateStatus(newHeight int64, caughtUp bool) {
+	prevHeight := bo.currentBlockHeight.Load()
+	prevCaught := bo.caughtUp.Load()
+	changed := (newHeight != prevHeight) || (caughtUp != prevCaught)
+	if !changed {
+		return
+	}
 	bo.currentBlockHeight.Store(newHeight)
-}
-
-func (bo *BlockObserver) CaughtUp(caughtUp bool) {
-	// TODO: same, update in a thread-safe manner
 	bo.caughtUp.Store(caughtUp)
+	select {
+	case bo.notify <- struct{}{}:
+	default:
+		// already notified; coalesce
+	}
 }
 
 func (bo *BlockObserver) Process(ctx context.Context) {
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-bo.notify:
+			// Drain extra signals to coalesce bursts
+		drain:
+			for {
+				select {
+				case <-bo.notify:
+					continue
+				default:
+					break drain
+				}
+			}
 			if !bo.caughtUp.Load() {
 				continue
 			}
-			// Process next block if available
-			nextHeight := bo.lastProcessedBlockHeight.Load() + 1
-			if nextHeight > bo.currentBlockHeight.Load() || nextHeight <= 0 {
-				continue
-			}
-			if bo.processBlock(ctx, nextHeight) {
-				bo.lastProcessedBlockHeight.Store(nextHeight)
-				if err := bo.ConfigManager.SetLastProcessedHeight(nextHeight); err != nil {
-					logging.Warn("Failed to persist last processed height", types.Config, "error", err)
+			// Process as many contiguous blocks as available
+			for {
+				nextHeight := bo.lastProcessedBlockHeight.Load() + 1
+				if nextHeight > bo.currentBlockHeight.Load() || nextHeight <= 0 {
+					break
+				}
+				if bo.processBlock(ctx, nextHeight) {
+					bo.lastProcessedBlockHeight.Store(nextHeight)
+					if err := bo.ConfigManager.SetLastProcessedHeight(nextHeight); err != nil {
+						logging.Warn("Failed to persist last processed height", types.Config, "error", err)
+					}
+				} else {
+					// stop on fetch error; next status change will retry
+					break
 				}
 			}
 		}

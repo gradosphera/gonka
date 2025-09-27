@@ -300,8 +300,7 @@ func (el *EventListener) processEvent(event *chainevents.JSONRPCResponse, worker
 		}
 
 		// Update BlockObserver with latest height and sync status
-		el.blockObserver.UpdateBlockHeight(blockInfo.Height)
-		el.blockObserver.CaughtUp(el.isNodeSynced())
+		el.blockObserver.updateStatus(blockInfo.Height, el.isNodeSynced())
 
 		// Process using the new dispatcher
 		ctx := context.Background() // We could pass this from caller if needed
