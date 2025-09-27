@@ -194,11 +194,17 @@ func (bo *BlockObserver) signalAllEventsRead(height int64) {
 	// Only advance if this is the next contiguous height
 	for {
 		// TODO: check contiguity?
-		bo.lastProcessedBlockHeight.Store(height)
-		if err := bo.ConfigManager.SetLastProcessedHeight(height); err != nil {
-			logging.Warn("Failed to persist last processed height", types.Config, "error", err)
+		if height < bo.lastProcessedBlockHeight.Load() {
+			logging.Warn("BlockObserver: signalAllEventsRead called for out-of-order block", types.EventProcessing, "height", height)
+		} else if height == bo.lastProcessedBlockHeight.Load() {
+			// Already processed
+			logging.Warn("BlockObserver: signalAllEventsRead called for already processed block", types.EventProcessing, "height", height)
+		} else {
+			bo.lastProcessedBlockHeight.Store(height)
+			if err := bo.ConfigManager.SetLastProcessedHeight(height); err != nil {
+				logging.Warn("BlockObserver: Failed to persist last processed height", types.Config, "error", err)
+			}
 		}
-		return
 
 		/*		expected := bo.lastProcessedBlockHeight.Load() + 1
 				if height != expected {
