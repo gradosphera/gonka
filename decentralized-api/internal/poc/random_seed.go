@@ -92,11 +92,15 @@ func (rsm *RandomSeedManagerImpl) RequestMoney() {
 }
 
 func (rsm *RandomSeedManagerImpl) CreateNewSeed(epoch uint64) (*apiconfig.SeedInfo, error) {
-	seedBytes, err := rsm.createSeedForEpoch(epoch)
+	newSeed, err := rsm.createSeedForEpoch(epoch)
 	if err != nil {
 		logging.Error("Failed to get seedBytes", types.Claims, "error", err)
 		return nil, err
 	}
+
+	// Encode seed for signing
+	seedBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(seedBytes, uint64(newSeed))
 
 	signature, err := rsm.transactionRecorder.SignBytes(seedBytes)
 	if err != nil {
@@ -105,13 +109,13 @@ func (rsm *RandomSeedManagerImpl) CreateNewSeed(epoch uint64) (*apiconfig.SeedIn
 	}
 
 	return &apiconfig.SeedInfo{
-		Seed:       int64(binary.BigEndian.Uint64(seedBytes)),
+		Seed:       newSeed,
 		EpochIndex: epoch,
 		Signature:  hex.EncodeToString(signature),
 	}, nil
 }
 
-func (rsm *RandomSeedManagerImpl) createSeedForEpoch(epoch uint64) ([]byte, error) {
+func (rsm *RandomSeedManagerImpl) createSeedForEpoch(epoch uint64) (int64, error) {
 	initialSeedBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(initialSeedBytes, epoch)
 
@@ -121,7 +125,11 @@ func (rsm *RandomSeedManagerImpl) createSeedForEpoch(epoch uint64) ([]byte, erro
 		return nil, err
 	}
 
-	seed := signed[:8]
+	signed8bytes := signed[:8]
+	newSeed := int64(binary.BigEndian.Uint64(signed8bytes[:]) & ((1 << 63) - 1))
+	if newSeed == 0 {
+		newSeed = 1
+	}
 
-	return seed, nil
+	return newSeed, nil
 }
