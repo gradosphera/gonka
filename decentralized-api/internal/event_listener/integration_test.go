@@ -138,10 +138,6 @@ type MockRandomSeedManager struct {
 	mock.Mock
 }
 
-func (m *MockRandomSeedManager) GenerateSeed(blockHeight uint64) {
-	m.Called(blockHeight)
-}
-
 func (m *MockRandomSeedManager) ChangeCurrentSeed() {
 	m.Called()
 }
