@@ -137,7 +137,7 @@ func (rsm *RandomSeedManagerImpl) createSeedForEpoch(epoch uint64) (int64, error
 	signed, err := rsm.transactionRecorder.SignBytes(initialSeedBytes)
 	if err != nil {
 		logging.Error("Failed to sign bytes", types.Claims, "error", err)
-		return nil, err
+		return 0, err
 	}
 
 	signed8bytes := signed[:8]

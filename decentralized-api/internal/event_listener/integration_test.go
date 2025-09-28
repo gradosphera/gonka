@@ -142,6 +142,11 @@ func (m *MockRandomSeedManager) ChangeCurrentSeed() {
 	m.Called()
 }
 
+func (m *MockRandomSeedManager) GetSeedForEpoch(epochIndex uint64) apiconfig.SeedInfo {
+	m.Called()
+	return apiconfig.SeedInfo{}
+}
+
 func (m *MockRandomSeedManager) RequestMoney(epochIndex uint64) {
 	m.Called()
 }
@@ -289,6 +294,7 @@ func createIntegrationTestSetup(reconcilialtionConfig *MlNodeReconciliationConfi
 	mockSeedManager.On("RequestMoney").Return()
 	mockSeedManager.On("GenerateSeedInfo", mock.AnythingOfType("uint64")).Return()
 	mockSeedManager.On("CreateNewSeed", mock.AnythingOfType("uint64")).Return()
+	mockSeedManager.On("GetSeedForEpoch").Return(apiconfig.SeedInfo{})
 
 	var finalReconciliationConfig MlNodeReconciliationConfig
 	if reconcilialtionConfig == nil {
