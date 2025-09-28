@@ -14,7 +14,7 @@ import (
 )
 
 const waitTimeBlocksFromLaunch = 60
-const waitBetweenAttempts = 1000
+const waitBetweenAttempts = 100
 
 type RewardRecoveryChecker struct {
 	launchBlockHeight       int64
@@ -58,8 +58,10 @@ func (c *RewardRecoveryChecker) RecoverIfNeeded(
 		return
 	}
 
-	c.AutoRewardRecovery()
 	c.lastRecoveryBlockHeight = currentBlockHeight
+	go func() {
+		c.AutoRewardRecovery()
+	}()
 }
 
 // AutoRewardRecovery checks for unclaimed settle amounts and attempts to recover rewards on startup
