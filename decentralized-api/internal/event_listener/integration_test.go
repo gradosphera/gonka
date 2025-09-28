@@ -289,7 +289,6 @@ func createIntegrationTestSetup(reconcilialtionConfig *MlNodeReconciliationConfi
 	}, nil)
 
 	// Setup mock expectations for RandomSeedManager
-	mockSeedManager.On("GenerateSeed", mock.AnythingOfType("uint64")).Return()
 	mockSeedManager.On("ChangeCurrentSeed").Return()
 	mockSeedManager.On("RequestMoney").Return()
 	mockSeedManager.On("GenerateSeedInfo", mock.AnythingOfType("uint64")).Return()
