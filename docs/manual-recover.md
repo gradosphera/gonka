@@ -39,14 +39,14 @@ sudo ln -sf upgrades/v0.2.3-patch .dapi/cosmovisor/current
 rm -rf temp-api/ decentralized-api-amd64.zip
 ```
 
-## Step 6: Verify API binary recovery
+## Step 3: Verify API binary recovery
 
 ```bash
 # Check API binary hash
 echo "43c2ebe46d5f5a1f336926397a562b67df02821920e4e434d136124a5757f83b .dapi/cosmovisor/current/bin/decentralized-api" | sudo sha256sum -c --status - && echo "API: UPGRADE NOT NEEDED" || echo "API: UPGRADE NEEDED"
 ```
 
-## Step 7: Restart container
+## Step 4: Restart container
 
 ```bash
 source config.env && docker compose up -d api --force-recreate
