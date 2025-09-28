@@ -46,7 +46,7 @@ rm -rf temp-api/ decentralized-api-amd64.zip
 echo "43c2ebe46d5f5a1f336926397a562b67df02821920e4e434d136124a5757f83b .dapi/cosmovisor/current/bin/decentralized-api" | sudo sha256sum -c --status - && echo "API: UPGRADE NOT NEEDED" || echo "API: UPGRADE NEEDED"
 ```
 
-## Step 7: Restart containers
+## Step 7: Restart container
 
 ```bash
 source config.env && docker compose up -d api --force-recreate
