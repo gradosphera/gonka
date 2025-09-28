@@ -13,36 +13,69 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 )
 
+const waitTimeBlocksFromLaunch = 60
+const waitBetweenAttempts = 1000
+
 type RewardRecoveryChecker struct {
-	launchBlockHeight       uint64
-	lastRecoveryBlockHeight uint64
+	launchBlockHeight       int64
+	lastRecoveryBlockHeight int64
 	phaseTracker            *chainphase.ChainPhaseTracker
+	recorder                *cosmosclient.InferenceCosmosClient
+	validator               *validation.InferenceValidator
+	configManager           *apiconfig.ConfigManager
 }
 
-func RecoverIfNeeded(
-	currentBlockHeight uint64,
+func (c *RewardRecoveryChecker) RecoverIfNeeded(
+	currentBlockHeight int64,
 ) {
-	// WIP
+	if currentBlockHeight < (c.launchBlockHeight + waitTimeBlocksFromLaunch) {
+		logging.Debug("Waiting for launch", types.Claims,
+			"currentBlockHeight", currentBlockHeight,
+			"launchBlockHeight", c.launchBlockHeight)
+		return
+	}
+
+	if currentBlockHeight < (c.lastRecoveryBlockHeight + waitBetweenAttempts) {
+		logging.Debug("Waiting for last recovery", types.Claims,
+			"currentBlockHeight", currentBlockHeight,
+			"lastRecoveryBlockHeight", c.lastRecoveryBlockHeight)
+		return
+	}
+
+	latestEpoch := c.phaseTracker.GetCurrentEpochState().LatestEpoch
+	inferenceValidationCutoff := latestEpoch.InferenceValidationCutoff()
+	if currentBlockHeight > inferenceValidationCutoff {
+		logging.Debug("Inference validation cutoff reached", types.Claims,
+			"currentBlockHeight", currentBlockHeight,
+			"inferenceValidationCutoff", inferenceValidationCutoff)
+		return
+	}
+
+	if latestEpoch.GetCurrentPhase(currentBlockHeight) != types.InferencePhase {
+		logging.Debug("Not in inference phase", types.Claims,
+			"currentBlockHeight", currentBlockHeight,
+			"latestEpoch", latestEpoch)
+		return
+	}
+
+	c.AutoRewardRecovery()
+	c.lastRecoveryBlockHeight = currentBlockHeight
 }
 
 // AutoRewardRecovery checks for unclaimed settle amounts and attempts to recover rewards on startup
-func (c *RewardRecoveryChecker) AutoRewardRecovery(
-	recorder *cosmosclient.InferenceCosmosClient,
-	validator *validation.InferenceValidator,
-	configManager *apiconfig.ConfigManager,
-) {
+func (c *RewardRecoveryChecker) AutoRewardRecovery() {
 	logging.Info("Starting automatic reward recovery check", types.Claims)
 
 	// Get participant address
-	address := recorder.GetAddress()
+	address := c.recorder.GetAddress()
 	if address == "" {
 		logging.Error("Cannot perform reward recovery: no participant address", types.Claims)
 		return
 	}
 
 	// Query for settle amount
-	queryClient := recorder.NewInferenceQueryClient()
-	ctx, cancel := context.WithTimeout(recorder.GetContext(), 30*time.Second)
+	queryClient := c.recorder.NewInferenceQueryClient()
+	ctx, cancel := context.WithTimeout(c.recorder.GetContext(), 30*time.Second)
 	defer cancel()
 
 	settleAmountResp, err := queryClient.SettleAmount(ctx, &types.QueryGetSettleAmountRequest{
@@ -75,7 +108,7 @@ func (c *RewardRecoveryChecker) AutoRewardRecovery(
 	}
 
 	// Get the previous seed for this epoch
-	previousSeed := configManager.GetPreviousSeed()
+	previousSeed := c.configManager.GetPreviousSeed()
 
 	// Check if the settle amount epoch matches our stored epoch
 	if previousSeed.EpochIndex != settleAmount.EpochIndex {
@@ -104,7 +137,7 @@ func (c *RewardRecoveryChecker) AutoRewardRecovery(
 		"address", address)
 
 	// Perform validation recovery using the same logic as the admin endpoint
-	missedInferences, err := validator.DetectMissedValidations(previousSeed.EpochIndex, previousSeed.Seed)
+	missedInferences, err := c.validator.DetectMissedValidations(previousSeed.EpochIndex, previousSeed.Seed)
 	if err != nil {
 		logging.Error("Failed to detect missed validations during startup", types.Claims,
 			"epochIndex", settleAmount.EpochIndex,
@@ -120,7 +153,7 @@ func (c *RewardRecoveryChecker) AutoRewardRecovery(
 
 	// Execute recovery validations if any were missed
 	if missedCount > 0 {
-		recoveredCount, err := validator.ExecuteRecoveryValidations(missedInferences)
+		recoveredCount, err := c.validator.ExecuteRecoveryValidations(missedInferences)
 		if err != nil {
 			logging.Error("Failed to execute recovery validations during startup", types.Claims,
 				"epochIndex", settleAmount.EpochIndex,
@@ -140,12 +173,12 @@ func (c *RewardRecoveryChecker) AutoRewardRecovery(
 			logging.Info("Waiting for startup recovery validations to be recorded on-chain", types.Claims,
 				"epochIndex", settleAmount.EpochIndex,
 				"recoveredCount", recoveredCount)
-			validator.WaitForValidationsToBeRecorded()
+			c.validator.WaitForValidationsToBeRecorded()
 		}
 	}
 
 	// Attempt to claim rewards
-	err = recorder.ClaimRewards(&inference.MsgClaimRewards{
+	err = c.recorder.ClaimRewards(&inference.MsgClaimRewards{
 		Seed:       previousSeed.Seed,
 		EpochIndex: previousSeed.EpochIndex,
 	})
@@ -157,7 +190,7 @@ func (c *RewardRecoveryChecker) AutoRewardRecovery(
 	}
 
 	// Mark as claimed to prevent duplicate attempts
-	err = configManager.MarkPreviousSeedClaimed()
+	err = c.configManager.MarkPreviousSeedClaimed()
 	if err != nil {
 		logging.Error("Failed to mark seed as claimed after successful recovery", types.Claims,
 			"epochIndex", settleAmount.EpochIndex,
