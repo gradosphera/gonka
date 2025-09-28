@@ -319,3 +319,58 @@ func TestProcessBlock_RealNodeParse(t *testing.T) {
 
 // Note: we rely on zero-value apiconfig.ConfigManager methods that read/write
 // in-memory fields and no-op writes when WriterProvider is nil.
+
+// Test that when there is no persisted lastProcessed height and the chain is already
+// at a high height, the observer starts processing from latest (height) only, not
+// from genesis. Concretely, it should set lastQueried to (current-1) and the first
+// block it fetches must be exactly current.
+func TestBlockObserver_StartsFromLatestWhenNoPersisted(t *testing.T) {
+	manager := &apiconfig.ConfigManager{}
+	const (
+		currentHeight = int64(100000)
+		txsPerBlock   = 2
+	)
+
+	mock := newMockTmHTTPClient(txsPerBlock)
+	bo := NewBlockObserverWithClient(manager, mock)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go bo.Process(ctx)
+
+	// Simulate node caught up and chain at a large height
+	bo.updateStatus(currentHeight, true)
+
+	// Expect to receive txsPerBlock tx events plus one barrier for currentHeight
+	wantEvents := txsPerBlock + 1
+	received := 0
+	barrierSeen := false
+	deadline := time.After(2 * time.Second)
+	for !barrierSeen {
+		select {
+		case <-deadline:
+			t.Fatalf("timeout waiting for events; received %d of %d", received, wantEvents)
+		case ev := <-bo.Queue.Out:
+			if ev == nil {
+				t.Fatalf("nil event received")
+			}
+			received++
+			if ev.Result.Data.Type == systemBarrierEventType {
+				heights := ev.Result.Events["barrier.height"]
+				if len(heights) > 0 && heights[0] == strconv.FormatInt(currentHeight, 10) {
+					barrierSeen = true
+				}
+			}
+		}
+	}
+
+	// Assert the observer fetched exactly the current height and nothing older
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	if len(mock.calls) != 1 {
+		t.Fatalf("expected exactly 1 BlockResults call, got %d: %v", len(mock.calls), mock.calls)
+	}
+	if mock.calls[0] != currentHeight {
+		t.Fatalf("expected first fetch at height %d, got %d", currentHeight, mock.calls[0])
+	}
+}

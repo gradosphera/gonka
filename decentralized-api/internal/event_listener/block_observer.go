@@ -32,33 +32,12 @@ type TmHTTPClient interface {
 }
 
 func NewBlockObserver(manager *apiconfig.ConfigManager) *BlockObserver {
-	queue := NewUnboundedQueue[*chainevents.JSONRPCResponse]()
-	// Initialize Tendermint RPC client
+	// Initialize Tendermint RPC client and delegate to WithClient to avoid duplication
 	httpClient, err := cosmosclient.NewRpcClient(manager.GetChainNodeConfig().Url)
 	if err != nil {
 		logging.Error("Failed to create Tendermint RPC client for BlockObserver", types.EventProcessing, "error", err)
 	}
-
-	bo := &BlockObserver{
-		ConfigManager: manager,
-		Queue:         queue,
-		tmClient:      httpClient,
-		notify:        make(chan struct{}, 1),
-	}
-
-	bo.lastProcessedBlockHeight.Store(manager.GetLastProcessedHeight())
-	// Start querying from last processed height
-	bo.lastQueriedBlockHeight.Store(bo.lastProcessedBlockHeight.Load())
-	bo.currentBlockHeight.Store(manager.GetHeight())
-	bo.caughtUp.Store(false)
-
-	// If first run and we have a current height but no last processed, start from current-1
-	if bo.lastProcessedBlockHeight.Load() == 0 && bo.currentBlockHeight.Load() > 0 {
-		bo.lastProcessedBlockHeight.Store(bo.currentBlockHeight.Load() - 1)
-		bo.lastQueriedBlockHeight.Store(bo.lastProcessedBlockHeight.Load())
-	}
-
-	return bo
+	return NewBlockObserverWithClient(manager, httpClient)
 }
 
 // NewBlockObserverWithClient allows injecting a custom Tendermint RPC client (used in tests)
@@ -73,11 +52,15 @@ func NewBlockObserverWithClient(manager *apiconfig.ConfigManager, client TmHTTPC
 	}
 
 	bo.lastProcessedBlockHeight.Store(manager.GetLastProcessedHeight())
+	// Start querying from last processed height for consistency with NewBlockObserver
+	bo.lastQueriedBlockHeight.Store(bo.lastProcessedBlockHeight.Load())
 	bo.currentBlockHeight.Store(manager.GetHeight())
 	bo.caughtUp.Store(false)
 
 	if bo.lastProcessedBlockHeight.Load() == 0 && bo.currentBlockHeight.Load() > 0 {
+		// If first run and we have a current height but no last processed, start from current-1
 		bo.lastProcessedBlockHeight.Store(bo.currentBlockHeight.Load() - 1)
+		bo.lastQueriedBlockHeight.Store(bo.lastProcessedBlockHeight.Load())
 	}
 	return bo
 }
