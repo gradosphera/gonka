@@ -9,6 +9,7 @@ import (
 	"decentralized-api/internal/bls"
 	"decentralized-api/internal/event_listener/chainevents"
 	"decentralized-api/internal/poc"
+	"decentralized-api/internal/startup"
 	"decentralized-api/internal/validation"
 	"decentralized-api/logging"
 	"decentralized-api/training"
@@ -39,16 +40,17 @@ const (
 
 // TODO: write tests properly
 type EventListener struct {
-	nodeBroker          *broker.Broker
-	configManager       *apiconfig.ConfigManager
-	validator           *validation.InferenceValidator
-	transactionRecorder cosmosclient.InferenceCosmosClient
-	trainingExecutor    *training.Executor
-	blsManager          *bls.BlsManager
-	nodeCaughtUp        atomic.Bool
-	phaseTracker        *chainphase.ChainPhaseTracker
-	dispatcher          *OnNewBlockDispatcher
-	cancelFunc          context.CancelFunc
+	nodeBroker            *broker.Broker
+	configManager         *apiconfig.ConfigManager
+	validator             *validation.InferenceValidator
+	transactionRecorder   cosmosclient.InferenceCosmosClient
+	trainingExecutor      *training.Executor
+	blsManager            *bls.BlsManager
+	nodeCaughtUp          atomic.Bool
+	phaseTracker          *chainphase.ChainPhaseTracker
+	dispatcher            *OnNewBlockDispatcher
+	cancelFunc            context.CancelFunc
+	rewardRecoveryChecker *startup.RewardRecoveryChecker
 
 	eventHandlers []EventHandler
 
@@ -89,17 +91,18 @@ func NewEventListener(
 	bo := NewBlockObserver(configManager)
 
 	return &EventListener{
-		nodeBroker:          nodeBroker,
-		transactionRecorder: transactionRecorder,
-		configManager:       configManager,
-		validator:           validator,
-		trainingExecutor:    trainingExecutor,
-		phaseTracker:        phaseTracker,
-		dispatcher:          dispatcher,
-		cancelFunc:          cancelFunc,
-		blsManager:          blsManager,
-		eventHandlers:       eventHandlers,
-		blockObserver:       bo,
+		nodeBroker:            nodeBroker,
+		transactionRecorder:   transactionRecorder,
+		configManager:         configManager,
+		validator:             validator,
+		trainingExecutor:      trainingExecutor,
+		phaseTracker:          phaseTracker,
+		dispatcher:            dispatcher,
+		cancelFunc:            cancelFunc,
+		blsManager:            blsManager,
+		eventHandlers:         eventHandlers,
+		blockObserver:         bo,
+		rewardRecoveryChecker: startup.NewRewardRecoveryChecker(phaseTracker, &transactionRecorder, validator, configManager),
 	}
 }
 
@@ -312,6 +315,9 @@ func (el *EventListener) processEvent(event *chainevents.JSONRPCResponse, worker
 
 		// Still handle upgrade processing separately
 		upgrade.ProcessNewBlockEvent(event, el.transactionRecorder, el.configManager)
+		if el.isNodeSynced() {
+			el.rewardRecoveryChecker.RecoverIfNeeded(blockInfo.Height)
+		}
 
 	case txEventType:
 		if el.hasHandler(event) {

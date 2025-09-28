@@ -203,9 +203,9 @@ func (m *MockCosmosMessageClient) SubmitDealerPart(transaction *blstypes.MsgSubm
 	return args.Error(0)
 }
 
-func (m *MockCosmosMessageClient) SubmitVerificationVector(transaction *blstypes.MsgSubmitVerificationVector) (*blstypes.MsgSubmitVerificationVectorResponse, error) {
+func (m *MockCosmosMessageClient) SubmitVerificationVector(transaction *blstypes.MsgSubmitVerificationVector) (*sdk.TxResponse, error) {
 	args := m.Called(transaction)
-	return args.Get(0).(*blstypes.MsgSubmitVerificationVectorResponse), args.Error(1)
+	return args.Get(0).(*sdk.TxResponse), args.Error(1)
 }
 
 func (m *MockCosmosMessageClient) SubmitGroupKeyValidationSignature(transaction *blstypes.MsgSubmitGroupKeyValidationSignature) error {

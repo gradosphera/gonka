@@ -376,7 +376,7 @@ func (k msgServer) getMustBeValidatedInferences(ctx sdk.Context, msg *types.MsgC
 		// Check if validator is in the weight map for this model
 		validatorPowerForModel, found := weightMap[msg.Creator]
 		if !found {
-			k.LogInfo("Validator not found in weight map for model", types.Claims, "validator", msg.Creator, "model", modelId)
+			k.LogDebug("Validator not found in weight map for model", types.Claims, "validator", msg.Creator, "model", modelId)
 			continue
 		}
 
@@ -395,10 +395,10 @@ func (k msgServer) getMustBeValidatedInferences(ctx sdk.Context, msg *types.MsgC
 			continue
 		}
 
-		k.LogInfo("Getting validation", types.Claims, "seed", msg.Seed, "totalWeight", totalWeight, "executorPower", executorPower, "validatorPower", validatorPowerForModel)
+		k.LogDebug("Getting validation", types.Claims, "seed", msg.Seed, "totalWeight", totalWeight, "executorPower", executorPower, "validatorPower", validatorPowerForModel)
 		shouldValidate, s := calculations.ShouldValidate(msg.Seed, &inference, uint32(totalWeight), uint32(validatorPowerForModel.Weight), uint32(executorPower.Weight),
 			k.Keeper.GetParams(ctx).ValidationParams)
-		k.LogInfo(s, types.Claims, "inference", inference.InferenceId, "seed", msg.Seed, "model", modelId, "validator", msg.Creator)
+		k.LogDebug(s, types.Claims, "inference", inference.InferenceId, "seed", msg.Seed, "model", modelId, "validator", msg.Creator)
 		if shouldValidate {
 			mustBeValidated = append(mustBeValidated, inference.InferenceId)
 		}
