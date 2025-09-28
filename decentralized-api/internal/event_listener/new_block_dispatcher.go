@@ -307,7 +307,7 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 	if epochContext.IsStartOfPocStage(blockHeight) {
 
 		logging.Info("DapiStage:IsStartOfPocStage: sending StartPoCEvent to the PoC orchestrator", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
-		d.randomSeedManager.GenerateSeedInfo(epochContext.EpochIndex)
+		d.randomSeedManager.GenerateSeed(epochContext.EpochIndex)
 		return
 	}
 
@@ -472,18 +472,10 @@ func (d *OnNewBlockDispatcher) executeMissedValidationRecoveryWithSeed(previousE
 
 	// Check if seed is valid
 	if previousSeed.Seed == 0 {
-		logging.Warn("Empty seed, try to reproduce", types.ValidationRecovery,
+		logging.Warn("Missed validation recovery skipped: invalid seed", types.ValidationRecovery,
 			"previousEpochIndex", previousEpochIndex,
 			"seedEpochIndex", previousSeed.EpochIndex)
-		regeneratedSeed, err := d.randomSeedManager.CreateNewSeed(previousSeed.EpochIndex)
-		if err != nil {
-			logging.Error("Error regenerating seed", types.ValidationRecovery,
-				"err", err,
-				"previousEpochIndex", previousEpochIndex,
-				"seedEpochIndex", previousSeed.EpochIndex)
-			return
-		}
-		previousSeed.Seed = regeneratedSeed.Seed
+		return
 	}
 
 	// Verify seed epoch matches (this should always be true now, but good to verify)

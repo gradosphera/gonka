@@ -1,6 +1,7 @@
 package poc
 
 import (
+	"crypto/rand"
 	"decentralized-api/apiconfig"
 	"decentralized-api/cosmosclient"
 	"decentralized-api/logging"
@@ -12,8 +13,7 @@ import (
 )
 
 type RandomSeedManager interface {
-	GenerateSeedInfo(epochIndex uint64)
-	CreateNewSeed(epoch uint64) (*apiconfig.SeedInfo, error)
+	GenerateSeed(epochIndex uint64)
 	ChangeCurrentSeed()
 	RequestMoney()
 }
@@ -33,9 +33,9 @@ func NewRandomSeedManager(
 	}
 }
 
-func (rsm *RandomSeedManagerImpl) GenerateSeedInfo(epochIndex uint64) {
+func (rsm *RandomSeedManagerImpl) GenerateSeed(epochIndex uint64) {
 	logging.Debug("Old Seed Signature", types.Claims, rsm.configManager.GetCurrentSeed())
-	newSeed, err := rsm.CreateNewSeed(epochIndex)
+	newSeed, err := createNewSeed(epochIndex, rsm.transactionRecorder)
 	if err != nil {
 		logging.Error("Failed to get next seed signature", types.Claims, "error", err)
 		return
@@ -91,37 +91,45 @@ func (rsm *RandomSeedManagerImpl) RequestMoney() {
 	}
 }
 
-func (rsm *RandomSeedManagerImpl) CreateNewSeed(epoch uint64) (*apiconfig.SeedInfo, error) {
-	seedBytes, err := rsm.createSeedForEpoch(epoch)
+func createNewSeed(
+	epoch uint64,
+	transactionRecorder cosmosclient.CosmosMessageClient,
+) (*apiconfig.SeedInfo, error) {
+
+	newSeed, err := getRandomSeed()
 	if err != nil {
-		logging.Error("Failed to get seedBytes", types.Claims, "error", err)
+		logging.Error("Failed to get random seed", types.Claims, "error", err)
 		return nil, err
 	}
+	// Encode seed for signing
+	seedBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(seedBytes, uint64(newSeed))
 
-	signature, err := rsm.transactionRecorder.SignBytes(seedBytes)
+	signature, err := transactionRecorder.SignBytes(seedBytes)
 	if err != nil {
 		logging.Error("Failed to sign bytes", types.Claims, "error", err)
 		return nil, err
 	}
 
 	return &apiconfig.SeedInfo{
-		Seed:       int64(binary.BigEndian.Uint64(seedBytes)),
+		Seed:       newSeed,
 		EpochIndex: epoch,
 		Signature:  hex.EncodeToString(signature),
 	}, nil
 }
 
-func (rsm *RandomSeedManagerImpl) createSeedForEpoch(epoch uint64) ([]byte, error) {
-	initialSeedBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(initialSeedBytes, epoch)
-
-	signed, err := rsm.transactionRecorder.SignBytes(initialSeedBytes)
-	if err != nil {
-		logging.Error("Failed to sign bytes", types.Claims, "error", err)
-		return nil, err
+func getRandomSeed() (int64, error) {
+	// Secure 8 random bytes
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		logging.Error("Failed to read crypto/rand", types.Claims, "error", err)
+		return 0, err
 	}
 
-	seed := signed[:8]
+	newSeed := int64(binary.BigEndian.Uint64(b[:]) & ((1 << 63) - 1))
+	if newSeed == 0 {
+		newSeed = 1
+	}
+	return newSeed, nil
 
-	return seed, nil
 }
