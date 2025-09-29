@@ -315,4 +315,3 @@ func TestSetModelsForParticipants_ManyNodesManyModels(t *testing.T) {
 	assertTimeslotAllocationCount(t, groupB.MlNodes, []bool{true, true}, 0)
 	assertTimeslotAllocationCount(t, groupB.MlNodes, []bool{true, false}, 1)
 }
-Fi
