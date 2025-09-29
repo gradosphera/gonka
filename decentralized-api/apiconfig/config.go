@@ -14,7 +14,7 @@ type Config struct {
 	MLNodeKeyConfig     MLNodeKeyConfig       `koanf:"ml_node_key_config"`
 	Nats                NatsServerConfig      `koanf:"nats"`
 	CurrentNodeVersion  string                `koanf:"current_node_version"`
-	LastUsedVersion    string                `koanf:"last_used_version"`
+	LastUsedVersion     string                `koanf:"last_used_version"`
 	ValidationParams    ValidationParamsCache `koanf:"validation_params"`
 	BandwidthParams     BandwidthParamsCache  `koanf:"bandwidth_params"`
 }
