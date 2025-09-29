@@ -1,7 +1,6 @@
 package poc
 
 import (
-	"crypto/rand"
 	"decentralized-api/apiconfig"
 	"decentralized-api/cosmosclient"
 	"decentralized-api/logging"

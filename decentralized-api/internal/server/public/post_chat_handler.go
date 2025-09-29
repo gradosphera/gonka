@@ -24,7 +24,6 @@ import (
 	"github.com/productscience/inference/api/inference/inference"
 	"github.com/productscience/inference/cmd/inferenced/cmd"
 	"github.com/productscience/inference/x/inference/calculations"
-	"github.com/productscience/inference/x/inference/keeper"
 	"github.com/productscience/inference/x/inference/types"
 )
 
@@ -826,7 +825,7 @@ func (s *Server) validateRequester(ctx context.Context, request *ChatRequest, re
 	}
 
 	if request.OpenAiRequest.MaxTokens == 0 {
-		request.OpenAiRequest.MaxTokens = keeper.DefaultMaxTokens
+		request.OpenAiRequest.MaxTokens = calculations.DefaultMaxTokens
 	}
 
 	var escrowNeeded uint64
