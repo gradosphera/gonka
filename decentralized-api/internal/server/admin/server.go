@@ -53,6 +53,8 @@ func NewServer(
 
 	g.POST("nodes", s.createNewNode)
 	g.POST("nodes/batch", s.createNewNodes)
+	g.GET("nodes/upgrade-status", s.getUpgradeStatus)
+	g.POST("nodes/version-status", s.postVersionStatus)
 	g.GET("nodes", s.getNodes)
 	g.DELETE("nodes/:id", s.deleteNode)
 	g.POST("nodes/:id/enable", s.enableNode)

@@ -32,7 +32,7 @@ func (k msgServer) SubmitHardwareDiff(goCtx context.Context, msg *types.MsgSubmi
 		seenIds[node.LocalId] = true
 	}
 
-	// TODO: Make sure that before the update, we have models in the state
+	// Make sure that before the update, we have models in the state
 	for _, node := range msg.NewOrModified {
 
 		for _, modelId := range node.Models {

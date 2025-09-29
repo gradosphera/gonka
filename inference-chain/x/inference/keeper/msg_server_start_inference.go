@@ -11,8 +11,6 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 )
 
-const DefaultMaxTokens = 5000
-
 func (k msgServer) StartInference(goCtx context.Context, msg *types.MsgStartInference) (*types.MsgStartInferenceResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	k.LogInfo("StartInference", types.Inferences, "inferenceId", msg.InferenceId, "creator", msg.Creator, "requestedBy", msg.RequestedBy, "model", msg.Model)
@@ -36,6 +34,11 @@ func (k msgServer) StartInference(goCtx context.Context, msg *types.MsgStartInfe
 	}
 
 	existingInference, found := k.GetInference(ctx, msg.InferenceId)
+
+	if found && existingInference.StartProcessed() {
+		k.LogError("StartInference: inference already started", types.Inferences, "inferenceId", msg.InferenceId)
+		return nil, sdkerrors.Wrap(types.ErrInferenceStartProcessed, "inference has already start processed")
+	}
 
 	// Record the current price only if this is the first message (FinishInference not processed yet)
 	// This ensures consistent pricing regardless of message arrival order
@@ -133,8 +136,6 @@ func (k msgServer) processInferencePayments(
 		}
 		executor.CoinBalance += payments.ExecutorPayment
 		executor.CurrentEpochStats.EarnedCoins += uint64(payments.ExecutorPayment)
-		executor.CurrentEpochStats.InferenceCount++
-		executor.LastInferenceTime = inference.EndBlockTimestamp
 		k.SafeLogSubAccountTransaction(ctx, executor.Address, types.ModuleName, types.OwedSubAccount, executor.CoinBalance, "inference_started:"+inference.InferenceId)
 		k.SetParticipant(ctx, executor)
 	}
@@ -161,6 +162,11 @@ func (k msgServer) GetAccountPubKey(ctx context.Context, address string) (string
 	if acc == nil {
 		k.LogError("getAccountPubKey: Account not found", types.Participants, "address", address)
 		return "", sdkerrors.Wrap(types.ErrParticipantNotFound, address)
+	}
+	// Not all accounts are guaranteed to have a pubkey
+	if acc.GetPubKey() == nil {
+		k.LogError("getAccountPubKey: Account has no pubkey", types.Participants, "address", address)
+		return "", types.ErrPubKeyUnavailable
 	}
 	return base64.StdEncoding.EncodeToString(acc.GetPubKey().Bytes()), nil
 }

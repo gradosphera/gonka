@@ -61,7 +61,7 @@ func TestParticipantRemove(t *testing.T) {
 
 func TestParticipantGetAll(t *testing.T) {
 	keeper, ctx := keepertest.InferenceKeeper(t)
-	items := createNParticipant(keeper, ctx, 10)
+	items := createNParticipant(keeper, ctx, 1000)
 	require.ElementsMatch(t,
 		nullify.Fill(items),
 		nullify.Fill(keeper.GetAllParticipant(ctx)),

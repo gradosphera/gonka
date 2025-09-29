@@ -29,13 +29,11 @@ func TrainingTaskFullKey(taskId uint64) []byte {
 	return StringKey(key)
 }
 
-// getQueuedKey returns the key for a queued task.
 func QueuedTrainingTaskFullKey(taskId uint64) []byte {
 	key := QueuedTrainingTaskKeyPrefix + strconv.FormatUint(taskId, 10)
 	return StringKey(key)
 }
 
-// getInProgressKey returns the key for an in-progress task.
 func InProgressTrainingTaskFullKey(taskId uint64) []byte {
 	key := InProgressTrainingTaskKeyPrefix + strconv.FormatUint(taskId, 10)
 	return StringKey(key)

@@ -3,20 +3,26 @@ events {
 }
 
 http {
+    resolver 127.0.0.11 valid=10s;
+    resolver_timeout 5s;
     upstream api_backend {
-        server ${FINAL_API_SERVICE}:${API_PORT};
+        zone api_backend 64k; 
+        server ${FINAL_API_SERVICE}:${API_PORT} resolve;
     }
 
     upstream chain_rpc_backend {
-        server ${FINAL_NODE_SERVICE}:${CHAIN_RPC_PORT};
+        zone chain_rpc_backend 64k;
+        server ${FINAL_NODE_SERVICE}:${CHAIN_RPC_PORT} resolve;
     }
 
     upstream chain_api_backend {
-        server ${FINAL_NODE_SERVICE}:${CHAIN_API_PORT};
+        zone chain_api_backend 64k;
+        server ${FINAL_NODE_SERVICE}:${CHAIN_API_PORT} resolve;
     }
 
     upstream chain_grpc_backend {
-        server ${FINAL_NODE_SERVICE}:${CHAIN_GRPC_PORT};
+        zone chain_grpc_backend 64k;
+        server ${FINAL_NODE_SERVICE}:${CHAIN_GRPC_PORT} resolve;
     }
 
     # Dashboard upstream - only included if DASHBOARD_PORT is set

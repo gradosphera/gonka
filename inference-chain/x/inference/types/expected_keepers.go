@@ -20,7 +20,6 @@ type AccountKeeper interface {
 	SetAccount(ctx context.Context, acc sdk.AccountI)
 	NewAccountWithAddress(context.Context, sdk.AccAddress) sdk.AccountI
 	GetModuleAccount(ctx context.Context, moduleName string) sdk.ModuleAccountI
-	// Methods imported from account should be defined here
 }
 
 // BankKeeper defines the expected interface for the Bank module.
@@ -28,7 +27,6 @@ type BankKeeper interface {
 	SpendableCoins(context.Context, sdk.AccAddress) sdk.Coins
 	SpendableCoin(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin
 	GetDenomMetaData(ctx context.Context, denom string) (banktypes.Metadata, bool)
-	// Methods imported from bank should be defined here
 }
 
 type GroupMessageKeeper interface {

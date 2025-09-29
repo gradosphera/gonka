@@ -69,7 +69,6 @@ COPY packages/train/resources /app/packages/train/resources
 COPY packages/common/src /app/packages/common/src
 
 # Just to provide metadata for the wandb project
-COPY .git /app/.git
 
 ENV PYTHONPATH="/app"
 ENV PYTHONPATH="${PYTHONPATH}:${APP_PATH}/src"

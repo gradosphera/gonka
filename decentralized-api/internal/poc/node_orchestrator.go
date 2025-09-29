@@ -116,20 +116,19 @@ func (o *NodePoCOrchestratorImpl) ValidateReceivedBatches(startOfValStageHeight 
 		"startOfValStageHeight", startOfValStageHeight, "pocStartBlockHeight", startOfPoCBlockHeight, "blockHash", blockHash)
 
 	// 1. GET ALL SUBMITTED BATCHES!
-	// batches, err := o.cosmosClient.GetPoCBatchesByStage(startOfPoCBlockHeight)
 	// FIXME: might be too long of a transaction, paging might be needed
-	batches, err := o.chainBridge.PoCBatchesForStage(startOfPoCBlockHeight)
+	allParticipantsBatches, err := o.chainBridge.PoCBatchesForStage(startOfPoCBlockHeight)
 	if err != nil {
-		logging.Error("ValidateReceivedBatches. Failed to get PoC batches", types.PoC, "startOfValStageHeight", startOfValStageHeight, "error", err)
+		logging.Error("ValidateReceivedBatches. Failed to get PoC allParticipantsBatches", types.PoC, "startOfValStageHeight", startOfValStageHeight, "error", err)
 		return
 	}
-	participants := make([]string, len(batches.PocBatch))
-	for i, batch := range batches.PocBatch {
-		participants[i] = batch.Participant
+	participants := make([]string, len(allParticipantsBatches.PocBatch))
+	for i, participantBatches := range allParticipantsBatches.PocBatch {
+		participants[i] = participantBatches.Participant
 	}
-	logging.Info("ValidateReceivedBatches. Got PoC batches.", types.PoC,
+	logging.Info("ValidateReceivedBatches. Got PoC allParticipantsBatches.", types.PoC,
 		"startOfValStageHeight", startOfValStageHeight,
-		"numParticipants", len(batches.PocBatch),
+		"numParticipants", len(participants),
 		"participants", participants)
 
 	nodes, err := o.nodeBroker.GetNodes()
@@ -161,16 +160,37 @@ func (o *NodePoCOrchestratorImpl) ValidateReceivedBatches(startOfValStageHeight 
 	successfulValidations := 0
 	failedValidations := 0
 
-	for _, batch := range batches.PocBatch {
+	// Iterating over participants
+	for _, participantBatches := range allParticipantsBatches.PocBatch {
 		joinedBatch := mlnodeclient.ProofBatch{
-			PublicKey:   batch.HexPubKey,
+			PublicKey:   participantBatches.HexPubKey,
 			BlockHash:   blockHash,
 			BlockHeight: startOfPoCBlockHeight,
 		}
 
-		for _, b := range batch.PocBatch {
-			joinedBatch.Dist = append(joinedBatch.Dist, b.Dist...)
-			joinedBatch.Nonces = append(joinedBatch.Nonces, b.Nonces...)
+		uniqueNonces := make(map[int64]struct{})
+
+		for _, b := range participantBatches.PocBatch {
+			if len(b.Nonces) != len(b.Dist) {
+				logging.Error("ValidateReceivedBatches. Nonces length mismatch. Skipping the batch", types.PoC,
+					"participant", participantBatches.Participant,
+					"batchId", b.BatchId)
+				continue
+			}
+
+			for i, nonce := range b.Nonces {
+				if _, exists := uniqueNonces[nonce]; !exists {
+					uniqueNonces[nonce] = struct{}{}
+
+					joinedBatch.Nonces = append(joinedBatch.Nonces, nonce)
+					joinedBatch.Dist = append(joinedBatch.Dist, b.Dist[i])
+				} else {
+					logging.Info("ValidateReceivedBatches. Duplicate nonce found", types.PoC,
+						"participant", participantBatches.Participant,
+						"batchId", b.BatchId,
+						"nonce", nonce)
+				}
+			}
 		}
 
 		batchToValidate := joinedBatch.SampleNoncesToValidate(o.pubKey, samplesPerBatch)
@@ -185,8 +205,8 @@ func (o *NodePoCOrchestratorImpl) ValidateReceivedBatches(startOfValStageHeight 
 				"length", len(batchToValidate.Nonces),
 				"startOfValStageHeight", startOfValStageHeight,
 				"node.Id", node.Node.Id, "node.Host", node.Node.Host,
-				"batch.Participant", batch.Participant)
-			logging.Debug("ValidateReceivedBatches. Sending batch", types.PoC, "node", node.Node.Host, "batch", batchToValidate)
+				"participantBatches.Participant", participantBatches.Participant)
+			logging.Debug("ValidateReceivedBatches. Sending batch", types.PoC, "node", node.Node.Host, "participantBatches", batchToValidate)
 
 			// FIXME: copying: doesn't look good for large PoCBatch structures?
 			nodeClient := o.nodeBroker.NewNodeClient(&node.Node)
@@ -206,14 +226,14 @@ func (o *NodePoCOrchestratorImpl) ValidateReceivedBatches(startOfValStageHeight 
 			failedValidations++
 			logging.Error("ValidateReceivedBatches. Failed to validate batch after all retry attempts", types.PoC,
 				"startOfValStageHeight", startOfValStageHeight,
-				"batch.Participant", batch.Participant,
+				"participantBatches.Participant", participantBatches.Participant,
 				"maxAttempts", POC_VALIDATE_BATCH_RETRIES)
 		}
 	}
 
 	logging.Info("ValidateReceivedBatches. Finished.", types.PoC,
 		"startOfValStageHeight", startOfValStageHeight,
-		"totalBatches", len(batches.PocBatch),
+		"totalBatches", len(allParticipantsBatches.PocBatch),
 		"successfulValidations", successfulValidations,
 		"failedValidations", failedValidations)
 }

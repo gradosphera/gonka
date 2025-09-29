@@ -2,10 +2,11 @@ package completionapi
 
 import (
 	"encoding/json"
-	"github.com/productscience/inference/x/inference/keeper"
-	"github.com/stretchr/testify/require"
 	"log"
 	"testing"
+
+	"github.com/productscience/inference/x/inference/calculations"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -132,7 +133,7 @@ func TestMaxTokens(t *testing.T) {
 	}{
 		{"WithMaxTokens", jsonBodyWithMaxTokens, 100},
 		{"WithMaxCompletionTokens", jsonBodyWithMaxCompletionTokens, 200},
-		{"NoTokenLimits", jsonBodyNoTokenLimits, keeper.DefaultMaxTokens},
+		{"NoTokenLimits", jsonBodyNoTokenLimits, calculations.DefaultMaxTokens},
 	}
 
 	for _, tt := range tests {

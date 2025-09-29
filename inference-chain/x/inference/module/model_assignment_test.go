@@ -231,3 +231,87 @@ func TestSetModelsForParticipants_OneNodeOneModel(t *testing.T) {
 	assertNodeInGroup(t, modelGroup.MlNodes, "mlnode1")
 	assertTimeslotAllocationCount(t, modelGroup.MlNodes, []bool{true, false}, 1)
 }
+
+func TestSetModelsForParticipants_ManyNodesManyModels(t *testing.T) {
+	// 1. Setup
+	ctx := context.Background()
+	participantAddress := "gonka1xmwh48ugfvd2ktmy0t90ueuzqxdk4g0anwe3v6"
+	modelA := "Qwen/QwQ-32B"
+	modelB := "Qwen/Qwen2.5-7B-Instruct"
+
+	models := []types.Model{
+		{ProposedBy: "genesis", Id: modelA, VRam: 32},
+		{ProposedBy: "genesis", Id: modelB, VRam: 16},
+	}
+
+	// Mock Keeper setup with 4 nodes supporting mixed models
+	mockKeeper := &mockKeeperForModelAssigner{
+		governanceModels: models,
+		hardwareNodes: map[string]*types.HardwareNodes{
+			participantAddress: {
+				Participant: participantAddress,
+				HardwareNodes: []*types.HardwareNode{
+					{LocalId: "mlnode1", Models: []string{modelA, modelB}}, // supports both
+					{LocalId: "mlnode2", Models: []string{modelA}},         // supports A
+					{LocalId: "mlnode3", Models: []string{modelB}},         // supports B
+					{LocalId: "mlnode4", Models: []string{modelA, modelB}}, // supports both
+				},
+			},
+		},
+	}
+
+	// Model Assigner
+	modelAssigner := NewModelAssigner(mockKeeper, mockLogger{})
+
+	// Participant data setup with legacy MLNodes list (pre-assignment state)
+	participants := []*types.ActiveParticipant{
+		{
+			Index:  participantAddress,
+			Models: []string{modelA, modelB},
+			MlNodes: []*types.ModelMLNodes{
+				{
+					MlNodes: []*types.MLNodeInfo{
+						{NodeId: "mlnode1", PocWeight: 30},
+						{NodeId: "mlnode2", PocWeight: 25},
+						{NodeId: "mlnode3", PocWeight: 20},
+						{NodeId: "mlnode4", PocWeight: 25},
+					},
+				},
+			},
+		},
+	}
+
+	upcomingEpoch := types.Epoch{Index: 2}
+
+	// 2. Execute
+	modelAssigner.setModelsForParticipants(ctx, participants, upcomingEpoch)
+
+	// 3. Assert
+	participant := participants[0]
+
+	// Expect two supported models in the same order as governance models
+	require.Len(t, participant.Models, 2, "Should have two supported models")
+	require.Equal(t, modelA, participant.Models[0], "First model should be modelA")
+	require.Equal(t, modelB, participant.Models[1], "Second model should be modelB")
+
+	// Expect two MLNode groups, one per model (no overflow group expected because all nodes get assigned)
+	require.Len(t, participant.MlNodes, 2, "Should have two MLNode groups corresponding to the two models")
+
+	// Group for modelA should contain nodes that support A and were unassigned at that time
+	groupA := participant.MlNodes[0]
+	require.Len(t, groupA.MlNodes, 3, "Model A group should have three nodes (mlnode1, mlnode2, mlnode4)")
+	assertNodeInGroup(t, groupA.MlNodes, "mlnode1")
+	assertNodeInGroup(t, groupA.MlNodes, "mlnode2")
+	assertNodeInGroup(t, groupA.MlNodes, "mlnode4")
+
+	// Group for modelB should contain the remaining node supporting B only
+	groupB := participant.MlNodes[1]
+	require.Len(t, groupB.MlNodes, 1, "Model B group should have one node (mlnode3)")
+	assertNodeInGroup(t, groupB.MlNodes, "mlnode3")
+
+	// Check 50% allocation per group: floor(3/2)=1 inference for A; floor(1/2)=0 for B
+	assertTimeslotAllocationCount(t, groupA.MlNodes, []bool{true, true}, 1)
+	assertTimeslotAllocationCount(t, groupA.MlNodes, []bool{true, false}, 2)
+	assertTimeslotAllocationCount(t, groupB.MlNodes, []bool{true, true}, 0)
+	assertTimeslotAllocationCount(t, groupB.MlNodes, []bool{true, false}, 1)
+}

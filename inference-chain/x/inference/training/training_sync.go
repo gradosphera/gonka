@@ -103,7 +103,7 @@ type RunMembershipService interface {
 	AssignRank(ctx context.Context, block BlockInfo) error
 	FinishIfNeeded(ctx context.Context, block BlockInfo) (bool, error)
 	RerankIfSomeNodesLeft(ctx context.Context, epoch int32, block BlockInfo) error
-	SetBarrier(ctx context.Context, barrier *types.TrainingTaskBarrier, block BlockInfo) error
+	SetBarrier(ctx context.Context, barrier *types.TrainingTaskBarrier)
 	GetBarrierStatus(ctx context.Context, req *types.GetBarrierStatusRequest) (*types.GetBarrierStatusResponse, error)
 }
 
@@ -218,7 +218,7 @@ func sortNodeIds(nodeIds []GlobalNodeId) {
 	})
 }
 
-func (rm *RunManager) Join(ctx sdk.Context, nodeId GlobalNodeId, outerStep int32, block BlockInfo) error {
+func (rm *RunManager) Join(ctx context.Context, nodeId GlobalNodeId, outerStep int32, block BlockInfo) error {
 	rs := rm.store.GetRunState(ctx, rm.runId)
 	if rs == nil {
 		return fmt.Errorf("run not found. task_id = %d", rm.runId)
@@ -321,7 +321,7 @@ func (rm *RunManager) JoinStatus(ctx context.Context, nodeId GlobalNodeId, outer
 	}
 
 	if finished {
-		err = rm.rerankIfSomeNodesLeft(ctx, outerStep, block)
+		err = rm.RerankIfSomeNodesLeft(ctx, outerStep, block)
 		if err != nil {
 			return nil, err
 		}
@@ -356,7 +356,7 @@ func (rm *RunManager) JoinStatus(ctx context.Context, nodeId GlobalNodeId, outer
 	}
 }
 
-func (rm *RunManager) Heartbeat(ctx sdk.Context, nodeId GlobalNodeId, req *types.HeartbeatRequest, block BlockInfo) error {
+func (rm *RunManager) Heartbeat(ctx context.Context, nodeId GlobalNodeId, req *types.HeartbeatRequest, block BlockInfo) error {
 	progress := taskProgress{
 		InnerStep: req.InnerStep,
 		OuterStep: req.OuterStep,
@@ -535,7 +535,7 @@ func (rm *RunManager) GetBarrierStatus(ctx context.Context, req *types.GetBarrie
 	}, nil
 }
 
-func (rm *RunManager) rerankIfSomeNodesLeft(ctx context.Context, epoch int32, block BlockInfo) error {
+func (rm *RunManager) RerankIfSomeNodesLeft(ctx context.Context, epoch int32, block BlockInfo) error {
 	rs := rm.store.GetRunState(ctx, rm.runId)
 	if rs == nil {
 		return fmt.Errorf("run not found. task_id = %d", rm.runId)

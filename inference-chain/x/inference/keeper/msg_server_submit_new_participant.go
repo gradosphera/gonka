@@ -24,7 +24,7 @@ func createNewParticipant(ctx sdk.Context, msg *types.MsgSubmitNewParticipant) t
 		JoinHeight:        ctx.BlockHeight(),
 		LastInferenceTime: 0,
 		InferenceUrl:      msg.GetUrl(),
-		Status:            types.ParticipantStatus_ACTIVE,
+		Status:            types.ParticipantStatus_RAMPING,
 		ValidatorKey:      msg.GetValidatorKey(),
 		WorkerPublicKey:   msg.GetWorkerKey(),
 		CurrentEpochStats: &types.CurrentEpochStats{},

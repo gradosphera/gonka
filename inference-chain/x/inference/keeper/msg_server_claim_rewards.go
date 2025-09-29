@@ -20,8 +20,10 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 
 	settleAmount, response := k.validateRequest(ctx, msg)
 	if response != nil {
+		k.LogInfo("Validate request failed", types.Claims, "error", response.Result, "account", msg.Creator)
 		return response, nil
 	}
+	k.LogInfo("Validate request succeeded", types.Claims, "account", msg.Creator, "settleAmount", settleAmount)
 
 	response, err := k.validateClaim(ctx, msg, settleAmount)
 	if err != nil {
@@ -116,6 +118,22 @@ func (ms msgServer) finishSettle(ctx sdk.Context, settleAmount *types.SettleAmou
 }
 
 func (k msgServer) validateRequest(ctx sdk.Context, msg *types.MsgClaimRewards) (*types.SettleAmount, *types.MsgClaimRewardsResponse) {
+	currentEpoch, err := k.GetCurrentEpochGroup(ctx)
+	if err != nil {
+		k.LogError("GetCurrentEpoch failed", types.Claims, "error", err)
+		return nil, &types.MsgClaimRewardsResponse{
+			Amount: 0,
+			Result: "Can't validate claim, current epoch group not found",
+		}
+	}
+
+	if (currentEpoch.GroupData.EpochIndex - 1) != msg.EpochIndex {
+		k.LogError("Current epoch group does not match previous epoch", types.Claims, "epoch", msg.EpochIndex, "currentEpoch", currentEpoch.GroupData.EpochIndex)
+		return nil, &types.MsgClaimRewardsResponse{
+			Amount: 0,
+			Result: "Can't validate claim, current epoch group does not match previous epoch",
+		}
+	}
 	settleAmount, found := k.GetSettleAmount(ctx, msg.Creator)
 	if !found {
 		k.LogDebug("SettleAmount not found for address", types.Claims, "address", msg.Creator)
@@ -155,38 +173,45 @@ func (k msgServer) validateClaim(ctx sdk.Context, msg *types.MsgClaimRewards, se
 	}
 
 	// Check for missed validations
-	if validationMissed, err := k.hasMissedValidations(ctx, msg); err != nil {
+	if validationMissedSignificance, err := k.hasSignificantMissedValidations(ctx, msg); err != nil {
 		k.LogError("Failed to check for missed validations", types.Claims, "error", err)
 		return &types.MsgClaimRewardsResponse{
 			Amount: 0,
 			Result: "Failed to check for missed validations",
 		}, err
-	} else if validationMissed {
-		k.LogError("Inference not validated", types.Claims, "account", msg.Creator)
+	} else if validationMissedSignificance {
+		k.LogError("Inference validation missed significantly", types.Claims, "account", msg.Creator)
 		// TODO: Report that validator has missed validations
 		return &types.MsgClaimRewardsResponse{
 			Amount: 0,
-			Result: "Inference not validated",
+			Result: "Inference validation missed significantly",
 		}, types.ErrValidationsMissed
 	}
 
 	return nil, nil
 }
 
-func (k msgServer) hasMissedValidations(ctx sdk.Context, msg *types.MsgClaimRewards) (bool, error) {
+func (k msgServer) hasSignificantMissedValidations(ctx sdk.Context, msg *types.MsgClaimRewards) (bool, error) {
 	mustBeValidated, err := k.getMustBeValidatedInferences(ctx, msg)
 	if err != nil {
 		return false, err
 	}
 	wasValidated := k.getValidatedInferences(ctx, msg)
 
+	total := len(mustBeValidated)
+	missed := 0
 	for _, inferenceId := range mustBeValidated {
 		if !wasValidated[inferenceId] {
-			return true, nil
+			missed++
 		}
 	}
+	passed, err := calculations.MissedStatTest(missed, total)
+	k.LogInfo("Missed validations", types.Claims, "missed", missed, "totalToBeValidated", total, "passed", passed)
 
-	return false, nil
+	if err != nil {
+		return false, err
+	}
+	return !passed, nil
 }
 
 func (ms msgServer) validateSeedSignatureForPubkey(msg *types.MsgClaimRewards, settleAmount *types.SettleAmount, pubKey cryptotypes.PubKey) error {
@@ -235,7 +260,7 @@ func (ms msgServer) validateSeedSignature(ctx sdk.Context, msg *types.MsgClaimRe
 	}
 
 	ms.LogError("Seed signature validation failed", types.Claims, "account", msg.Creator)
-	return err
+	return types.ErrClaimSignatureInvalid
 }
 
 func (k msgServer) getValidatedInferences(ctx sdk.Context, msg *types.MsgClaimRewards) map[string]bool {
@@ -351,7 +376,7 @@ func (k msgServer) getMustBeValidatedInferences(ctx sdk.Context, msg *types.MsgC
 		// Check if validator is in the weight map for this model
 		validatorPowerForModel, found := weightMap[msg.Creator]
 		if !found {
-			k.LogInfo("Validator not found in weight map for model", types.Claims, "validator", msg.Creator, "model", modelId)
+			k.LogDebug("Validator not found in weight map for model", types.Claims, "validator", msg.Creator, "model", modelId)
 			continue
 		}
 
@@ -370,10 +395,10 @@ func (k msgServer) getMustBeValidatedInferences(ctx sdk.Context, msg *types.MsgC
 			continue
 		}
 
-		k.LogInfo("Getting validation", types.Claims, "seed", msg.Seed, "totalWeight", totalWeight, "executorPower", executorPower, "validatorPower", validatorPowerForModel)
+		k.LogDebug("Getting validation", types.Claims, "seed", msg.Seed, "totalWeight", totalWeight, "executorPower", executorPower, "validatorPower", validatorPowerForModel)
 		shouldValidate, s := calculations.ShouldValidate(msg.Seed, &inference, uint32(totalWeight), uint32(validatorPowerForModel.Weight), uint32(executorPower.Weight),
 			k.Keeper.GetParams(ctx).ValidationParams)
-		k.LogInfo(s, types.Claims, "inference", inference.InferenceId, "seed", msg.Seed, "model", modelId, "validator", msg.Creator)
+		k.LogDebug(s, types.Claims, "inference", inference.InferenceId, "seed", msg.Seed, "model", modelId, "validator", msg.Creator)
 		if shouldValidate {
 			mustBeValidated = append(mustBeValidated, inference.InferenceId)
 		}

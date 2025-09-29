@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/big"
 
+	"cosmossdk.io/log"
 	"github.com/productscience/inference/x/inference/types"
 	"github.com/shopspring/decimal"
 )
@@ -19,7 +20,13 @@ type BitcoinResult struct {
 
 // GetBitcoinSettleAmounts is the main entry point for Bitcoin-style reward calculation.
 // It replaces GetSettleAmounts() while preserving WorkCoins and only changing RewardCoins calculation.
-func GetBitcoinSettleAmounts(participants []types.Participant, epochGroupData *types.EpochGroupData, bitcoinParams *types.BitcoinRewardParams, settleParams *SettleParameters) ([]*SettleResult, BitcoinResult, error) {
+func GetBitcoinSettleAmounts(
+	participants []types.Participant,
+	epochGroupData *types.EpochGroupData,
+	bitcoinParams *types.BitcoinRewardParams,
+	settleParams *SettleParameters,
+	logger log.Logger,
+) ([]*SettleResult, BitcoinResult, error) {
 	if participants == nil {
 		return nil, BitcoinResult{Amount: 0}, fmt.Errorf("participants cannot be nil")
 	}
@@ -40,8 +47,9 @@ func GetBitcoinSettleAmounts(participants []types.Participant, epochGroupData *t
 	// 3. Complete distribution with remainder handling
 	// 4. Invalid participant handling
 	// 5. Error management
-	settleResults, bitcoinResult, err := CalculateParticipantBitcoinRewards(participants, epochGroupData, bitcoinParams)
+	settleResults, bitcoinResult, err := CalculateParticipantBitcoinRewards(participants, epochGroupData, bitcoinParams, logger)
 	if err != nil {
+		logger.Error("Error calculating participant bitcoin rewards", "error", err)
 		return settleResults, bitcoinResult, err
 	}
 
@@ -204,7 +212,12 @@ func GetParticipantPoCWeight(participant string, epochGroupData *types.EpochGrou
 
 // CalculateParticipantBitcoinRewards implements the main Bitcoin reward distribution logic
 // Preserves WorkCoins distribution while implementing fixed RewardCoins based on PoC weight
-func CalculateParticipantBitcoinRewards(participants []types.Participant, epochGroupData *types.EpochGroupData, bitcoinParams *types.BitcoinRewardParams) ([]*SettleResult, BitcoinResult, error) {
+func CalculateParticipantBitcoinRewards(
+	participants []types.Participant,
+	epochGroupData *types.EpochGroupData,
+	bitcoinParams *types.BitcoinRewardParams,
+	logger log.Logger,
+) ([]*SettleResult, BitcoinResult, error) {
 	// Parameter validation
 	if participants == nil {
 		return nil, BitcoinResult{}, fmt.Errorf("participants cannot be nil")
@@ -230,6 +243,7 @@ func CalculateParticipantBitcoinRewards(participants []types.Participant, epochG
 	for _, participant := range participants {
 		// Skip invalid participants from PoC weight calculations
 		if participant.Status == types.ParticipantStatus_INVALID {
+			logger.Info("Invalid participant found in PoC weight calculations, skipping", "participant", participant.Address)
 			participantWeights[participant.Address] = 0
 			continue
 		}
@@ -238,6 +252,10 @@ func CalculateParticipantBitcoinRewards(participants []types.Participant, epochG
 		participantWeights[participant.Address] = pocWeight
 		totalPoCWeight += pocWeight
 	}
+
+	logger.Info("Bitcoin Rewards: Checking downtime for participants", "participants", len(participants))
+	CheckAndPunishForDowntimeForParticipants(participants, participantWeights, logger)
+	logger.Info("Bitcoin Rewards: weights after downtime check", "participants", participantWeights)
 
 	// 3. Create settle results for each participant
 	settleResults := make([]*SettleResult, 0, len(participants))

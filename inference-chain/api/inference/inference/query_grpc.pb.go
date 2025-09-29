@@ -8,7 +8,6 @@ package inference
 
 import (
 	context "context"
-
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -81,7 +80,7 @@ const (
 	Query_GetModelCapacity_FullMethodName                          = "/inference.inference.Query/GetModelCapacity"
 	Query_GetAllModelCapacities_FullMethodName                     = "/inference.inference.Query/GetAllModelCapacities"
 	Query_GranteesByMessageType_FullMethodName                     = "/inference.inference.Query/GranteesByMessageType"
-	Query_TrainingAllowList_FullMethodName                         = "/inference.inference.Query/TrainingAllowList"
+	Query_MLNodeVersion_FullMethodName                             = "/inference.inference.Query/MLNodeVersion"
 )
 
 // QueryClient is the client API for Query service.
@@ -190,8 +189,8 @@ type QueryClient interface {
 	GetAllModelCapacities(ctx context.Context, in *QueryGetAllModelCapacitiesRequest, opts ...grpc.CallOption) (*QueryGetAllModelCapacitiesResponse, error)
 	// Queries all authz grantees with specific message type for an account
 	GranteesByMessageType(ctx context.Context, in *QueryGranteesByMessageTypeRequest, opts ...grpc.CallOption) (*QueryGranteesByMessageTypeResponse, error)
-	// Queries a list of TrainingAllowList items.
-	TrainingAllowList(ctx context.Context, in *QueryTrainingAllowListRequest, opts ...grpc.CallOption) (*QueryTrainingAllowListResponse, error)
+	// Queries the current MLNode version.
+	MLNodeVersion(ctx context.Context, in *QueryGetMLNodeVersionRequest, opts ...grpc.CallOption) (*QueryGetMLNodeVersionResponse, error)
 }
 
 type queryClient struct {
@@ -751,9 +750,9 @@ func (c *queryClient) GranteesByMessageType(ctx context.Context, in *QueryGrante
 	return out, nil
 }
 
-func (c *queryClient) TrainingAllowList(ctx context.Context, in *QueryTrainingAllowListRequest, opts ...grpc.CallOption) (*QueryTrainingAllowListResponse, error) {
-	out := new(QueryTrainingAllowListResponse)
-	err := c.cc.Invoke(ctx, Query_TrainingAllowList_FullMethodName, in, out, opts...)
+func (c *queryClient) MLNodeVersion(ctx context.Context, in *QueryGetMLNodeVersionRequest, opts ...grpc.CallOption) (*QueryGetMLNodeVersionResponse, error) {
+	out := new(QueryGetMLNodeVersionResponse)
+	err := c.cc.Invoke(ctx, Query_MLNodeVersion_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -866,8 +865,8 @@ type QueryServer interface {
 	GetAllModelCapacities(context.Context, *QueryGetAllModelCapacitiesRequest) (*QueryGetAllModelCapacitiesResponse, error)
 	// Queries all authz grantees with specific message type for an account
 	GranteesByMessageType(context.Context, *QueryGranteesByMessageTypeRequest) (*QueryGranteesByMessageTypeResponse, error)
-	// Queries a list of TrainingAllowList items.
-	TrainingAllowList(context.Context, *QueryTrainingAllowListRequest) (*QueryTrainingAllowListResponse, error)
+	// Queries the current MLNode version.
+	MLNodeVersion(context.Context, *QueryGetMLNodeVersionRequest) (*QueryGetMLNodeVersionResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -1058,8 +1057,8 @@ func (UnimplementedQueryServer) GetAllModelCapacities(context.Context, *QueryGet
 func (UnimplementedQueryServer) GranteesByMessageType(context.Context, *QueryGranteesByMessageTypeRequest) (*QueryGranteesByMessageTypeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GranteesByMessageType not implemented")
 }
-func (UnimplementedQueryServer) TrainingAllowList(context.Context, *QueryTrainingAllowListRequest) (*QueryTrainingAllowListResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method TrainingAllowList not implemented")
+func (UnimplementedQueryServer) MLNodeVersion(context.Context, *QueryGetMLNodeVersionRequest) (*QueryGetMLNodeVersionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MLNodeVersion not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -2172,20 +2171,20 @@ func _Query_GranteesByMessageType_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Query_TrainingAllowList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryTrainingAllowListRequest)
+func _Query_MLNodeVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryGetMLNodeVersionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(QueryServer).TrainingAllowList(ctx, in)
+		return srv.(QueryServer).MLNodeVersion(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Query_TrainingAllowList_FullMethodName,
+		FullMethod: Query_MLNodeVersion_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).TrainingAllowList(ctx, req.(*QueryTrainingAllowListRequest))
+		return srv.(QueryServer).MLNodeVersion(ctx, req.(*QueryGetMLNodeVersionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2442,8 +2441,8 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Query_GranteesByMessageType_Handler,
 		},
 		{
-			MethodName: "TrainingAllowList",
-			Handler:    _Query_TrainingAllowList_Handler,
+			MethodName: "MLNodeVersion",
+			Handler:    _Query_MLNodeVersion_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

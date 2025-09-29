@@ -3,6 +3,7 @@ package keeper_test
 import (
 	"testing"
 
+	"cosmossdk.io/log"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 
@@ -158,11 +159,19 @@ func TestBitcoinRewardIntegration_DistributionLogic(t *testing.T) {
 			Address:     "participant1",
 			CoinBalance: 2000, // WorkCoins from user fees
 			Status:      types.ParticipantStatus_ACTIVE,
+			CurrentEpochStats: &types.CurrentEpochStats{
+				InferenceCount: 100,
+				MissedRequests: 0,
+			},
 		},
 		{
 			Address:     "participant2",
 			CoinBalance: 6000, // WorkCoins from user fees
 			Status:      types.ParticipantStatus_ACTIVE,
+			CurrentEpochStats: &types.CurrentEpochStats{
+				InferenceCount: 100,
+				MissedRequests: 0,
+			},
 		},
 	}
 
@@ -182,7 +191,8 @@ func TestBitcoinRewardIntegration_DistributionLogic(t *testing.T) {
 		}
 
 		// Test GetBitcoinSettleAmounts function
-		settleResults, bitcoinResult, err := keeper.GetBitcoinSettleAmounts(participants, epochGroupData, params.BitcoinRewardParams, settleParams)
+		logger := log.NewTestLogger(t)
+		settleResults, bitcoinResult, err := keeper.GetBitcoinSettleAmounts(participants, epochGroupData, params.BitcoinRewardParams, settleParams, logger)
 		require.NoError(t, err, "Bitcoin settle amounts calculation should succeed")
 		require.Len(t, settleResults, 2, "Should have settle results for both participants")
 
@@ -271,6 +281,10 @@ func TestBitcoinRewardIntegration_Phase2Stubs(t *testing.T) {
 		{
 			Address: "participant1",
 			Status:  types.ParticipantStatus_ACTIVE,
+			CurrentEpochStats: &types.CurrentEpochStats{
+				InferenceCount: 100,
+				MissedRequests: 0,
+			},
 		},
 	}
 

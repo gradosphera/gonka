@@ -2,9 +2,14 @@ package keeper
 
 import (
 	"context"
+
 	"cosmossdk.io/collections"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/productscience/inference/x/inference/types"
+)
+
+const (
+	LookbackMultiplier = uint64(5)
 )
 
 // PruneInferences removes old inference records based on threshold and status
@@ -46,8 +51,6 @@ func isInferenceEligibleForPruning(inference types.Inference, upcomingEpochIndex
 	return inference.EpochId <= cutoff
 }
 
-var lookbackMultiplier = uint64(5)
-
 // PrunePoCData removes old PoC data within limited range for performance
 func (k Keeper) PrunePoCData(ctx context.Context, upcomingEpochIndex uint64, pruningThreshold uint64) error {
 	_, found := k.GetEpoch(ctx, upcomingEpochIndex)
@@ -57,7 +60,7 @@ func (k Keeper) PrunePoCData(ctx context.Context, upcomingEpochIndex uint64, pru
 	}
 
 	// Limit how far back we look to avoid performance issues on deep chains
-	maxEpochsToCheck := pruningThreshold * lookbackMultiplier
+	maxEpochsToCheck := pruningThreshold * LookbackMultiplier
 	k.LogInfo("Starting PoC data pruning", types.Pruning,
 		"max_epochs_to_check", maxEpochsToCheck,
 		"upcoming_epoch_index", upcomingEpochIndex,

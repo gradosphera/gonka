@@ -10,7 +10,7 @@ import (
 
 func (k msgServer) InvalidateInference(goCtx context.Context, msg *types.MsgInvalidateInference) (*types.MsgInvalidateInferenceResponse, error) {
 	inference, found := k.GetInference(goCtx, msg.InferenceId)
-	if found != true {
+	if !found {
 		k.LogError("Inference not found", types.Validation, "inferenceId", msg.InferenceId)
 		return nil, errorsmod.Wrapf(types.ErrInferenceNotFound, "inference with id %s not found", msg.InferenceId)
 	}
@@ -22,7 +22,7 @@ func (k msgServer) InvalidateInference(goCtx context.Context, msg *types.MsgInva
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	executor, found := k.GetParticipant(ctx, inference.ExecutedBy)
-	if found != true {
+	if !found {
 		k.LogError("Participant not found", types.Validation, "address", inference.ExecutedBy)
 		return nil, errorsmod.Wrapf(types.ErrParticipantNotFound, "participant with address %s not found", inference.ExecutedBy)
 	}

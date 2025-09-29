@@ -88,7 +88,7 @@ func (k Keeper) GetAllParticipant(ctx context.Context) (list []types.Participant
 	return participants
 }
 
-func (k Keeper) CountAllParticipantsWithNotZeroBalance(ctx context.Context) int64 {
+func (k Keeper) CountAllParticipants(ctx context.Context) int64 {
 	iter, err := k.Participants.Iterate(ctx, nil)
 	if err != nil {
 		return 0

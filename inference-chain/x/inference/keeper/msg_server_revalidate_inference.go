@@ -12,7 +12,7 @@ import (
 func (k msgServer) RevalidateInference(goCtx context.Context, msg *types.MsgRevalidateInference) (*types.MsgRevalidateInferenceResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	inference, found := k.GetInference(goCtx, msg.InferenceId)
-	if found != true {
+	if !found {
 		k.LogError("Inference not found", types.Validation, "inferenceId", msg.InferenceId)
 		return nil, errorsmod.Wrapf(types.ErrInferenceNotFound, "inference with id %s not found", msg.InferenceId)
 	}
@@ -23,7 +23,7 @@ func (k msgServer) RevalidateInference(goCtx context.Context, msg *types.MsgReva
 	}
 
 	executor, found := k.GetParticipant(ctx, inference.ExecutedBy)
-	if found != true {
+	if !found {
 		k.LogError("Participant not found", types.Validation, "address", inference.ExecutedBy)
 		return nil, errorsmod.Wrapf(types.ErrParticipantNotFound, "participant with address %s not found", inference.ExecutedBy)
 	}

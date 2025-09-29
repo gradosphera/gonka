@@ -40,6 +40,9 @@ func (eg *EpochGroup) submitValidationProposals(ctx sdk.Context, inferenceId str
 		return nil, err
 	}
 	err = revalidateProposal.SetMsgs([]sdk.Msg{revalidateMessage})
+	if err != nil {
+		return nil, err
+	}
 	invalidateResponse, err := eg.GroupKeeper.SubmitProposal(ctx, &invalidateProposal)
 	if err != nil {
 		return nil, err

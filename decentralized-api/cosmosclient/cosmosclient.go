@@ -7,6 +7,7 @@ import (
 	"decentralized-api/cosmosclient/tx_manager"
 	"decentralized-api/internal/nats/client"
 	"decentralized-api/logging"
+	"decentralized-api/utils"
 	"errors"
 	"fmt"
 	"log"
@@ -26,6 +27,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/golang/protobuf/proto"
 	"github.com/ignite/cli/v28/ignite/pkg/cosmosclient"
@@ -191,7 +193,7 @@ type CosmosMessageClient interface {
 	GetAccountPubKey() cryptotypes.PubKey
 	GetSignerAddress() string
 	SubmitDealerPart(transaction *blstypes.MsgSubmitDealerPart) error
-	SubmitVerificationVector(transaction *blstypes.MsgSubmitVerificationVector) (*blstypes.MsgSubmitVerificationVectorResponse, error)
+	SubmitVerificationVector(transaction *blstypes.MsgSubmitVerificationVector) (*sdk.TxResponse, error)
 	SubmitGroupKeyValidationSignature(transaction *blstypes.MsgSubmitGroupKeyValidationSignature) error
 	SubmitPartialSignature(requestId []byte, slotIndices []uint32, partialSignature []byte) error
 	NewBLSQueryClient() blstypes.QueryClient
@@ -306,7 +308,8 @@ func (icc *InferenceCosmosClient) SubmitNewUnfundedParticipant(transaction *infe
 
 func (icc *InferenceCosmosClient) ClaimRewards(transaction *inference.MsgClaimRewards) error {
 	transaction.Creator = icc.Address
-	_, err := icc.manager.SendTransactionAsyncNoRetry(transaction)
+	resp, err := icc.manager.SendTransactionAsyncWithRetry(transaction)
+	logging.Info("Claimed rewards", types.Validation, "TX", resp, "type")
 	return err
 }
 
@@ -328,7 +331,7 @@ func (icc *InferenceCosmosClient) SubmitPoCValidation(transaction *inference.Msg
 
 func (icc *InferenceCosmosClient) SubmitSeed(transaction *inference.MsgSubmitSeed) error {
 	transaction.Creator = icc.Address
-	_, err := icc.manager.SendTransactionAsyncNoRetry(transaction)
+	_, err := icc.manager.SendTransactionAsyncWithRetry(transaction)
 	return err
 }
 
@@ -393,7 +396,24 @@ func (icc *InferenceCosmosClient) GetUpgradePlan() (*upgradetypes.QueryCurrentPl
 }
 
 func (icc *InferenceCosmosClient) GetPartialUpgrades() (*types.QueryAllPartialUpgradeResponse, error) {
-	return icc.NewInferenceQueryClient().PartialUpgradeAll(icc.ctx, &types.QueryAllPartialUpgradeRequest{})
+	// Recommended: ensure icc.ctx is already pinned to a single height via metadata
+	// (caller can wrap icc.ctx with metadata.Pairs(grpctypes.GRPCBlockHeightHeader, strconv.FormatInt(height, 10))).
+
+	allUpgrades, err := utils.GetAllWithPagination(func(pageReq *query.PageRequest) ([]types.PartialUpgrade, *query.PageResponse, error) {
+		resp, err := icc.NewInferenceQueryClient().PartialUpgradeAll(icc.ctx, &types.QueryAllPartialUpgradeRequest{Pagination: pageReq})
+		if err != nil {
+			return nil, nil, err
+		}
+		return resp.PartialUpgrade, resp.Pagination, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &types.QueryAllPartialUpgradeResponse{
+		PartialUpgrade: allUpgrades,
+		Pagination:     &query.PageResponse{Total: uint64(len(allUpgrades))},
+	}, nil
 }
 
 func (icc *InferenceCosmosClient) NewUpgradeQueryClient() upgradetypes.QueryClient {
@@ -425,18 +445,17 @@ func (icc *InferenceCosmosClient) SendTransactionSyncNoRetry(transaction proto.M
 
 func (icc *InferenceCosmosClient) SubmitDealerPart(transaction *blstypes.MsgSubmitDealerPart) error {
 	transaction.Creator = icc.Address
-	_, err := icc.manager.SendTransactionAsyncNoRetry(transaction)
+	_, err := icc.manager.SendTransactionAsyncWithRetry(transaction)
 	return err
 }
 
-func (icc *InferenceCosmosClient) SubmitVerificationVector(transaction *blstypes.MsgSubmitVerificationVector) (*blstypes.MsgSubmitVerificationVectorResponse, error) {
+func (icc *InferenceCosmosClient) SubmitVerificationVector(transaction *blstypes.MsgSubmitVerificationVector) (*sdk.TxResponse, error) {
 	transaction.Creator = icc.Address
-	response := blstypes.MsgSubmitVerificationVectorResponse{}
-	err := icc.SendTransactionSyncNoRetry(transaction, &response)
+	resp, err := icc.manager.SendTransactionAsyncWithRetry(transaction)
 	if err != nil {
 		return nil, err
 	}
-	return &response, err
+	return resp, err
 }
 
 func (icc *InferenceCosmosClient) SubmitGroupKeyValidationSignature(transaction *blstypes.MsgSubmitGroupKeyValidationSignature) error {

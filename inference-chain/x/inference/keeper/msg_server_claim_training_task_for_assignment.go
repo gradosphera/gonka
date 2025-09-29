@@ -7,7 +7,7 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 )
 
-// FIXME: move to chain params?
+// TODO: move to chain params
 // Number of blocks an assinger has to finish the assignment process
 const TrainingTaskAssignmentDeadline = 100
 

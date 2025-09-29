@@ -46,7 +46,8 @@ if [ "$DASHBOARD_ENABLED" = "true" ]; then
     
     # Set up dashboard upstream and root location for enabled dashboard
     export DASHBOARD_UPSTREAM="upstream dashboard_backend {
-        server ${FINAL_EXPLORER_SERVICE}:${DASHBOARD_PORT};
+        zone upstream_dynamic 64k;
+        server ${FINAL_EXPLORER_SERVICE}:${DASHBOARD_PORT} resolve;
     }"
     
     export ROOT_LOCATION="location / {
