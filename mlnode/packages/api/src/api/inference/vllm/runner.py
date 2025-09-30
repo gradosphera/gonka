@@ -12,8 +12,8 @@ from common.trackable_task import ITrackableTask
 from api.proxy import setup_vllm_proxy
 
 
-TERMINATION_TIMEOUT = 20
-WAIT_FOR_SERVER_TIMEOUT = 1200
+TERMINATION_TIMEOUT = os.getenv("TERMINATION_TIMEOUT", 20)
+WAIT_FOR_SERVER_TIMEOUT = os.getenv("WAIT_FOR_SERVER_TIMEOUT", 1200)
 WAIT_FOR_SERVER_CHECK_INTERVAL = 3
 
 logger = create_logger(__name__)
