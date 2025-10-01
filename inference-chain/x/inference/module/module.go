@@ -638,16 +638,16 @@ func (am AppModule) moveUpcomingToEffectiveGroup(ctx context.Context, blockHeigh
 	for i, participant := range activeParticipants.Participants {
 		ids[i] = participant.Index
 	}
-	participants, ok := am.keeper.GetParticipants(ctx, ids)
-	if !ok {
-		am.LogError("Unable to get participants", types.EpochGroup, "ids", ids)
-		return
-	}
+	participants := am.keeper.GetParticipants(ctx, ids)
 
 	am.LogInfo("Setting participants to active", types.EpochGroup, "len(participants)", len(participants))
 	for _, participant := range participants {
 		participant.Status = types.ParticipantStatus_ACTIVE
-		am.keeper.SetParticipant(ctx, participant)
+		err := am.keeper.SetParticipant(ctx, participant)
+		if err != nil {
+			am.LogError("Unable to set participant to active", types.EpochGroup, "participantIndex", participant.Index, "error", err.Error())
+			continue
+		}
 	}
 }
 

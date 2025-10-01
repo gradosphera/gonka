@@ -200,7 +200,7 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 		}
 	}
 
-	err := k.MintRewardCoins(ctx, rewardAmount, "reward_distribution")
+	err = k.MintRewardCoins(ctx, rewardAmount, "reward_distribution")
 	if err != nil {
 		k.LogError("Error minting reward coins", types.Settle, "error", err)
 		return err

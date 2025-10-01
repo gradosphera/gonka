@@ -38,6 +38,18 @@ func (k Keeper) SetParticipant(ctx context.Context, participant types.Participan
 	return nil
 }
 
+func (k Keeper) GetParticipants(
+	ctx context.Context,
+	addresses []string) (participants []types.Participant) {
+	for _, address := range addresses {
+		participant, found := k.GetParticipant(ctx, address)
+		if found {
+			participants = append(participants, participant)
+		}
+	}
+	return participants
+}
+
 // GetParticipant returns a participant from its index
 func (k Keeper) GetParticipant(
 	ctx context.Context,
