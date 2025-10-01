@@ -49,6 +49,7 @@ Key runtime environment variables:
 | `CERT_ISSUER_DOMAIN` | - | Required when `NGINX_MODE` is `https` or `both`; used for cert issuance and `server_name` |
 | `PROXY_SSL_SERVICE_NAME` | proxy-ssl | Upstream service name for the cert issuer API |
 | `PROXY_SSL_PORT` | 8080 | Port for the cert issuer API |
+| `SSL_CERT_SOURCE` | ./secrets/nginx-ssl | Host path bind-mounted at `/etc/nginx/ssl` |
 | `PROXY_SSL_WAIT_SECONDS` | 60 | Max wait for `proxy-ssl` readiness during cert fetch |
 | `NODE_ID` | proxy | Node identifier included in cert requests to `proxy-ssl` |
 | `API_SERVICE_NAME` | api | Service name for API upstream |
@@ -90,7 +91,7 @@ ACME_DNS_PROVIDER=<route53|cloudflare|gcloud|azure|digitalocean|hetzner>
 
 Notes:
 - The compose maps ports 80 and 443; with `NGINX_MODE=https`, nginx listens on 443 only.
-- Certificates are written to the shared volume and used automatically by `proxy`.
+- Certificates are stored under `./secrets/nginx-ssl` (bind-mounted to `/etc/nginx/ssl`) and used automatically by `proxy`.
 
 #### Both HTTP & HTTPS (80/443 → 8000/8443) via proxy-ssl
 
@@ -168,6 +169,12 @@ Renewal: rerun the same one-shot command before expiry (manual DNS step required
 ### Start with Docker Compose
 
 Run from `deploy/join` after setting `config.env`.
+
+- Prepare bind-mount directories (safe to rerun):
+
+```
+mkdir -p secrets/nginx-ssl secrets/certbot
+```
 
 - Initial start (enable HTTPS with proxy-ssl profile):
 

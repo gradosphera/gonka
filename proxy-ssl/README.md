@@ -7,6 +7,7 @@
 - **How it works**: clients submit a CSR and the desired FQDNs; the service performs DNS-01 challenges using your DNS provider credentials, then returns a certificate bundle.
 - **Security**: requests must be authorized with a JWT (`CERT_ISSUER_JWT_SECRET`). Only subdomains listed in `CERT_ISSUER_ALLOWED_SUBDOMAINS` under `CERT_ISSUER_DOMAIN` are allowed.
 - **Storage**: issued bundles are written under `cert_storage_path` (default `/app/certs`).
+  - In compose, this path is bind-mounted from the host at `./secrets/nginx-ssl`.
 - **Providers**: Route53, Cloudflare, Google Cloud DNS, Azure DNS, DigitalOcean DNS, Hetzner DNS.
 
 If configuration is missing/invalid, the container runs in a disabled mode and serves only `/health` for liveness checks.
@@ -40,8 +41,8 @@ Notes:
   - `CERT_ISSUER_ALLOWED_SUBDOMAINS` (required): Comma-separated list (e.g., `explorer,api,rpc`).
   - `CERT_ISSUER_JWT_SECRET` (required): Secret for request authentication.
   - `PORT` (optional): Port to bind (defaults to `8080`).
-  - `CERT_STORAGE_PATH` (optional): Where to store issued bundles (defaults to `/app/certs`).
-  - `DATA_PATH` (optional): General data path (defaults to `/app/data`).
+  - `CERT_STORAGE_PATH` (optional): Where to store issued bundles (defaults to `/app/certs`, bind-mounted from `./secrets/nginx-ssl`).
+  - `DATA_PATH` (optional): General data path (defaults to `/app/data`, bind-mounted from `./secrets/certbot`).
 
 - **DNS provider credentials** (see per-provider guides below)
 

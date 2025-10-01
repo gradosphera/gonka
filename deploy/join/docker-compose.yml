@@ -92,7 +92,7 @@ services:
       - PROXY_SSL_SERVICE_NAME=${PROXY_SSL_SERVICE_NAME:-proxy-ssl}
       - PROXY_SSL_PORT=${PROXY_SSL_PORT:-8080}
     volumes:
-      - ${SSL_CERT_SOURCE:-cert_storage}:/etc/nginx/ssl
+      - ${SSL_CERT_SOURCE:-./secrets/nginx-ssl}:/etc/nginx/ssl
     depends_on:
       node:
         condition: service_started
@@ -146,8 +146,8 @@ services:
       # Hetzner
       - HETZNER_API_KEY=${HETZNER_API_KEY:-}
     volumes:
-      - cert_storage:/app/certs
-      - cert_data:/app/data
+      - ./secrets/nginx-ssl:/app/certs
+      - ./secrets/certbot:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -163,7 +163,4 @@ services:
       - "5173"
     restart: unless-stopped
 
-volumes:
-  cert_storage:
-  cert_data:
 
