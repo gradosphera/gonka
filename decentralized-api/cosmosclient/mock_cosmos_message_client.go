@@ -227,3 +227,13 @@ func (m *MockCosmosMessageClient) NewRestrictionsQueryClient() restrictionstypes
 	args := m.Called()
 	return args.Get(0).(restrictionstypes.QueryClient)
 }
+
+func (m *MockCosmosMessageClient) SubmitActiveParticipantsPendingProof(proof *types.MsgSubmitParticipantsProof) error {
+	args := m.Called(proof)
+	return args.Error(0)
+}
+
+func (m *MockCosmosMessageClient) SubmitMissingProofs(tx *types.MsgSubmitActiveParticipantsProofData) error {
+	args := m.Called(tx)
+	return args.Error(0)
+}
