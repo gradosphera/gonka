@@ -55,13 +55,13 @@ class StreamingInferenceTests : TestermintTest() {
         val (_, genesis) = initCluster()
         logSection("Clearing claims")
         // If we don't wait until the next rewards claim, there may be lingering requests that mess with our math
-        genesis.waitForStage(EpochStage.CLAIM_REWARDS)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, 2)
+        genesis.waitForNextInferenceWindow()
         val startLastRewardedEpoch = getRewardCalculationEpochIndex(genesis)
         val participants = genesis.api.getParticipants()
         participants.forEach {
             Logger.info("Participant: ${it.id}, Balance: ${it.balance}")
         }
-        genesis.waitForNextInferenceWindow()
         logSection("Making inference")
         val inferences: Sequence<InferenceResult> = generateSequence {
             getStreamingInferenceResult(genesis)

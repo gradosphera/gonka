@@ -2,7 +2,7 @@
 
 MAKEFLAGS += --no-print-directory
 
-export PROJECT_ROOT := $(shell git rev-parse --show-toplevel)
+export PROJECT_ROOT := $(shell git rev-parse --show-toplevel)/mlnode
 
 VERSION ?= $(shell git describe --always)
 IMAGE_NAME := ghcr.io/gonka-ai/mlnode:$(VERSION)

@@ -37,11 +37,13 @@ func (k Keeper) AdjustWeightsByCollateral(ctx context.Context, participants []*t
 
 	baseWeightRatio, err := collateralParams.BaseWeightRatio.ToLegacyDec()
 	if err != nil {
-		panic(fmt.Sprintf("invalid base_weight_ratio: %v", err))
+		k.LogError("invalid base_weight_ratio:", types.Tokenomics, "error", err)
+		return err
 	}
 	collateralPerWeightUnit, err := collateralParams.CollateralPerWeightUnit.ToLegacyDec()
 	if err != nil {
-		panic(fmt.Sprintf("invalid collateral_per_weight_unit: %v", err))
+		k.LogError("invalid collateral_per_weight_unit:", types.Tokenomics, "error", err)
+		return err
 	}
 
 	if collateralPerWeightUnit.IsZero() {
@@ -106,7 +108,8 @@ func (k Keeper) CheckAndSlashForInvalidStatus(ctx context.Context, originalStatu
 		params := k.GetParams(sdkCtx)
 		slashFraction, err := params.CollateralParams.SlashFractionInvalid.ToLegacyDec()
 		if err != nil {
-			panic(fmt.Sprintf("invalid slash_fraction_invalid: %v", err))
+			k.LogError("invalid slash_fraction_invalid:", types.Tokenomics, "error", err)
+			return
 		}
 
 		participantAddress, err := sdk.AccAddressFromBech32(participant.Address)
@@ -140,7 +143,8 @@ func (k Keeper) CheckAndSlashForDowntime(ctx context.Context, participant *types
 	params := k.GetParams(sdkCtx)
 	downtimeThreshold, err := params.CollateralParams.DowntimeMissedPercentageThreshold.ToLegacyDec()
 	if err != nil {
-		panic(fmt.Sprintf("invalid downtime_missed_percentage_threshold: %v", err))
+		k.LogError("nvalid downtime_missed_percentage_threshold", types.Tokenomics, err)
+
 	}
 
 	missedPercentage := math.LegacyNewDec(int64(participant.CurrentEpochStats.MissedRequests)).Quo(
@@ -150,7 +154,7 @@ func (k Keeper) CheckAndSlashForDowntime(ctx context.Context, participant *types
 	if missedPercentage.GT(downtimeThreshold) {
 		slashFraction, err := params.CollateralParams.SlashFractionDowntime.ToLegacyDec()
 		if err != nil {
-			panic(fmt.Sprintf("invalid slash_fraction_downtime: %v", err))
+			k.LogError("invalid slash_fraction_downtime:", types.Tokenomics, err)
 		}
 		participantAddress, err := sdk.AccAddressFromBech32(participant.Address)
 		if err != nil {

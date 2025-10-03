@@ -116,6 +116,7 @@ type Broker struct {
 	lastEpochIndex       uint64
 	lastEpochPhase       types.EpochPhase
 	statusQueryTrigger   chan struct{}
+	configManager        *apiconfig.ConfigManager
 }
 
 const (
@@ -147,15 +148,28 @@ type Node struct {
 	MaxConcurrent    int                  `json:"max_concurrent"`
 	NodeNum          uint64               `json:"node_num"`
 	Hardware         []apiconfig.Hardware `json:"hardware"`
-	Version          string               `json:"version"`
 }
 
 func (n *Node) InferenceUrl() string {
 	return fmt.Sprintf("http://%s:%d%s", n.Host, n.InferencePort, n.InferenceSegment)
 }
 
+func (n *Node) InferenceUrlWithVersion(version string) string {
+	if version == "" {
+		return n.InferenceUrl()
+	}
+	return fmt.Sprintf("http://%s:%d/%s%s", n.Host, n.InferencePort, version, n.InferenceSegment)
+}
+
 func (n *Node) PoCUrl() string {
 	return fmt.Sprintf("http://%s:%d%s", n.Host, n.PoCPort, n.PoCSegment)
+}
+
+func (n *Node) PoCUrlWithVersion(version string) string {
+	if version == "" {
+		return n.PoCUrl()
+	}
+	return fmt.Sprintf("http://%s:%d/%s%s", n.Host, n.PoCPort, version, n.PoCSegment)
 }
 
 type NodeWithState struct {
@@ -283,7 +297,7 @@ type NodeResponse struct {
 	State NodeState `json:"state"`
 }
 
-func NewBroker(chainBridge BrokerChainBridge, phaseTracker *chainphase.ChainPhaseTracker, participantInfo participant.CurrenParticipantInfo, callbackUrl string, clientFactory mlnodeclient.ClientFactory) *Broker {
+func NewBroker(chainBridge BrokerChainBridge, phaseTracker *chainphase.ChainPhaseTracker, participantInfo participant.CurrenParticipantInfo, callbackUrl string, clientFactory mlnodeclient.ClientFactory, configManager *apiconfig.ConfigManager) *Broker {
 	broker := &Broker{
 		highPriorityCommands: make(chan Command, 100),
 		lowPriorityCommands:  make(chan Command, 10000),
@@ -295,6 +309,7 @@ func NewBroker(chainBridge BrokerChainBridge, phaseTracker *chainphase.ChainPhas
 		mlNodeClientFactory:  clientFactory,
 		reconcileTrigger:     make(chan struct{}, 1),
 		statusQueryTrigger:   make(chan struct{}, 1),
+		configManager:        configManager,
 	}
 
 	// Initialize NodeWorkGroup
@@ -314,6 +329,10 @@ func (b *Broker) TriggerStatusQuery() {
 	case b.statusQueryTrigger <- struct{}{}:
 	default: // Non-blocking send
 	}
+}
+
+func (b *Broker) GetChainBridge() BrokerChainBridge {
+	return b.chainBridge
 }
 
 func (b *Broker) LoadNodeToBroker(node *apiconfig.InferenceNodeConfig) chan *apiconfig.InferenceNodeConfig {
@@ -419,7 +438,8 @@ func (b *Broker) QueueMessage(command Command) error {
 }
 
 func (b *Broker) NewNodeClient(node *Node) mlnodeclient.MLNodeClient {
-	return b.mlNodeClientFactory.CreateClient(node.PoCUrl(), node.InferenceUrl())
+	version := b.configManager.GetCurrentNodeVersion()
+	return b.mlNodeClientFactory.CreateClient(node.PoCUrlWithVersion(version), node.InferenceUrlWithVersion(version))
 }
 
 func (b *Broker) lockAvailableNode(command LockAvailableNode) {
@@ -430,17 +450,7 @@ func (b *Broker) lockAvailableNode(command LockAvailableNode) {
 	}
 	logging.Debug("Locked node", types.Nodes, "node", leastBusyNode)
 	if leastBusyNode == nil {
-		if command.AcceptEarlierVersion {
-			b.lockAvailableNode(
-				LockAvailableNode{
-					Model:                command.Model,
-					Response:             command.Response,
-					AcceptEarlierVersion: false,
-				},
-			)
-		} else {
-			command.Response <- nil
-		}
+		command.Response <- nil
 	} else {
 		command.Response <- &leastBusyNode.Node
 	}
@@ -458,7 +468,7 @@ func (b *Broker) getLeastBusyNode(command LockAvailableNode) *NodeWithState {
 	var leastBusyNode *NodeWithState = nil
 	for _, node := range b.nodes {
 		// TODO: log some kind of a reason as to why the node is not available
-		if available, reason := b.nodeAvailable(node, command.Model, command.Version, epochState.LatestEpoch.EpochIndex, epochState.CurrentPhase); available {
+		if available, reason := b.nodeAvailable(node, command.Model, epochState.LatestEpoch.EpochIndex, epochState.CurrentPhase); available {
 			if leastBusyNode == nil || node.State.LockCount < leastBusyNode.State.LockCount {
 				leastBusyNode = node
 			}
@@ -472,7 +482,7 @@ func (b *Broker) getLeastBusyNode(command LockAvailableNode) *NodeWithState {
 
 type NodeNotAvailableReason = string
 
-func (b *Broker) nodeAvailable(node *NodeWithState, neededModel string, version string, currentEpoch uint64, currentPhase types.EpochPhase) (bool, NodeNotAvailableReason) {
+func (b *Broker) nodeAvailable(node *NodeWithState, neededModel string, currentEpoch uint64, currentPhase types.EpochPhase) (bool, NodeNotAvailableReason) {
 	if node.State.IntendedStatus != types.HardwareNodeStatus_INFERENCE {
 		return false, fmt.Sprintf("Node is not intended for INFERENCE at the moment: %s", node.State.IntendedStatus)
 	}
@@ -498,10 +508,6 @@ func (b *Broker) nodeAvailable(node *NodeWithState, neededModel string, version 
 		return false, fmt.Sprintf("Node is administratively disabled: currentEpoch=%v, currentPhase=%s, adminState = %v", currentEpoch, currentPhase, node.State.AdminState)
 	}
 	logging.Info("nodeAvailable. Node is not administratively enabled", types.Nodes, "nodeId", node.Node.Id, "adminState", node.State.AdminState)
-
-	if version != "" && node.Node.Version != version {
-		return false, fmt.Sprintf("Node version mismatch: expected %s, got %s", version, node.Node.Version)
-	}
 
 	_, found := node.Node.Models[neededModel]
 	if !found {
@@ -539,17 +545,14 @@ var ErrNoNodesAvailable = errors.New("no nodes available for inference")
 func LockNode[T any](
 	b *Broker,
 	model string,
-	version string,
 	action func(node *Node) (T, error),
 ) (T, error) {
 	var zero T
 
 	nodeChan := make(chan *Node, 2)
 	err := b.QueueMessage(LockAvailableNode{
-		Model:                model,
-		Response:             nodeChan,
-		Version:              version,
-		AcceptEarlierVersion: true,
+		Model:    model,
+		Response: nodeChan,
 	})
 	if err != nil {
 		return zero, err
@@ -789,6 +792,112 @@ func (b *Broker) reconcilerLoop() {
 			b.reconcileIfSynced("Reconciliation triggered manually")
 		case <-ticker.C:
 			b.reconcileIfSynced("Reconciliation triggered by timer")
+			// Check for version changes and refresh clients if needed
+			b.checkAndRefreshClientsIfNeeded()
+		}
+	}
+}
+
+type VersionHealthReport struct {
+	IsAlive bool   `json:"is_alive"`
+	Error   string `json:"error,omitempty"`
+}
+
+func (b *Broker) CheckVersionHealth(version string) map[string]VersionHealthReport {
+	b.mu.RLock()
+	nodeIds := make([]string, 0, len(b.nodes))
+	for nodeId := range b.nodes {
+		nodeIds = append(nodeIds, nodeId)
+	}
+	b.mu.RUnlock()
+
+	reports := make(map[string]VersionHealthReport)
+	var wg sync.WaitGroup
+	var reportsMu sync.Mutex
+
+	for _, nodeId := range nodeIds {
+		wg.Add(1)
+		go func(nodeId string) {
+			defer wg.Done()
+			worker, exists := b.nodeWorkGroup.GetWorker(nodeId)
+			report := VersionHealthReport{}
+
+			if !exists {
+				report.Error = "worker not found"
+			} else {
+				alive, err := worker.CheckClientVersionAlive(version, b.mlNodeClientFactory)
+				report.IsAlive = alive
+				if err != nil {
+					report.Error = err.Error()
+				}
+			}
+
+			reportsMu.Lock()
+			reports[nodeId] = report
+			reportsMu.Unlock()
+		}(nodeId)
+	}
+
+	wg.Wait()
+	return reports
+}
+
+// checkAndRefreshClientsIfNeeded checks if the MLNode version has changed and refreshes all clients if needed
+func (b *Broker) checkAndRefreshClientsIfNeeded() {
+	if b.configManager.ShouldRefreshClients() {
+		currentVersion := b.configManager.GetCurrentNodeVersion()
+		lastUsedVersion := b.configManager.GetLastUsedVersion()
+
+		logging.Info("MLNode version change detected - immediately refreshing all clients", types.Nodes,
+			"oldVersion", lastUsedVersion, "newVersion", currentVersion)
+
+		// Immediately refresh all worker clients (no queuing delay)
+		b.mu.RLock()
+		workerIds := make([]string, 0, len(b.nodes))
+		for nodeId := range b.nodes {
+			workerIds = append(workerIds, nodeId)
+		}
+		b.mu.RUnlock()
+
+		// Immediately refresh all workers
+		refreshedCount := 0
+		for _, nodeId := range workerIds {
+			worker, exists := b.nodeWorkGroup.GetWorker(nodeId)
+			if exists {
+				worker.RefreshClientImmediate(lastUsedVersion, currentVersion)
+				refreshedCount++
+			}
+		}
+
+		logging.Info("Immediately refreshed all MLNode clients", types.Nodes,
+			"oldVersion", lastUsedVersion, "newVersion", currentVersion, "count", refreshedCount)
+
+		// Update last used version (fire and forget - if this fails, we'll retry next cycle)
+		if err := b.configManager.SetLastUsedVersion(currentVersion); err != nil {
+			logging.Warn("Failed to update last used version", types.Config, "error", err)
+		}
+	} else {
+		// Ensure lastUsedVersion is set if it's empty (first time initialization)
+		if b.configManager.GetLastUsedVersion() == "" {
+			currentVersion := b.configManager.GetCurrentNodeVersion()
+			if currentVersion != "" {
+				if err := b.configManager.SetLastUsedVersion(currentVersion); err != nil {
+					logging.Warn("Failed to initialize last used version", types.Config, "error", err)
+				}
+			}
+		}
+	}
+	upgradeVersion := b.configManager.GetUpgradePlan().NodeVersion
+	if upgradeVersion != "" {
+		reports := b.CheckVersionHealth(upgradeVersion)
+		for nodeId, report := range reports {
+			if report.Error != "" {
+				logging.Warn("Failed to check MLNode version in upgrade plan", types.Nodes, "node_id", nodeId, "error", report.Error)
+			} else if !report.IsAlive {
+				logging.Warn("MLNode version in upgrade plan is not alive", types.Nodes, "node_id", nodeId)
+			} else {
+				logging.Debug("MLNode version in upgrade plan is alive", types.Nodes, "node_id", nodeId)
+			}
 		}
 	}
 }
@@ -885,8 +994,10 @@ func (b *Broker) reconcile(epochState chainphase.EpochState) {
 			continue
 		}
 
+		// TODO: we should make reindexing as some indexes might be skipped
+		totalNumNodes := b.curMaxNodesNum.Load() + 1
 		// Create and dispatch the command
-		cmd := b.getCommandForState(&node.State, currentPoCParams, pocParamsErr, len(nodesToDispatch))
+		cmd := b.getCommandForState(&node.State, currentPoCParams, pocParamsErr, int(totalNumNodes))
 		if cmd != nil {
 			logging.Info("Dispatching reconciliation command", types.Nodes,
 				"node_id", id, "target_status", node.State.IntendedStatus, "target_poc_status", node.State.PocIntendedStatus, "blockHeight", blockHeight)

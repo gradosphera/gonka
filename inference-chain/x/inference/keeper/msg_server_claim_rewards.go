@@ -20,8 +20,10 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 
 	settleAmount, response := k.validateRequest(ctx, msg)
 	if response != nil {
+		k.LogInfo("Validate request failed", types.Claims, "error", response.Result, "account", msg.Creator)
 		return response, nil
 	}
+	k.LogInfo("Validate request succeeded", types.Claims, "account", msg.Creator, "settleAmount", settleAmount)
 
 	response, err := k.validateClaim(ctx, msg, settleAmount)
 	if err != nil {
@@ -47,7 +49,7 @@ func (ms msgServer) payoutClaim(ctx sdk.Context, msg *types.MsgClaimRewards, set
 	escrowPayment := settleAmount.GetWorkCoins()
 	params := ms.GetParams(ctx)
 	workVestingPeriod := &params.TokenomicsParams.WorkVestingPeriod
-	if err := ms.PayParticipantFromEscrow(ctx, msg.Creator, escrowPayment, "work_coins:"+settleAmount.Participant, workVestingPeriod); err != nil {
+	if err := ms.PayParticipantFromEscrow(ctx, msg.Creator, int64(escrowPayment), "work_coins:"+settleAmount.Participant, workVestingPeriod); err != nil {
 		if sdkerrors.ErrInsufficientFunds.Is(err) {
 			ms.handleUnderfundedWork(ctx, err, settleAmount)
 			return &types.MsgClaimRewardsResponse{
@@ -65,7 +67,7 @@ func (ms msgServer) payoutClaim(ctx sdk.Context, msg *types.MsgClaimRewards, set
 
 	// Pay rewards from module
 	rewardVestingPeriod := &params.TokenomicsParams.RewardVestingPeriod
-	if err := ms.PayParticipantFromModule(ctx, msg.Creator, settleAmount.GetRewardCoins(), types.ModuleName, "reward_coins:"+settleAmount.Participant, rewardVestingPeriod); err != nil {
+	if err := ms.PayParticipantFromModule(ctx, msg.Creator, int64(settleAmount.GetRewardCoins()), types.ModuleName, "reward_coins:"+settleAmount.Participant, rewardVestingPeriod); err != nil {
 		if sdkerrors.ErrInsufficientFunds.Is(err) {
 			ms.LogError("Insufficient funds for paying rewards. Work paid, rewards declined", types.Claims, "error", err, "settleAmount", settleAmount)
 		} else {
@@ -79,8 +81,12 @@ func (ms msgServer) payoutClaim(ctx sdk.Context, msg *types.MsgClaimRewards, set
 	}
 
 	ms.finishSettle(ctx, settleAmount)
+	// impossible, but check anyhow
+	if settleAmount.GetTotalCoins() < 0 {
+		return nil, types.ErrNegativeRewardAmount
+	}
 	return &types.MsgClaimRewardsResponse{
-		Amount: settleAmount.GetTotalCoins(),
+		Amount: uint64(settleAmount.GetTotalCoins()),
 		Result: "Rewards claimed successfully",
 	}, nil
 }
@@ -112,6 +118,22 @@ func (ms msgServer) finishSettle(ctx sdk.Context, settleAmount *types.SettleAmou
 }
 
 func (k msgServer) validateRequest(ctx sdk.Context, msg *types.MsgClaimRewards) (*types.SettleAmount, *types.MsgClaimRewardsResponse) {
+	currentEpoch, err := k.GetCurrentEpochGroup(ctx)
+	if err != nil {
+		k.LogError("GetCurrentEpoch failed", types.Claims, "error", err)
+		return nil, &types.MsgClaimRewardsResponse{
+			Amount: 0,
+			Result: "Can't validate claim, current epoch group not found",
+		}
+	}
+
+	if (currentEpoch.GroupData.EpochIndex - 1) != msg.EpochIndex {
+		k.LogError("Current epoch group does not match previous epoch", types.Claims, "epoch", msg.EpochIndex, "currentEpoch", currentEpoch.GroupData.EpochIndex)
+		return nil, &types.MsgClaimRewardsResponse{
+			Amount: 0,
+			Result: "Can't validate claim, current epoch group does not match previous epoch",
+		}
+	}
 	settleAmount, found := k.GetSettleAmount(ctx, msg.Creator)
 	if !found {
 		k.LogDebug("SettleAmount not found for address", types.Claims, "address", msg.Creator)
@@ -151,38 +173,45 @@ func (k msgServer) validateClaim(ctx sdk.Context, msg *types.MsgClaimRewards, se
 	}
 
 	// Check for missed validations
-	if validationMissed, err := k.hasMissedValidations(ctx, msg); err != nil {
+	if validationMissedSignificance, err := k.hasSignificantMissedValidations(ctx, msg); err != nil {
 		k.LogError("Failed to check for missed validations", types.Claims, "error", err)
 		return &types.MsgClaimRewardsResponse{
 			Amount: 0,
 			Result: "Failed to check for missed validations",
 		}, err
-	} else if validationMissed {
-		k.LogError("Inference not validated", types.Claims, "account", msg.Creator)
+	} else if validationMissedSignificance {
+		k.LogError("Inference validation missed significantly", types.Claims, "account", msg.Creator)
 		// TODO: Report that validator has missed validations
 		return &types.MsgClaimRewardsResponse{
 			Amount: 0,
-			Result: "Inference not validated",
+			Result: "Inference validation missed significantly",
 		}, types.ErrValidationsMissed
 	}
 
 	return nil, nil
 }
 
-func (k msgServer) hasMissedValidations(ctx sdk.Context, msg *types.MsgClaimRewards) (bool, error) {
+func (k msgServer) hasSignificantMissedValidations(ctx sdk.Context, msg *types.MsgClaimRewards) (bool, error) {
 	mustBeValidated, err := k.getMustBeValidatedInferences(ctx, msg)
 	if err != nil {
 		return false, err
 	}
 	wasValidated := k.getValidatedInferences(ctx, msg)
 
+	total := len(mustBeValidated)
+	missed := 0
 	for _, inferenceId := range mustBeValidated {
 		if !wasValidated[inferenceId] {
-			return true, nil
+			missed++
 		}
 	}
+	passed, err := calculations.MissedStatTest(missed, total)
+	k.LogInfo("Missed validations", types.Claims, "missed", missed, "totalToBeValidated", total, "passed", passed)
 
-	return false, nil
+	if err != nil {
+		return false, err
+	}
+	return !passed, nil
 }
 
 func (ms msgServer) validateSeedSignatureForPubkey(msg *types.MsgClaimRewards, settleAmount *types.SettleAmount, pubKey cryptotypes.PubKey) error {

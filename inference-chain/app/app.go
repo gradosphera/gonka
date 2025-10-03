@@ -393,6 +393,8 @@ func New(
 
 	app.setAnteHandler(app.txConfig, wasmConfig, app.GetKey(wasmtypes.StoreKey))
 
+	app.registerMigrations()
+
 	// Setup upgrade handlers if needed
 	app.setupUpgradeHandlers()
 	// A custom InitChainer can be set if extra pre-init-genesis logic is required.

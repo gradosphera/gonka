@@ -321,7 +321,7 @@ fun initialize(pairs: List<LocalInferencePair>, resetMlNodes: Boolean = true): L
     val currentParticipants = highestFunded.api.getParticipants()
     for (pair in funded) {
         if (currentParticipants.none { it.id == pair.node.getColdAddress() }) {
-            pair.addSelfAsParticipant(listOf("Qwen/Qwen2.5-7B-Instruct"))
+            pair.addSelfAsParticipant(listOf(defaultModel))
         }
     }
 //    addUnfundedDirectly(unfunded, currentParticipants, highestFunded)
@@ -383,7 +383,7 @@ private fun addUnfundedDirectly(
             highestFunded.api.addUnfundedInferenceParticipant(
                 UnfundedInferenceParticipant(
                     url = "http://${pair.name}-api:8080",
-                    models = listOf("Qwen/Qwen2.5-7B-Instruct"),
+                    models = listOf(defaultModel),
                     validatorKey = valPubKey.value,
                     pubKey = selfKey.pubkey.key,
                     address = selfKey.address,
@@ -502,9 +502,9 @@ fun createSpec(epochLength: Long = 15L, epochShift: Int = 0): Spec<AppState> = s
         this[InferenceState::modelList] = listOf(
             ModelListItem(
                 proposedBy = "genesis",
-                id = "Qwen/QwQ-32B",
+                id = secondModel,
                 unitsOfComputePerToken = "1000",
-                hfRepo = "Qwen/QwQ-32B",
+                hfRepo = secondModel,
                 hfCommit = "976055f8c83f394f35dbd3ab09a285a984907bd0",
                 modelArgs = listOf("--quantization", "fp8", "--kv-cache-dtype", "fp8"),
                 vRam = "32",
@@ -513,9 +513,9 @@ fun createSpec(epochLength: Long = 15L, epochShift: Int = 0): Spec<AppState> = s
             ),
             ModelListItem(
                 proposedBy = "genesis",
-                id = "Qwen/Qwen2.5-7B-Instruct",
+                id = defaultModel,
                 unitsOfComputePerToken = "100",
-                hfRepo = "Qwen/Qwen2.5-7B-Instruct",
+                hfRepo = defaultModel,
                 hfCommit = "a09a35458c702b33eeacc393d103063234e8bc28",
                 modelArgs = listOf("--quantization", "fp8"),
                 vRam = "16",
@@ -562,8 +562,12 @@ data class InferenceRequestPayload(
         return promptText.length
     }
 }
+
+const val defaultModel = "Qwen/Qwen2.5-7B-Instruct"
+const val secondModel = "Qwen/QwQ-32B"
+
 val inferenceRequestObject = InferenceRequestPayload(
-    model = "Qwen/Qwen2.5-7B-Instruct",
+    model = defaultModel,
     temperature = 0.8,
     messages = listOf(
         ChatMessage("system", "Regardless of the language of the question, answer in english"),
@@ -576,8 +580,6 @@ val inferenceRequest = cosmosJson.toJson(inferenceRequestObject)
 
 val inferenceRequestStreamObject = inferenceRequestObject.copy(stream = true)
 val inferenceRequestStream = cosmosJson.toJson(inferenceRequestStreamObject)
-
-const val defaultModel = "Qwen/Qwen2.5-7B-Instruct"
 
 val validNode = InferenceNode(
     host = "36.189.234.237:19009/",
@@ -597,7 +599,7 @@ val defaultInferenceResponse = """
         "id": "cmpl-1c7b769de9b0494694eeee854da0a014",
         "object": "chat.completion",
         "created": 1736220740,
-        "model": "Qwen/Qwen2.5-7B-Instruct",
+        "model": "$defaultModel",
         "choices": [
             {
                 "index": 0,

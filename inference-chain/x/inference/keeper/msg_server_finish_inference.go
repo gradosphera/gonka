@@ -41,6 +41,11 @@ func (k msgServer) FinishInference(goCtx context.Context, msg *types.MsgFinishIn
 
 	existingInference, found := k.GetInference(ctx, msg.InferenceId)
 
+	if found && existingInference.FinishedProcessed() {
+		k.LogError("FinishInference: inference already finished", types.Inferences, "inferenceId", msg.InferenceId)
+		return nil, sdkerrors.Wrap(types.ErrInferenceFinishProcessed, "inference has already finished processed")
+	}
+
 	if found && existingInference.Status == types.InferenceStatus_EXPIRED {
 		k.LogWarn("FinishInference: cannot finish expired inference", types.Inferences,
 			"inferenceId", msg.InferenceId,
@@ -126,6 +131,17 @@ func (k msgServer) handleInferenceCompleted(ctx sdk.Context, existingInference *
 			sdk.NewAttribute("inference_id", existingInference.InferenceId),
 		),
 	)
+
+	executedBy := existingInference.ExecutedBy
+	executor, found := k.GetParticipant(ctx, executedBy)
+	if !found {
+		k.LogError("handleInferenceCompleted: executor not found", types.Inferences, "executed_by", executedBy)
+	} else {
+		executor.CurrentEpochStats.InferenceCount++
+		executor.LastInferenceTime = existingInference.EndBlockTimestamp
+		k.SetParticipant(ctx, executor)
+	}
+
 	effectiveEpoch, found := k.GetEffectiveEpoch(ctx)
 	if !found {
 		k.LogError("Effective Epoch Index not found", types.EpochGroup)

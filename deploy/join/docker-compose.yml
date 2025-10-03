@@ -1,6 +1,6 @@
 services:
   tmkms:
-    image: ghcr.io/product-science/tmkms-softsign-with-keygen:0.2.1
+    image: ghcr.io/product-science/tmkms-softsign-with-keygen:0.2.2
     container_name: tmkms
     restart: unless-stopped
     environment:
@@ -10,7 +10,7 @@ services:
 
   node:
     container_name: node
-    image: ghcr.io/product-science/inferenced:v1.19.test-98-g1da81e5c
+    image: ghcr.io/product-science/inferenced:0.2.2
     command: ["sh", "./init-docker.sh"]
     volumes:
       - .inference:/root/.inference
@@ -27,7 +27,7 @@ services:
       - CONFIG_p2p__handshake_timeout=30s
       - CONFIG_p2p__dial_timeout=30s
       - TMKMS_PORT=${TMKMS_PORT:-26658}
-      - SYNC_WITH_SNAPSHOTS=true
+      - SYNC_WITH_SNAPSHOTS=${SYNC_WITH_SNAPSHOTS:-true}
       - RPC_SERVER_URL_1=${RPC_SERVER_URL_1}
       - RPC_SERVER_URL_2=${RPC_SERVER_URL_2}
       - REST_API_ACTIVE=true
@@ -45,7 +45,7 @@ services:
 
   api:
     container_name: api
-    image: ghcr.io/product-science/api:v1.19.test-98-g1da81e5c
+    image: ghcr.io/product-science/api:0.2.2
     volumes:
       - .inference:/root/.inference
       - .dapi:/root/.dapi
@@ -67,7 +67,6 @@ services:
       - DAPI_API__ML_SERVER_PORT=9100
       - DAPI_API__ADMIN_SERVER_PORT=9200
       - DAPI_API__GENESIS_APP_HASH_HEX=${DAPI_API__GENESIS_APP_HASH_HEX}
-      - SYNC_WITH_SNAPSHOTS=true
     ports:
       - "9100:9100"
       - "9200:9200"
@@ -75,7 +74,7 @@ services:
   
   proxy:
     container_name: proxy
-    image: ghcr.io/product-science/proxy:0.2.1
+    image: ghcr.io/product-science/proxy:0.2.2
     ports:
       - "${API_PORT:-8000}:80"
     environment:

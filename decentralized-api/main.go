@@ -78,6 +78,9 @@ func main() {
 		panic(err)
 	}
 
+	// Version sync is handled later in the event processing loop when blockchain is fully ready
+	// This prevents EOF errors during startup from breaking the entire application
+
 	chainPhaseTracker := chainphase.NewChainPhaseTracker()
 	// NOTE: getParams is waiting for rpc to be ready, don't add request before it
 	params, err := getParams(context.Background(), *recorder)
@@ -93,7 +96,8 @@ func main() {
 		return
 	}
 	chainBridge := broker.NewBrokerChainBridgeImpl(recorder, config.GetChainNodeConfig().Url)
-	nodeBroker := broker.NewBroker(chainBridge, chainPhaseTracker, participantInfo, config.GetApiConfig().PoCCallbackUrl, &mlnodeclient.HttpClientFactory{})
+	nodeBroker := broker.NewBroker(chainBridge, chainPhaseTracker, participantInfo, config.GetApiConfig().PoCCallbackUrl, &mlnodeclient.HttpClientFactory{}, config)
+
 	nodes := config.GetNodes()
 	for _, node := range nodes {
 		nodeBroker.LoadNodeToBroker(&node)
@@ -151,7 +155,7 @@ func main() {
 
 	addr = fmt.Sprintf(":%v", config.GetApiConfig().AdminServerPort)
 	logging.Info("start admin server on addr", types.Server, "addr", addr)
-	adminServer := adminserver.NewServer(recorder, nodeBroker, config)
+	adminServer := adminserver.NewServer(recorder, nodeBroker, config, validator)
 	adminServer.Start(addr)
 
 	mlGrpcServerPort := config.GetApiConfig().MlGrpcServerPort

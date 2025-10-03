@@ -25,6 +25,22 @@ data class SetInferenceResponseRequest(
 )
 
 /**
+ * Data class for setting inference error response
+ */
+data class SetInferenceErrorResponseRequest(
+    @JsonProperty("status_code")
+    val statusCode: Int,
+    @JsonProperty("error_message") 
+    val errorMessage: String? = null,
+    @JsonProperty("error_type")
+    val errorType: String? = null,
+    val delay: Int = 0,
+    @JsonProperty("stream_delay")
+    val streamDelay: Long = 0,
+    val segment: String = ""
+)
+
+/**
  * Data class for setting POC response
  * 
  * @param weight The number of nonces to generate
@@ -70,6 +86,41 @@ fun Route.responseRoutes(responseService: ResponseService) {
                 mapOf(
                     "status" to "error",
                     "message" to "Failed to set inference response: ${e.message}"
+                )
+            )
+        }
+    }
+
+    // POST /api/v1/responses/inference/error - Sets error response for inference endpoint
+    post("/api/v1/responses/inference/error") {
+        try {
+            val request = call.receive<SetInferenceErrorResponseRequest>()
+            logger.info("Received inference error response request: $request")
+
+            val endpoint = responseService.setInferenceErrorResponse(
+                request.statusCode,
+                request.errorMessage,
+                request.errorType,
+                request.delay,
+                request.streamDelay,
+                request.segment
+            )
+
+            call.respond(
+                HttpStatusCode.OK,
+                mapOf(
+                    "status" to "success",
+                    "message" to "Inference error response set successfully",
+                    "endpoint" to endpoint,
+                    "statusCode" to request.statusCode
+                )
+            )
+        } catch (e: Exception) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                mapOf(
+                    "status" to "error",
+                    "message" to "Failed to set inference error response: ${e.message}"
                 )
             )
         }

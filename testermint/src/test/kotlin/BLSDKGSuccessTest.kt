@@ -88,6 +88,10 @@ class BLSDKGSuccessTest : TestermintTest() {
         
         val (cluster, genesis) = initCluster(joinCount = 4)
         val allPairs = listOf(genesis) + cluster.joinPairs
+
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, offset = 10)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, 2)
+
         
         // Trigger complete DKG flow
         logSection("Triggering DKG Init")

@@ -188,7 +188,8 @@ class ExecCaptureOutput() : ResultCallback.Adapter<Frame>() {
     val output = mutableListOf<String>()
     
     override fun onNext(frame: Frame) {
-        output.add(String(frame.payload).trim())
+        // This had `trim()` on it... this happened to work for JSON, but fails for other things
+        output.add(String(frame.payload))
     }
 }
 

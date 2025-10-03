@@ -7,6 +7,7 @@ import (
 	"decentralized-api/cosmosclient/tx_manager"
 	"decentralized-api/internal/nats/client"
 	"decentralized-api/logging"
+	"decentralized-api/utils"
 	"errors"
 	"fmt"
 	"log"
@@ -26,6 +27,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/golang/protobuf/proto"
 	"github.com/ignite/cli/v28/ignite/pkg/cosmosclient"
@@ -167,7 +169,6 @@ type CosmosMessageClient interface {
 	StartInference(transaction *inference.MsgStartInference) error
 	FinishInference(transaction *inference.MsgFinishInference) error
 	ReportValidation(transaction *inference.MsgValidation) error
-	SubmitNewParticipant(transaction *inference.MsgSubmitNewParticipant) error
 	SubmitNewUnfundedParticipant(transaction *inference.MsgSubmitNewUnfundedParticipant) error
 	SubmitPocBatch(transaction *inference.MsgSubmitPocBatch) error
 	SubmitPoCValidation(transaction *inference.MsgSubmitPocValidation) error
@@ -307,12 +308,6 @@ func (icc *InferenceCosmosClient) SubmitActiveParticipantsPendingProof(tx *types
 	return err
 }
 
-func (icc *InferenceCosmosClient) SubmitNewParticipant(transaction *inference.MsgSubmitNewParticipant) error {
-	transaction.Creator = icc.Address
-	_, err := icc.manager.SendTransactionAsyncNoRetry(transaction)
-	return err
-}
-
 func (icc *InferenceCosmosClient) SubmitNewUnfundedParticipant(transaction *inference.MsgSubmitNewUnfundedParticipant) error {
 	transaction.Creator = icc.Address
 	_, err := icc.manager.SendTransactionAsyncNoRetry(transaction)
@@ -414,7 +409,24 @@ func (icc *InferenceCosmosClient) GetUpgradePlan() (*upgradetypes.QueryCurrentPl
 }
 
 func (icc *InferenceCosmosClient) GetPartialUpgrades() (*types.QueryAllPartialUpgradeResponse, error) {
-	return icc.NewInferenceQueryClient().PartialUpgradeAll(icc.ctx, &types.QueryAllPartialUpgradeRequest{})
+	// Recommended: ensure icc.ctx is already pinned to a single height via metadata
+	// (caller can wrap icc.ctx with metadata.Pairs(grpctypes.GRPCBlockHeightHeader, strconv.FormatInt(height, 10))).
+
+	allUpgrades, err := utils.GetAllWithPagination(func(pageReq *query.PageRequest) ([]types.PartialUpgrade, *query.PageResponse, error) {
+		resp, err := icc.NewInferenceQueryClient().PartialUpgradeAll(icc.ctx, &types.QueryAllPartialUpgradeRequest{Pagination: pageReq})
+		if err != nil {
+			return nil, nil, err
+		}
+		return resp.PartialUpgrade, resp.Pagination, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &types.QueryAllPartialUpgradeResponse{
+		PartialUpgrade: allUpgrades,
+		Pagination:     &query.PageResponse{Total: uint64(len(allUpgrades))},
+	}, nil
 }
 
 func (icc *InferenceCosmosClient) NewUpgradeQueryClient() upgradetypes.QueryClient {

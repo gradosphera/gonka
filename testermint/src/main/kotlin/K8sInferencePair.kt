@@ -238,10 +238,11 @@ private fun createInferencePairForNamespace(
 
         // Create executor and attach logs
         val executor = createExecutor(cliPodName, namespace, configWithName)
+        val apiExecutor = createExecutor(apiPodName, namespace, configWithName)
         val logs = attachLogsForPods(coreV1Api, namespace, nodeName, cliPodName, apiPodName)
 
         // Create and return the inference pair
-        return createLocalInferencePair(nodeName, configWithName, executor, apiUrls, logs)
+        return createLocalInferencePair(nodeName, configWithName, executor, apiExecutor, apiUrls, logs)
 
     } catch (e: ApiException) {
         Logger.error("Kubernetes API error for namespace $namespace: ${e.message}")
@@ -350,6 +351,7 @@ private fun createLocalInferencePair(
     nodeName: String,
     config: ApplicationConfig,
     executor: KubeExecutor,
+    apiExecutor: KubeExecutor,
     apiUrls: Map<String, String>,
     logs: Pair<LogOutput, LogOutput>
 ): LocalInferencePair {
@@ -363,7 +365,7 @@ private fun createLocalInferencePair(
 
     return LocalInferencePair(
         node = ApplicationCLI(config, nodeLogs, executor, listOf(k8sRetryRule)),
-        api = ApplicationAPI(apiUrls, config, apiLogs),
+        api = ApplicationAPI(apiUrls, config, apiLogs, apiExecutor),
         mock = null, // No mock for Kubernetes
         name = nodeName,
         config = config

@@ -1,4 +1,4 @@
-FROM nginx:1.25-alpine
+FROM nginx:1.28-alpine
 
 # Install curl and gettext (for envsubst)
 RUN apk add --no-cache curl gettext
