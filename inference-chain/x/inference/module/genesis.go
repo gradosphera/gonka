@@ -31,6 +31,10 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 
 	// Init empty TokenomicsData
 	k.SetTokenomicsData(ctx, types.TokenomicsData{})
+	err := k.PruningState.Set(ctx, types.PruningState{})
+	if err != nil {
+		panic(err)
+	}
 
 	// Set MLNode version with default if not defined
 	if genState.MlnodeVersion != nil {

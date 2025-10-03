@@ -58,6 +58,8 @@ type (
 		EpochPerformanceSummaries collections.Map[collections.Pair[sdk.AccAddress, uint64], types.EpochPerformanceSummary]
 		TrainingExecAllowListSet  collections.KeySet[sdk.AccAddress]
 		TrainingStartAllowListSet collections.KeySet[sdk.AccAddress]
+		PruningState              collections.Item[types.PruningState]
+		InferencesToPrune         collections.Map[collections.Pair[int64, string], collections.NoValue]
 	}
 )
 
@@ -249,6 +251,19 @@ func NewKeeper(
 			types.TrainingStartAllowListPrefix,
 			"training_start_allow_list",
 			sdk.AccAddressKey,
+		),
+		PruningState: collections.NewItem(
+			sb,
+			types.PruningStatePrefix,
+			"pruning_state",
+			codec.CollValue[types.PruningState](cdc),
+		),
+		InferencesToPrune: collections.NewMap(
+			sb,
+			types.InferencesToPrunePrefix,
+			"inferences_to_prune",
+			collections.PairKeyCodec(collections.Int64Key, collections.StringKey),
+			collections.NoValue{},
 		),
 	}
 	// Build the collections schema

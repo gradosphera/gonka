@@ -3,9 +3,11 @@ package v0_2_2
 import (
 	"context"
 
+	"cosmossdk.io/collections"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/productscience/inference/x/inference/keeper"
+	"github.com/productscience/inference/x/inference/types"
 )
 
 func CreateUpgradeHandler(
@@ -18,6 +20,10 @@ func CreateUpgradeHandler(
 		if _, ok := fromVM["capability"]; !ok {
 			fromVM["capability"] = mm.Modules["capability"].(module.HasConsensusVersion).ConsensusVersion()
 		}
+		err := setPruningDefaults(ctx, k, fromVM)
+		if err != nil {
+			return fromVM, err
+		}
 
 		toVM, err := mm.RunMigrations(ctx, configurator, fromVM)
 		if err != nil {
@@ -27,4 +33,31 @@ func CreateUpgradeHandler(
 		k.Logger().Info("successfully upgraded to " + UpgradeName)
 		return toVM, nil
 	}
+}
+
+func setPruningDefaults(ctx context.Context, k keeper.Keeper, fromVM module.VersionMap) error {
+	// We can get away with this at the time we introduce pruning because of lower volume:
+	err := k.Inferences.Walk(ctx, nil, func(key string, value types.Inference) (bool, error) {
+		pk := collections.Join(int64(value.EpochId), key)
+		err := k.InferencesToPrune.Set(ctx, pk, collections.NoValue{})
+		return false, err
+	})
+	if err != nil {
+		k.LogError("Failed to set InferencesToPrune", types.Pruning, "error", err)
+		return err
+	}
+	err = k.PruningState.Set(ctx, types.PruningState{
+		InferencePrunedEpoch:  0,
+		PocBatchesPrunedEpoch: 0,
+	})
+	if err != nil {
+		return err
+	}
+	params, err := k.GetParamsSafe(ctx)
+	if err != nil {
+		return err
+	}
+	params.EpochParams.InferencePruningMax = 5000
+	params.EpochParams.PocPruningMax = 1000
+	return k.SetParams(ctx, params)
 }

@@ -41,6 +41,8 @@ var (
 	EpochPerformanceSummaryPrefix    = collections.NewPrefix(18)
 	TrainingExecAllowListPrefix      = collections.NewPrefix(19)
 	TrainingStartAllowListPrefix     = collections.NewPrefix(20)
+	PruningStatePrefix               = collections.NewPrefix(21)
+	InferencesToPrunePrefix          = collections.NewPrefix(22)
 	ParamsKey                        = []byte("p_inference")
 )
 

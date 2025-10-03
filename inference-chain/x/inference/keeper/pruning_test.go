@@ -1,18 +1,46 @@
 package keeper_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	keepertest "github.com/productscience/inference/testutil/keeper"
+	"github.com/productscience/inference/x/inference/keeper"
 	"github.com/productscience/inference/x/inference/types"
 	"github.com/stretchr/testify/require"
 )
 
+type PruningSettings struct {
+	InferenceThreshold int64
+	PocThreshold       int64
+	InferenceMaxPrune  int64
+	PocMaxPrune        int64
+}
+
+func setPruningConfig(ctx context.Context, k keeper.Keeper, settings PruningSettings) {
+	params := k.GetParams(ctx)
+	if settings.InferenceThreshold > 0 {
+		params.EpochParams.InferencePruningEpochThreshold = uint64(settings.InferenceThreshold)
+	}
+	if settings.PocThreshold > 0 {
+		params.PocParams.PocDataPruningEpochThreshold = uint64(settings.PocThreshold)
+	}
+	if settings.InferenceMaxPrune > 0 {
+		params.EpochParams.InferencePruningMax = settings.InferenceMaxPrune
+	}
+	if settings.PocMaxPrune > 0 {
+		params.EpochParams.PocPruningMax = settings.PocMaxPrune
+	}
+	k.SetParams(ctx, params)
+}
+
 // TestPruningBasic tests the basic functionality of the pruning system
 func TestPruningBasic(t *testing.T) {
 	k, ctx := keepertest.InferenceKeeper(t)
+	err := k.PruningState.Set(ctx, types.PruningState{})
 
+	require.NoError(t, err)
 	// Create a test inference
 	inference := types.Inference{
 		Index:   "test-inference",
@@ -28,17 +56,28 @@ func TestPruningBasic(t *testing.T) {
 	require.True(t, found, "Inference should exist before pruning")
 
 	// Run pruning with a threshold that should prune the inference
-	err := k.PruneInferences(ctx, 4, 2) // Current epoch 4, threshold 2
+	err = k.Prune(ctx, 4) // Current epoch 4, threshold 2
 	require.NoError(t, err)
 
 	// Verify inference was pruned
 	_, found = k.GetInference(ctx, "test-inference")
 	require.False(t, found, "Inference should be pruned")
+	pruningState, err := k.PruningState.Get(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), pruningState.InferencePrunedEpoch, "Pruning epoch should be 2")
+	require.Equal(t, int64(3), pruningState.PocValidationsPrunedEpoch, "Pruning epoch should be 3")
+	require.Equal(t, int64(3), pruningState.PocBatchesPrunedEpoch, "Pruning epoch should be 3")
+	err = k.Prune(ctx, 4)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), pruningState.InferencePrunedEpoch, "Pruning epoch should be 2")
+	require.Equal(t, int64(3), pruningState.PocValidationsPrunedEpoch, "Pruning epoch should be 3")
+	require.Equal(t, int64(3), pruningState.PocBatchesPrunedEpoch, "Pruning epoch should be 3")
 }
 
 // TestPruningEpochThreshold tests that only inferences older than the threshold are pruned
 func TestPruningEpochThreshold(t *testing.T) {
 	k, ctx := keepertest.InferenceKeeper(t)
+	err := k.PruningState.Set(ctx, types.PruningState{})
 
 	// Create inferences with different epoch IDs
 	inferences := []types.Inference{
@@ -70,7 +109,7 @@ func TestPruningEpochThreshold(t *testing.T) {
 	}
 
 	// Run pruning with threshold 2
-	err := k.PruneInferences(ctx, 4, 2) // Current epoch 4, threshold 2
+	err = k.Prune(ctx, 4) // Current epoch 4, threshold 2
 	require.NoError(t, err)
 
 	// Verify correct inferences were pruned
@@ -90,6 +129,7 @@ func TestPruningEpochThreshold(t *testing.T) {
 // TestPruningStatusPreservation tests that inferences with VOTING and STARTED status are not pruned
 func TestPruningStatusPreservation(t *testing.T) {
 	k, ctx := keepertest.InferenceKeeper(t)
+	err := k.PruningState.Set(ctx, types.PruningState{})
 
 	// Create inferences with different statuses
 	inferences := []types.Inference{
@@ -116,7 +156,7 @@ func TestPruningStatusPreservation(t *testing.T) {
 	}
 
 	// Run pruning with threshold that should prune old inferences
-	err := k.PruneInferences(ctx, 4, 2) // Current epoch 4, threshold 2
+	err = k.Prune(ctx, 4) // Current epoch 4, threshold 2
 	require.NoError(t, err)
 
 	// Verify VOTING inference was not pruned
@@ -135,6 +175,7 @@ func TestPruningStatusPreservation(t *testing.T) {
 // TestPruningMultipleEpochs tests pruning behavior over 10 epochs
 func TestPruningMultipleEpochs(t *testing.T) {
 	k, ctx := keepertest.InferenceKeeper(t)
+	err := k.PruningState.Set(ctx, types.PruningState{})
 
 	// Create inferences for 10 epochs
 	inferences := []types.Inference{}
@@ -152,7 +193,10 @@ func TestPruningMultipleEpochs(t *testing.T) {
 	}
 
 	// Run pruning with threshold 1 at epoch 10
-	err := k.PruneInferences(ctx, 10, 1)
+	setPruningConfig(ctx, k, PruningSettings{
+		InferenceThreshold: 1,
+	})
+	err = k.Prune(ctx, 10)
 	require.NoError(t, err)
 
 	// Verify inferences from epochs 1-7 are pruned

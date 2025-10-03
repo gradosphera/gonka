@@ -3,12 +3,14 @@ package keeper
 import (
 	"context"
 
+	"cosmossdk.io/collections"
 	"github.com/productscience/inference/x/inference/types"
 )
 
 // SetInference set a specific inference in the store from its index
 func (k Keeper) SetInference(ctx context.Context, inference types.Inference) error {
 	// store via collections
+	k.addInferenceToPruningList(ctx, inference)
 	if err := k.Inferences.Set(ctx, inference.Index, inference); err != nil {
 		return err
 	}
@@ -23,7 +25,18 @@ func (k Keeper) SetInference(ctx context.Context, inference types.Inference) err
 }
 
 func (k Keeper) SetInferenceWithoutDevStatComputation(ctx context.Context, inference types.Inference) error {
+	k.addInferenceToPruningList(ctx, inference)
 	return k.Inferences.Set(ctx, inference.Index, inference)
+}
+
+func (k Keeper) addInferenceToPruningList(ctx context.Context, inference types.Inference) {
+	if inference.EpochId != 0 {
+		key := collections.Join(int64(inference.EpochId), inference.Index)
+		err := k.InferencesToPrune.Set(ctx, key, collections.NoValue{})
+		if err != nil {
+			k.LogError("Unable to set InferencesToPrune", types.Pruning, "error", err, "key", key)
+		}
+	}
 }
 
 // GetInference returns a inference from its index

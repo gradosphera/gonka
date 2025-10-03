@@ -251,6 +251,11 @@ func (am AppModule) EndBlock(ctx context.Context) error {
 		am.keeper.RemoveInferenceTimeout(ctx, t.ExpirationHeight, t.InferenceId)
 	}
 
+	err = am.keeper.Prune(ctx, int64(currentEpoch.Index))
+	if err != nil {
+		am.LogError("Error during pruning", types.Pruning, "error", err.Error())
+	}
+
 	partialUpgrades := am.keeper.GetAllPartialUpgrade(ctx)
 	for _, pu := range partialUpgrades {
 		if pu.Height == uint64(blockHeight) {
@@ -302,28 +307,6 @@ func (am AppModule) EndBlock(ctx context.Context) error {
 		if err != nil {
 			am.LogError("Unable to create epoch group", types.EpochGroup, "error", err.Error())
 			return err
-		}
-
-		// Prune old inferences
-		inferencePruningThreshold := am.keeper.GetParams(ctx).EpochParams.InferencePruningEpochThreshold
-		if inferencePruningThreshold == 0 {
-			am.LogInfo("Inference pruning threshold is 0, using default", types.Inferences, "threshold", defaultInferencePruningThreshold)
-			inferencePruningThreshold = defaultInferencePruningThreshold
-		}
-		pruneErr := am.keeper.PruneInferences(ctx, upcomingEpoch.Index, inferencePruningThreshold)
-		if pruneErr != nil {
-			am.LogError("Error pruning inferences", types.Inferences, "error", pruneErr)
-		}
-
-		// Prune old PoC data
-		pocPruningThreshold := am.keeper.GetParams(ctx).PocParams.PocDataPruningEpochThreshold
-		if pocPruningThreshold == 0 {
-			am.LogInfo("PoC pruning threshold is 0, using default", types.PoC, "threshold", defaultPocPruningThreshold)
-			pocPruningThreshold = defaultPocPruningThreshold
-		}
-		pocErr := am.keeper.PrunePoCData(ctx, upcomingEpoch.Index, pocPruningThreshold)
-		if pocErr != nil {
-			am.LogError("Error pruning PoC data", types.PoC, "error", pocErr)
 		}
 	}
 
