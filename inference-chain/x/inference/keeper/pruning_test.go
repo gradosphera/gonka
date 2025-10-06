@@ -1,10 +1,12 @@
 package keeper_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"testing"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	keepertest "github.com/productscience/inference/testutil/keeper"
 	"github.com/productscience/inference/x/inference/keeper"
 	"github.com/productscience/inference/x/inference/types"
@@ -32,7 +34,12 @@ func setPruningConfig(ctx context.Context, k keeper.Keeper, settings PruningSett
 	if settings.PocMaxPrune > 0 {
 		params.EpochParams.PocPruningMax = settings.PocMaxPrune
 	}
-	k.SetParams(ctx, params)
+	_ = k.SetParams(ctx, params)
+}
+
+func mkAddr(i int) string {
+	b := bytes.Repeat([]byte{byte(i)}, 20)
+	return sdk.AccAddress(b).String()
 }
 
 // TestPruningBasic tests the basic functionality of the pruning system
@@ -172,7 +179,6 @@ func TestPruningStatusPreservation(t *testing.T) {
 	require.False(t, found, "Inference with FINISHED status should be pruned")
 }
 
-// TestPruningMultipleEpochs tests pruning behavior over 10 epochs
 func TestPruningMultipleEpochs(t *testing.T) {
 	k, ctx := keepertest.InferenceKeeper(t)
 	err := k.PruningState.Set(ctx, types.PruningState{})
@@ -199,16 +205,168 @@ func TestPruningMultipleEpochs(t *testing.T) {
 	err = k.Prune(ctx, 10)
 	require.NoError(t, err)
 
-	// Verify inferences from epochs 1-7 are pruned
+	// With threshold 1 and current epoch 10, we prune up to epoch 9
 	for i := 1; i <= 9; i++ {
 		_, found := k.GetInference(ctx, fmt.Sprintf("inference-epoch%d", i))
 		require.False(t, found, fmt.Sprintf("Inference from epoch %d should be pruned", i))
 	}
 
-	// Verify inferences from epochs 8-10 are retained
-	for i := 10; i <= 10; i++ {
-		_, found := k.GetInference(ctx, fmt.Sprintf("inference-epoch%d", i))
-		require.True(t, found, fmt.Sprintf("Inference from epoch %d should not be pruned", i))
+	// Epoch 10 should remain
+	_, found := k.GetInference(ctx, "inference-epoch10")
+	require.True(t, found, "Inference from epoch 10 should not be pruned")
+}
+
+// TestInferencePruningMaxLimit_MultiCall_EpochAdvanceAfterEmpty ensures we respect the per-call max
+// and only advance the InferencePrunedEpoch after a subsequent call when the epoch becomes empty
+func TestInferencePruningMaxLimit_MultiCall_EpochAdvanceAfterEmpty(t *testing.T) {
+	k, ctx := keepertest.InferenceKeeper(t)
+	require.NoError(t, k.PruningState.Set(ctx, types.PruningState{}))
+
+	// Create 10 finished inferences all in epoch 1
+	for i := 0; i < 10; i++ {
+		inf := types.Inference{
+			Index:   fmt.Sprintf("inf-%d", i),
+			EpochId: 1,
+			Status:  types.InferenceStatus_FINISHED,
+		}
+		_ = k.SetInferenceWithoutDevStatComputation(ctx, inf)
 	}
 
+	// Configure pruning: inference threshold 2 so endEpoch=current-2, and max per call 4
+	setPruningConfig(ctx, k, PruningSettings{InferenceThreshold: 2, InferenceMaxPrune: 4})
+
+	// Choose current epoch so that only epoch 1 is eligible (endEpoch = 1)
+	current := int64(3)
+
+	countRemaining := func() int {
+		c := 0
+		for i := 0; i < 10; i++ {
+			if _, found := k.GetInference(ctx, fmt.Sprintf("inf-%d", i)); found {
+				c++
+			}
+		}
+		return c
+	}
+
+	// 1st prune: remove 4
+	require.NoError(t, k.Prune(ctx, current))
+	require.Equal(t, 6, countRemaining())
+	st, _ := k.PruningState.Get(ctx)
+	require.Equal(t, int64(0), st.InferencePrunedEpoch, "should not advance pruned epoch until epoch becomes empty and a subsequent call occurs")
+
+	// 2nd prune: remove 4 (total 8 removed)
+	require.NoError(t, k.Prune(ctx, current))
+	require.Equal(t, 2, countRemaining())
+	st, _ = k.PruningState.Get(ctx)
+	require.Equal(t, int64(0), st.InferencePrunedEpoch)
+
+	// 3rd prune: remove last 2
+	require.NoError(t, k.Prune(ctx, current))
+	require.Equal(t, 0, countRemaining())
+	st, _ = k.PruningState.Get(ctx)
+	require.Equal(t, int64(0), st.InferencePrunedEpoch, "still not advanced in same call when items were pruned")
+
+	// 4th prune: nothing to prune in epoch 1, now marker should advance
+	require.NoError(t, k.Prune(ctx, current))
+	st, _ = k.PruningState.Get(ctx)
+	require.Equal(t, int64(1), st.InferencePrunedEpoch, "should advance after verifying epoch is empty")
+}
+
+// TestPoCValidationsPruningMaxLimit_MultiCall_EpochAdvanceAfterEmpty mirrors the inference case
+func TestPoCValidationsPruningMaxLimit_MultiCall_EpochAdvanceAfterEmpty(t *testing.T) {
+	k, ctx := keepertest.InferenceKeeper(t)
+	require.NoError(t, k.PruningState.Set(ctx, types.PruningState{}))
+
+	// Create 10 validations in epoch 2 (eligible when current=3, threshold=1, end=2)
+	p := mkAddr(1)
+	for i := 0; i < 10; i++ {
+		v := mkAddr(100 + i)
+		k.SetPoCValidation(ctx, types.PoCValidation{
+			ParticipantAddress:          p,
+			ValidatorParticipantAddress: v,
+			PocStageStartBlockHeight:    2,
+		})
+	}
+
+	// Configure pruning: PoC threshold 1, PoC max prune 4
+	setPruningConfig(ctx, k, PruningSettings{PocThreshold: 1, PocMaxPrune: 4})
+	current := int64(3) // start=1, end=2
+
+	getCount := func() uint64 {
+		c, err := k.GetPocValidationCountByStage(ctx, 2)
+		require.NoError(t, err)
+		return c
+	}
+
+	// 1st prune: epoch 1 empty so marker may become 1, epoch 2 prunes 4
+	require.NoError(t, k.Prune(ctx, current))
+	require.Equal(t, uint64(6), getCount())
+	st, _ := k.PruningState.Get(ctx)
+	require.Equal(t, int64(1), st.PocValidationsPrunedEpoch, "should only be advanced past empty epochs; not the non-empty epoch 2")
+
+	// 2nd prune: remove 4 more (left 2)
+	require.NoError(t, k.Prune(ctx, current))
+	require.Equal(t, uint64(2), getCount())
+	st, _ = k.PruningState.Get(ctx)
+	require.Equal(t, int64(1), st.PocValidationsPrunedEpoch)
+
+	// 3rd prune: remove last 2
+	require.NoError(t, k.Prune(ctx, current))
+	require.Equal(t, uint64(0), getCount())
+	st, _ = k.PruningState.Get(ctx)
+	require.Equal(t, int64(1), st.PocValidationsPrunedEpoch, "not advanced in same call")
+
+	// 4th prune: epoch 2 now empty, marker should advance to 2
+	require.NoError(t, k.Prune(ctx, current))
+	st, _ = k.PruningState.Get(ctx)
+	require.Equal(t, int64(2), st.PocValidationsPrunedEpoch)
+}
+
+// TestPoCBatchesPruningMaxLimit_MultiCall_EpochAdvanceAfterEmpty mirrors the validations case
+func TestPoCBatchesPruningMaxLimit_MultiCall_EpochAdvanceAfterEmpty(t *testing.T) {
+	k, ctx := keepertest.InferenceKeeper(t)
+	require.NoError(t, k.PruningState.Set(ctx, types.PruningState{}))
+
+	// Create 10 batches in epoch 2 (eligible when current=3, threshold=1, end=2)
+	p := mkAddr(2)
+	for i := 0; i < 10; i++ {
+		k.SetPocBatch(ctx, types.PoCBatch{
+			ParticipantAddress:       p,
+			PocStageStartBlockHeight: 2,
+			BatchId:                  fmt.Sprintf("b-%d", i),
+		})
+	}
+
+	// Configure pruning: PoC threshold 1, PoC max prune 4
+	setPruningConfig(ctx, k, PruningSettings{PocThreshold: 1, PocMaxPrune: 4})
+	current := int64(3)
+
+	getCount := func() uint64 {
+		c, err := k.GetPoCBatchesCountByStage(ctx, 2)
+		require.NoError(t, err)
+		return c
+	}
+
+	// 1st prune
+	require.NoError(t, k.Prune(ctx, current))
+	require.Equal(t, uint64(6), getCount())
+	st, _ := k.PruningState.Get(ctx)
+	require.Equal(t, int64(1), st.PocBatchesPrunedEpoch)
+
+	// 2nd prune
+	require.NoError(t, k.Prune(ctx, current))
+	require.Equal(t, uint64(2), getCount())
+	st, _ = k.PruningState.Get(ctx)
+	require.Equal(t, int64(1), st.PocBatchesPrunedEpoch)
+
+	// 3rd prune: empty the epoch
+	require.NoError(t, k.Prune(ctx, current))
+	require.Equal(t, uint64(0), getCount())
+	st, _ = k.PruningState.Get(ctx)
+	require.Equal(t, int64(1), st.PocBatchesPrunedEpoch)
+
+	// 4th prune: advance epoch marker
+	require.NoError(t, k.Prune(ctx, current))
+	st, _ = k.PruningState.Get(ctx)
+	require.Equal(t, int64(2), st.PocBatchesPrunedEpoch)
 }

@@ -1,16 +1,38 @@
-build/
-decentralized-api/build/
-inference-chain/build/
-.idea/
-.vscode/
-.git/
-.github/
-.DS_Store
-**/.DS_Store
-prod-local/
-public-html/
-demo/
-mlnode/
-**/.venv
+# VCS and IDE
+.git
+.gitignore
+.gitattributes
+**/.idea/
+**/.vscode/
 
-**/*.env
+# Logs and transient files
+**/*.log
+direct.log
+test-logs-*/
+
+# Dependency caches
+**/.gradle/
+**/node_modules/
+
+# Large/unrelated directories to api/node Docker builds
+local-test-net/
+testermint/
+public-html/
+data/
+genesis/
+prod-genesis/
+prod-local/
+prod-sim/
+deploy/
+docs/
+proposals/
+mcp-obsidian/
+logdy/
+jq_test/
+test-net-cloud/
+upgrade-build-files/
+16504109747-artifacts/
+
+# Build outputs
+**/build/
+**/output/

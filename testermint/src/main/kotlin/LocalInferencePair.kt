@@ -332,6 +332,15 @@ data class LocalInferencePair(
         val waitDuration: Duration,
     )
 
+    fun waitForNextEpoch() {
+        val epochData = getEpochData()
+        logSection("Waiting for next epoch after epoch ${epochData.latestEpoch.index}")
+        this.waitForStage(EpochStage.START_OF_POC)
+        this.waitForStage(EpochStage.CLAIM_REWARDS)
+        val newEpochData = getEpochData()
+        logSection("Epoch is now ${newEpochData.latestEpoch.index}")
+    }
+
     fun waitForNextInferenceWindow(windowSizeInBlocks: Int = 5): WaitForStageResult? {
         val epochData = getEpochData()
         val startOfNextPoc = epochData.getNextStage(EpochStage.START_OF_POC)

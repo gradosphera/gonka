@@ -37,7 +37,7 @@ func (k Keeper) GetInferencePruner(params types.Params) Pruner[collections.Pair[
 		Threshold:  params.EpochParams.InferencePruningEpochThreshold,
 		PruningMax: params.EpochParams.InferencePruningMax,
 		List:       k.InferencesToPrune,
-		Ranger: func(epoch int64) collections.Ranger[collections.Pair[int64, string]] {
+		Ranger: func(ctx context.Context, epoch int64) collections.Ranger[collections.Pair[int64, string]] {
 			return collections.NewPrefixedPairRange[int64, string](epoch)
 		},
 		GetLastPruned: func(state types.PruningState) int64 {
@@ -62,8 +62,14 @@ func (k Keeper) GetPoCBatchesPruner(params types.Params) Pruner[collections.Trip
 		Threshold:  params.PocParams.PocDataPruningEpochThreshold,
 		PruningMax: params.EpochParams.PocPruningMax,
 		List:       k.PoCBatches,
-		Ranger: func(epoch int64) collections.Ranger[collections.Triple[int64, sdk.AccAddress, string]] {
-			return collections.NewPrefixedTripleRange[int64, sdk.AccAddress, string](epoch)
+		Ranger: func(ctx context.Context, epochIndex int64) collections.Ranger[collections.Triple[int64, sdk.AccAddress, string]] {
+			epoch, found := k.GetEpoch(ctx, uint64(epochIndex))
+			if !found {
+				// Impossible as far as I know.
+				k.LogError("Failed to get epoch", types.Pruning, "epoch", epochIndex)
+				return collections.NewPrefixedTripleRange[int64, sdk.AccAddress, string](0)
+			}
+			return collections.NewPrefixedTripleRange[int64, sdk.AccAddress, string](epoch.PocStartBlockHeight)
 		},
 		GetLastPruned: func(state types.PruningState) int64 {
 			return state.PocBatchesPrunedEpoch
@@ -83,8 +89,14 @@ func (k Keeper) GetPoCValidationsPruner(params types.Params) Pruner[collections.
 		Threshold:  params.PocParams.PocDataPruningEpochThreshold,
 		PruningMax: params.EpochParams.PocPruningMax,
 		List:       k.PoCValidations,
-		Ranger: func(epoch int64) collections.Ranger[collections.Triple[int64, sdk.AccAddress, sdk.AccAddress]] {
-			return collections.NewPrefixedTripleRange[int64, sdk.AccAddress, sdk.AccAddress](epoch)
+		Ranger: func(ctx context.Context, epochIndex int64) collections.Ranger[collections.Triple[int64, sdk.AccAddress, sdk.AccAddress]] {
+			epoch, found := k.GetEpoch(ctx, uint64(epochIndex))
+			if !found {
+				// Impossible?
+				k.LogError("Failed to get epoch", types.Pruning, "epoch", epochIndex)
+				return collections.NewPrefixedTripleRange[int64, sdk.AccAddress, sdk.AccAddress](0)
+			}
+			return collections.NewPrefixedTripleRange[int64, sdk.AccAddress, sdk.AccAddress](epoch.PocStartBlockHeight)
 		},
 		GetLastPruned: func(state types.PruningState) int64 {
 			return state.PocValidationsPrunedEpoch
@@ -103,7 +115,7 @@ type Pruner[K any, V any] struct {
 	Threshold     uint64
 	PruningMax    int64
 	List          collections.Map[K, V]
-	Ranger        func(epoch int64) collections.Ranger[K]
+	Ranger        func(ctx context.Context, epoch int64) collections.Ranger[K]
 	Logger        types.InferenceLogger
 	GetLastPruned func(pruningState types.PruningState) int64
 	SetLastPruned func(pruningState *types.PruningState, epoch int64)
@@ -112,7 +124,7 @@ type Pruner[K any, V any] struct {
 
 func (p Pruner[K, V]) PruneEpoch(ctx context.Context, currentEpochIndex int64, prunesLeft int64) (int64, error) {
 	prunedCount := int64(0)
-	iter, err := p.List.Iterate(ctx, p.Ranger(currentEpochIndex))
+	iter, err := p.List.Iterate(ctx, p.Ranger(ctx, currentEpochIndex))
 	if err != nil {
 		p.Logger.LogError("Failed to iterate over list to prune", types.Pruning, "error", err, "list", p.List.GetName())
 	}
@@ -147,10 +159,10 @@ func (p Pruner[K, V]) Prune(ctx context.Context, k Keeper, currentEpochIndex int
 	}
 	startEpoch, endEpoch := getEpochsToPrune(p.Threshold, currentEpochIndex, p.GetLastPruned(pruningState))
 	if startEpoch > endEpoch {
-		p.Logger.LogInfo("No epochs to prune", types.Pruning)
+		p.Logger.LogDebug("No epochs to prune", types.Pruning)
 		return nil
 	}
-	p.Logger.LogDebug("Starting pruning", types.Pruning,
+	p.Logger.LogInfo("Starting pruning", types.Pruning,
 		"start_epoch", startEpoch,
 		"end_epoch", endEpoch,
 		"threshold", p.Threshold,
