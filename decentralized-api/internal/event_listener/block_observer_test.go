@@ -50,6 +50,15 @@ func (m *mockTmHTTPClient) BlockResults(ctx context.Context, height *int64) (*co
 	return &coretypes.ResultBlockResults{TxsResults: txs}, nil
 }
 
+func (m *mockTmHTTPClient) Status(ctx context.Context) (*coretypes.ResultStatus, error) {
+	// Return a mock status with earliest block at 1 (full history available)
+	return &coretypes.ResultStatus{
+		SyncInfo: coretypes.SyncInfo{
+			EarliestBlockHeight: 1,
+		},
+	}, nil
+}
+
 // Test that BlockObserver handles a large backlog without deadlocking when the consumer is slow.
 func TestBlockObserver_StressBackpressure(t *testing.T) {
 	// Arrange
