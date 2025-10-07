@@ -37,9 +37,8 @@ func ParseMsgResponse(data []byte, msgIndex int, dstMsg proto.Message) error {
 
 var lastNanos atomic.Int64
 
-func nowNanoUnique() int64 {
+func nowNanoUnique(now int64) int64 {
 	for {
-		now := time.Now().UnixNano()
 		prev := lastNanos.Load()
 		next := now
 		if next <= prev {
@@ -51,7 +50,7 @@ func nowNanoUnique() int64 {
 	}
 }
 
-func getTimestamp(duration time.Duration) time.Time {
-	nanos := nowNanoUnique()
+func getTimestamp(timeNow int64, duration time.Duration) time.Time {
+	nanos := nowNanoUnique(timeNow)
 	return time.Unix(0, nanos).Add(duration)
 }
