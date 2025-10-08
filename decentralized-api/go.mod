@@ -14,6 +14,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.53.3
 	github.com/cosmos/ibc-go/v8 v8.2.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
+	github.com/go-sql-driver/mysql v1.9.2
 	github.com/golang/protobuf v1.5.4
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
