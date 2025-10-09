@@ -40,7 +40,7 @@ SSH_KEY_PATH=~/.ssh/your_key ./prepare.sh
 SSH into the genesis server and run `launch.py` in `genesis` mode.
 ```bash
 # On 89.169.111.79
-python3 launch.py --mode genesis --branch origin/testnet/v0.2.3-patch4
+python3 launch.py --mode genesis --branch origin/testnet/main
 ```
 
 ### Launch Join Nodes

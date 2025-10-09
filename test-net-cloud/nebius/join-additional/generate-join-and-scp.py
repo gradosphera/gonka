@@ -29,7 +29,7 @@ class Node:
         self.key_name = key_name or f"join-{self.ssh_port}"
 
     # based on example from join-1.sh
-    def generate_join_script(self, branch: str = "origin/testnet/v0.2.3-patch4", sync_with_snapshots: str = "false"):
+    def generate_join_script(self, branch: str = "origin/testnet/main", sync_with_snapshots: str = "false"):
         """Generate a join script similar to join-1.sh"""
         script_lines = [
             f'export KEY_NAME="{self.key_name}"',
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     PARAMS_CSV = f"{OUTPUT_DIR}/params.csv"
     USER = os.environ.get("USER", "ubuntu")
     SSH_KEY_PATH = os.environ.get("SSH_KEY_PATH")  # No default, like prepare.sh
-    BRANCH = os.environ.get("BRANCH", "origin/testnet/v0.2.3-patch4")
+    BRANCH = os.environ.get("BRANCH", "origin/testnet/main")
     SYNC_WITH_SNAPSHOTS = os.environ.get("SYNC_WITH_SNAPSHOTS", "false")
     
     # Create output directory if it doesn't exist
