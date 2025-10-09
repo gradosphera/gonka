@@ -21,7 +21,8 @@ class AccountKey:
     name: str
 
 
-BASE_DIR = Path(os.environ["HOME"]).absolute()
+CUSTOM_BASE_DIR = os.environ.get("TESTNET_BASE_DIR", None)
+BASE_DIR = Path(CUSTOM_BASE_DIR) if CUSTOM_BASE_DIR else Path(os.environ["HOME"]).absolute()
 GENESIS_VAL_NAME = "testnet-genesis"
 GONKA_REPO_DIR = BASE_DIR / "gonka"
 DEPLOY_DIR = GONKA_REPO_DIR / "deploy/join"
@@ -36,7 +37,7 @@ INFERENCED_BINARY = SimpleNamespace(
 
 INFERENCED_STATE_DIR = BASE_DIR / ".inference"
 
-def load_config_from_env():
+def load_config_from_env(hf_home: str = None):
     """Load configuration from environment variables, with defaults"""
     default_config = {
         "KEY_NAME": "genesis",
@@ -46,7 +47,7 @@ def load_config_from_env():
         "P2P_EXTERNAL_ADDRESS": "tcp://89.169.111.79:5000",
         "ACCOUNT_PUBKEY": "", # will be populated later
         "NODE_CONFIG": "./node-config.json",
-        "HF_HOME": (Path(os.environ["HOME"]).absolute() / "hf-cache").__str__(),
+        "HF_HOME": Path(hf_home) if hf_home else (Path(os.environ["HOME"]).absolute() / "hf-cache").__str__(),
         "SEED_API_URL": "http://89.169.111.79:8000",
         "SEED_NODE_RPC_URL": "http://89.169.111.79:26657",
         "DAPI_API__POC_CALLBACK_URL": "http://api:9100",
@@ -59,6 +60,8 @@ def load_config_from_env():
         "INFERENCE_PORT": "5050",
         "KEYRING_BACKEND": "file",
         "SYNC_WITH_SNAPSHOTS": "true",
+        "SNAPSHOT_INTERVAL": "200",
+        "IS_TEST_NET": "true",
     }
     
     config = default_config.copy()
@@ -87,7 +90,8 @@ def load_config_from_env():
 
 
 # Load configuration from environment
-CONFIG_ENV = load_config_from_env()
+custom_hf_home = os.environ.get("TESTNET_HF_HOME", None)
+CONFIG_ENV = load_config_from_env(hf_home=custom_hf_home)
 
 
 def clean_state():
@@ -112,10 +116,17 @@ def docker_compose_down():
     """Stop and remove all Docker containers from previous runs"""
     if DEPLOY_DIR.exists():
         print("Stopping any running Docker containers...")
+        
+        # Check if env-override file exists
+        env_override_file = DEPLOY_DIR / "docker-compose.env-override.yml"
+        compose_files = ["-f", "docker-compose.yml", "-f", "docker-compose.mlnode.yml"]
+        if env_override_file.exists():
+            compose_files.extend(["-f", "docker-compose.env-override.yml"])
+        
         try:
             # First try to stop containers gracefully
             result = subprocess.run(
-                ["docker", "compose", "-f", "docker-compose.yml", "-f", "docker-compose.mlnode.yml", "down"],
+                ["docker", "compose"] + compose_files + ["down"],
                 cwd=DEPLOY_DIR,
                 capture_output=True,
                 text=True,
@@ -130,11 +141,13 @@ def docker_compose_down():
         except subprocess.TimeoutExpired:
             print("Warning: docker compose down timed out, trying force stop...")
             # Force stop if graceful shutdown times out
-            os.system(f"cd {DEPLOY_DIR} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml down --timeout 5")
+            compose_files_str = " ".join(compose_files)
+            os.system(f"cd {DEPLOY_DIR} && docker compose {compose_files_str} down --timeout 5")
         except Exception as e:
             print(f"Warning: Error stopping Docker containers: {e}")
             # Try force stop as fallback
-            os.system(f"cd {DEPLOY_DIR} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml down --timeout 5")
+            compose_files_str = " ".join(compose_files)
+            os.system(f"cd {DEPLOY_DIR} && docker compose {compose_files_str} down --timeout 5")
     else:
         print("Deploy directory doesn't exist, skipping Docker cleanup")
 
@@ -220,7 +233,20 @@ def install_inferenced():
     # Download if not exists
     if not inferenced_zip.exists():
         print(f"Downloading inferenced binary zip: {INFERENCED_BINARY.url}")
-        urllib.request.urlretrieve(url, inferenced_zip)
+        max_retries = 5
+        retry_delay = 5  # seconds
+        for attempt in range(max_retries):
+            try:
+                urllib.request.urlretrieve(url, inferenced_zip)
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"Download failed (attempt {attempt + 1}/{max_retries}): {e}")
+                    print(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    print(f"Download failed after {max_retries} attempts")
+                    raise
     else:
         print(f"{inferenced_zip} already exists")
     
@@ -256,7 +282,7 @@ def create_account_key():
     # Check if key already exists
     try:
         result = subprocess.run(
-            [str(inferenced_binary), "keys", "list", "--keyring-backend", "file"],
+            [str(inferenced_binary), "keys", "list", "--keyring-backend", "file", "--home", str(INFERENCED_STATE_DIR)],
             capture_output=True,
             text=True,
             check=True
@@ -281,7 +307,9 @@ def create_account_key():
         "add", 
         COLD_KEY_NAME, 
         "--keyring-backend", 
-        "file"
+        "file",
+        "--home",
+        str(INFERENCED_STATE_DIR)
     ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     
     stdout, stderr = process.communicate(input=password_input)
@@ -348,6 +376,58 @@ def create_config_env_file():
     print("== config.env ==")
     print('\n'.join(config_content))
     print("=============")
+    
+    # Create docker-compose override for environment variables
+    create_env_override()
+
+
+def create_env_override():
+    """Create docker-compose override file to inject IS_TEST_NET into all containers"""
+    working_dir = GONKA_REPO_DIR / "deploy/join"
+    override_file = working_dir / "docker-compose.env-override.yml"
+    
+    is_test_net = CONFIG_ENV.get("IS_TEST_NET", "true")
+    
+    override_content = f"""# Auto-generated environment override - do not commit
+services:
+  tmkms:
+    environment:
+      - IS_TEST_NET={is_test_net}
+  node:
+    environment:
+      - IS_TEST_NET={is_test_net}
+  api:
+    environment:
+      - IS_TEST_NET={is_test_net}
+  proxy:
+    environment:
+      - IS_TEST_NET={is_test_net}
+  proxy-ssl:
+    environment:
+      - IS_TEST_NET={is_test_net}
+  explorer:
+    environment:
+      - IS_TEST_NET={is_test_net}
+"""
+    
+    with open(override_file, 'w') as f:
+        f.write(override_content)
+    
+    print(f"Created environment override at {override_file}")
+    return override_file
+
+
+def get_compose_files_arg(include_mlnode=True):
+    """Get docker compose -f arguments including env-override"""
+    files = ["docker-compose.yml"]
+    if include_mlnode:
+        files.append("docker-compose.mlnode.yml")
+    files.append("docker-compose.env-override.yml")
+    
+    args = []
+    for f in files:
+        args.extend(["-f", f])
+    return " ".join(args)
 
 
 def pull_images():
@@ -365,24 +445,36 @@ def pull_images():
     
     # Create the command to source config.env and run docker compose
     # We use bash -c to run both commands in sequence
-    cmd = f"bash -c 'source {config_file} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml pull'"
+    compose_files = get_compose_files_arg(include_mlnode=True)
+    cmd = f"bash -c 'source {config_file} && docker compose {compose_files} pull'"
     
-    # Run the command in the specified working directory
-    result = subprocess.run(
-        cmd,
-        shell=True,
-        cwd=working_dir,
-        capture_output=True,
-        text=True
-    )
+    # Retry logic for network instability
+    max_retries = 3
+    retry_delay = 10  # seconds
     
-    if result.returncode != 0:
-        print(f"Error pulling images: {result.stderr}")
-        raise subprocess.CalledProcessError(result.returncode, cmd)
-    
-    print("Docker images pulled successfully!")
-    if result.stdout:
-        print(result.stdout)
+    for attempt in range(max_retries):
+        # Run the command in the specified working directory
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            cwd=working_dir,
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode == 0:
+            print("Docker images pulled successfully!")
+            if result.stdout:
+                print(result.stdout)
+            return
+        
+        if attempt < max_retries - 1:
+            print(f"Error pulling images (attempt {attempt + 1}/{max_retries}): {result.stderr}")
+            print(f"Retrying in {retry_delay} seconds...")
+            time.sleep(retry_delay)
+        else:
+            print(f"Error pulling images after {max_retries} attempts: {result.stderr}")
+            raise subprocess.CalledProcessError(result.returncode, cmd)
 
 
 def create_docker_compose_override(init_only=True, node_id=None):
@@ -449,7 +541,8 @@ def run_genesis_initialization():
     print("This will initialize the node with INIT_ONLY=true and IS_GENESIS=true")
     
     # Create the command to source config.env and run docker compose with override
-    cmd = f"bash -c 'source {config_file} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml -f {override_file} run --rm node'"
+    compose_files = get_compose_files_arg(include_mlnode=True)
+    cmd = f"bash -c 'source {config_file} && docker compose {compose_files} -f {override_file} run --rm node'"
     
     # Run the command in the specified working directory
     result = subprocess.run(
@@ -503,7 +596,8 @@ def extract_consensus_key():
     
     # First, start tmkms container in detached mode
     print("Starting tmkms container...")
-    start_cmd = f"bash -c 'source {config_file} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml up -d tmkms'"
+    compose_files = get_compose_files_arg(include_mlnode=True)
+    start_cmd = f"bash -c 'source {config_file} && docker compose {compose_files} up -d tmkms'"
     
     start_result = subprocess.run(
         start_cmd,
@@ -524,7 +618,7 @@ def extract_consensus_key():
     
     # Now run the tmkms-pubkey command
     print("Running tmkms-pubkey command...")
-    pubkey_cmd = f"bash -c 'source {config_file} && docker compose up -d tmkms && docker compose run --rm --entrypoint /bin/sh tmkms -c \"tmkms-pubkey\"'"
+    pubkey_cmd = f"bash -c 'source {config_file} && docker compose {compose_files} run --rm --entrypoint /bin/sh tmkms -c \"tmkms-pubkey\"'"
     
     pubkey_result = subprocess.run(
         pubkey_cmd,
@@ -580,7 +674,8 @@ def get_or_create_warm_key(service="api"):
     print(f"Creating warm key for service: {service}")
     
     # Create the key
-    add_cmd = f"bash -c 'source {config_file} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml run --rm --no-deps -T {service} sh -lc \"printf \\\"%s\\\\n%s\\\\n\\\" \\$KEYRING_PASSWORD \\$KEYRING_PASSWORD | inferenced keys add \\$KEY_NAME --keyring-backend file\"'"
+    compose_files = get_compose_files_arg(include_mlnode=True)
+    add_cmd = f"bash -c 'source {config_file} && docker compose {compose_files} run --rm --no-deps -T {service} sh -lc \"printf \\\"%s\\\\n%s\\\\n\\\" \\$KEYRING_PASSWORD \\$KEYRING_PASSWORD | inferenced keys add \\$KEY_NAME --keyring-backend file\"'"
     
     result = subprocess.run(
         add_cmd,
@@ -682,8 +777,9 @@ def add_genesis_account(account_key: AccountKey):
     print(f"Adding genesis account for address: {account_key.address}")
     
     # Now run the genesis add-genesis-account command
-    genesis_cmd = f"bash -c 'source {config_file} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml run --rm --no-deps -T node sh -lc \"inferenced genesis add-genesis-account {account_key.address} 1ngonka\"'"
-    
+    compose_files = get_compose_files_arg(include_mlnode=True)
+    genesis_cmd = f"bash -c 'source {config_file} && docker compose {compose_files} run --rm --no-deps -T node sh -lc \"inferenced genesis add-genesis-account {account_key.address} 150000000ngonka\"'"
+
     print("Running genesis add-genesis-account command...")
     genesis_result = subprocess.run(
         genesis_cmd,
@@ -725,6 +821,7 @@ def generate_gentx(account_key: AccountKey, consensus_key: str, node_id: str, wa
         str(inferenced_binary),
         "genesis", "gentx",
         "--keyring-backend", "file",
+        "--home", str(INFERENCED_STATE_DIR),
         COLD_KEY_NAME, "1ngonka",
         "--moniker", GENESIS_VAL_NAME,
         "--pubkey", consensus_key,
@@ -795,6 +892,7 @@ def collect_genesis_transactions():
     collect_cmd = [
         str(inferenced_binary),
         "genesis", "collect-gentxs",
+        "--home", str(INFERENCED_STATE_DIR),
         "--gentx-dir", (INFERENCED_STATE_DIR / "config" / "gentx").__str__()
     ]
     
@@ -838,6 +936,7 @@ def patch_genesis_participants():
     patch_cmd = [
         str(inferenced_binary),
         "genesis", "patch-genesis",
+        "--home", str(INFERENCED_STATE_DIR),
         "--genparticipant-dir", (INFERENCED_STATE_DIR / "config" / "genparticipant").__str__()
     ]
     
@@ -990,7 +1089,8 @@ def register_joining_participant(service="api"):
     
     # Build the command to run inside the container
     # NOTE! variable are getting renamed inside the container
-    register_cmd = f"bash -c 'source {config_file} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml run --rm --no-deps -T {service} sh -lc \"inferenced register-new-participant \\$DAPI_API__PUBLIC_URL \\$ACCOUNT_PUBKEY --node-address \\$DAPI_CHAIN_NODE__SEED_API_URL\"'"
+    compose_files = get_compose_files_arg(include_mlnode=True)
+    register_cmd = f"bash -c 'source {config_file} && docker compose {compose_files} run --rm --no-deps -T {service} sh -lc \"inferenced register-new-participant \\$DAPI_API__PUBLIC_URL \\$ACCOUNT_PUBKEY --node-address \\$DAPI_CHAIN_NODE__SEED_API_URL\"'"
     
     print(f"Running command: {register_cmd}")
     
@@ -1045,6 +1145,7 @@ def grant_key_permissions(warm_key_address: str):
         warm_key_address,  # The warm key address
         "--from", COLD_KEY_NAME,
         "--keyring-backend", "file",
+        "--home", str(INFERENCED_STATE_DIR),
         "--gas", "2000000",
         "--node", f"{seed_api_url}/chain-rpc/"
     ]
@@ -1110,6 +1211,10 @@ def start_docker_services(
     # Set defaults
     if compose_files is None:
         compose_files = ["docker-compose.yml", "docker-compose.mlnode.yml"]
+    
+    # Always include env-override file to inject IS_TEST_NET
+    if "docker-compose.env-override.yml" not in compose_files:
+        compose_files.append("docker-compose.env-override.yml")
     
     if additional_args is None:
         additional_args = ["-d"]
