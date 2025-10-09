@@ -35,6 +35,7 @@ type WriteCloserProvider interface {
 }
 
 func LoadDefaultConfigManager() (*ConfigManager, error) {
+	db := NewMySQLDb()
 	manager := ConfigManager{
 		KoanProvider:   getFileProvider(),
 		WriterProvider: NewFileWriteCloserProvider(getConfigPath()),
@@ -257,6 +258,9 @@ func (cm *ConfigManager) GetUpcomingSeed() SeedInfo {
 	return cm.currentConfig.UpcomingSeed
 }
 
+// Called from:
+// 1. syncNodesWithConfig periodic routine
+// 2. admin API when nodes are added/removed
 func (cm *ConfigManager) SetNodes(nodes []InferenceNodeConfig) error {
 	cm.currentConfig.Nodes = nodes
 	logging.Info("Setting nodes", types.Config, "nodes", nodes)

@@ -4,24 +4,80 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 )
 
-// MySQLConfig holds connection params for a MySQL database.
-type MySQLConfig struct {
+// MySqlConfig holds connection params for a MySQL database.
+type MySqlConfig struct {
 	Username string
 	Password string
 	Host     string
 	Port     int
 	Database string
 	Params   map[string]string
+	// If set, connect via Unix domain socket instead of TCP, e.g. /tmp/mysql.sock
+	UnixSocket string
+}
+
+type SqlDatabase interface {
+	BootstrapLocal(ctx context.Context) error
+	GetDb() *sql.DB
+}
+
+type MySqlDb struct {
+	config MySqlConfig
+}
+
+func NewMySQLDb(cfg MySqlConfig) *MySqlDb {
+	return &MySqlDb{config: cfg}
+}
+
+func (d *MySqlDb) BootstrapLocal(ctx context.Context) error {
+	// Try normal connect; if db missing, create it by connecting without a default DB.
+	appDB, err := OpenMySQL(d.config)
+	if err == nil {
+		if pingErr := appDB.PingContext(ctx); pingErr == nil {
+			defer appDB.Close()
+			return EnsureSchema(ctx, appDB)
+		} else if isUnknownDatabase(pingErr) {
+			_ = appDB.Close()
+			// Reconnect without database and create it
+			temp := d.config
+			temp.Database = ""
+			noDB, err2 := OpenMySQL(temp)
+			if err2 != nil {
+				return err2
+			}
+			if err := createDatabaseIfNotExists(ctx, noDB, d.config.Database); err != nil {
+				_ = noDB.Close()
+				return err
+			}
+			_ = noDB.Close()
+			// Connect again to the newly created DB and ensure schema
+			withDB, err3 := OpenMySQL(d.config)
+			if err3 != nil {
+				return err3
+			}
+			defer withDB.Close()
+			if err := withDB.PingContext(ctx); err != nil {
+				return err
+			}
+			return EnsureSchema(ctx, withDB)
+		} else {
+			return pingErr
+		}
+	}
+	// If open failed, surface the error to allow operator to fix local DSN/server.
+	return err
 }
 
 // BuildDSN constructs a DSN string for go-sql-driver/mysql using only pure Go bits.
-func (c MySQLConfig) BuildDSN() string {
+func (c MySqlConfig) BuildDSN() string {
 	// Default tcp connection
 	paramStr := ""
 	if len(c.Params) > 0 {
@@ -38,11 +94,17 @@ func (c MySQLConfig) BuildDSN() string {
 	if paramStr != "" {
 		paramStr = "?" + paramStr
 	}
-	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s%s", c.Username, c.Password, c.Host, c.Port, c.Database, paramStr)
+	netSpec := ""
+	if strings.TrimSpace(c.UnixSocket) != "" {
+		netSpec = fmt.Sprintf("unix(%s)", c.UnixSocket)
+	} else {
+		netSpec = fmt.Sprintf("tcp(%s:%d)", c.Host, c.Port)
+	}
+	return fmt.Sprintf("%s:%s@%s/%s%s", c.Username, c.Password, netSpec, c.Database, paramStr)
 }
 
 // OpenMySQL opens a database handle with sane defaults.
-func OpenMySQL(cfg MySQLConfig) (*sql.DB, error) {
+func OpenMySQL(cfg MySqlConfig) (*sql.DB, error) {
 	dsn := cfg.BuildDSN()
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -53,6 +115,53 @@ func OpenMySQL(cfg MySQLConfig) (*sql.DB, error) {
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(30 * time.Minute)
 	return db, nil
+}
+
+// Helpers to detect common MySQL errors without stringly-typed checks everywhere.
+func isAccessDenied(err error) bool {
+	var me *mysql.MySQLError
+	if errors.As(err, &me) {
+		return me.Number == 1045 // ER_ACCESS_DENIED_ERROR
+	}
+	// Fallback on message contains when driver wraps differently
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "access denied")
+}
+
+func isUnknownDatabase(err error) bool {
+	var me *mysql.MySQLError
+	if errors.As(err, &me) {
+		return me.Number == 1049 // ER_BAD_DB_ERROR
+	}
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "unknown database")
+}
+
+func createDatabaseIfNotExists(ctx context.Context, db *sql.DB, dbName string) error {
+	if strings.TrimSpace(dbName) == "" {
+		return errors.New("empty database name")
+	}
+	_, err := db.ExecContext(ctx, "CREATE DATABASE IF NOT EXISTS `"+dbName+"` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci")
+	return err
+}
+
+func createUserIfNotExists(ctx context.Context, db *sql.DB, user, pass string) error {
+	if strings.TrimSpace(user) == "" {
+		return errors.New("empty user name")
+	}
+	// MySQL 8: CREATE USER IF NOT EXISTS and set password
+	_, err := db.ExecContext(ctx, "CREATE USER IF NOT EXISTS `"+user+"` IDENTIFIED BY '"+pass+"'")
+	return err
+}
+
+func grantAllOnDB(ctx context.Context, db *sql.DB, user, dbName string) error {
+	if strings.TrimSpace(user) == "" || strings.TrimSpace(dbName) == "" {
+		return errors.New("empty user or database name")
+	}
+	_, err := db.ExecContext(ctx, "GRANT ALL PRIVILEGES ON `"+dbName+"`.* TO `"+user+"`")
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, "FLUSH PRIVILEGES")
+	return err
 }
 
 // EnsureSchema creates the minimal tables for storing dynamic config: inference nodes and models.
@@ -144,7 +253,7 @@ ON DUPLICATE KEY UPDATE
 // ExampleWriteNodes is an example helper showing how to connect and write nodes to MySQL.
 // It is placed in the same package and directory as config.go as requested.
 func ExampleWriteNodes(ctx context.Context, dbHost string, dbPort int, dbUser, dbPass, dbName string, nodes []InferenceNodeConfig) error {
-	cfg := MySQLConfig{
+	cfg := MySqlConfig{
 		Username: dbUser,
 		Password: dbPass,
 		Host:     dbHost,
