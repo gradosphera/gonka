@@ -5,7 +5,6 @@ import (
 	"decentralized-api/logging"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -72,7 +71,7 @@ func LoadDefaultConfigManager() (*ConfigManager, error) {
 		return nil, err
 	}
 
-	if err := loadNodeConfig(manager.getConfig()); err != nil {
+	if err := manager.LoadNodeConfig(ctx); err != nil {
 		log.Fatalf("error loading node config: %v", err)
 	}
 
@@ -604,9 +603,16 @@ type WriteCloser interface {
 	Close() error
 }
 
-// Called once at startup to load additional nodes from a separate config file
-func loadNodeConfig(config *Config) error {
-	if config.NodeConfigIsMerged {
+// LoadNodeConfig loads additional nodes from a JSON file and writes them into the DB once.
+// Idempotent via KV flag kvKeyNodeConfigMerged.
+func (cm *ConfigManager) LoadNodeConfig(ctx context.Context) error {
+	if err := cm.ensureDbReady(ctx); err != nil {
+		return err
+	}
+
+	// If already merged, skip
+	var merged bool
+	if ok, err := KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyNodeConfigMerged, &merged); err == nil && ok && merged {
 		logging.Info("Node config already merged. Skipping", types.Config)
 		return nil
 	}
@@ -624,32 +630,18 @@ func loadNodeConfig(config *Config) error {
 		return err
 	}
 
-	// Check for duplicate IDs across both existing and new nodes
-	seenIds := make(map[string]bool)
-
-	// First, add existing nodes to the map
-	for _, node := range config.Nodes {
-		if seenIds[node.Id] {
-			return fmt.Errorf("duplicate node ID found in config: %s", node.Id)
-		}
-		seenIds[node.Id] = true
+	// Override DB state with provided nodes
+	if err := ReplaceInferenceNodes(ctx, cm.sqlDb.GetDb(), newNodes); err != nil {
+		return err
 	}
 
-	// Check new nodes for duplicates
-	for _, node := range newNodes {
-		if seenIds[node.Id] {
-			return fmt.Errorf("duplicate node ID found in config: %s", node.Id)
-		}
-		seenIds[node.Id] = true
+	// Mark as merged
+	if err := KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyNodeConfigMerged, true); err != nil {
+		return err
 	}
 
-	// Merge new nodes with existing ones
-	config.Nodes = append(config.Nodes, newNodes...)
-	config.NodeConfigIsMerged = true
-
-	logging.Info("Successfully loaded and merged node configuration",
-		types.Config, "new_nodes", len(newNodes),
-		"total_nodes", len(config.Nodes))
+	logging.Info("Successfully loaded and merged node configuration", types.Config,
+		"new_nodes", len(newNodes))
 	return nil
 }
 
@@ -791,4 +783,5 @@ const (
 	kvKeyValidationParams    = "validation_params"
 	kvKeyBandwidthParams     = "bandwidth_params"
 	kvKeyMLNodeKeyConfig     = "ml_node_key_config"
+	kvKeyNodeConfigMerged    = "node_config_merged"
 )

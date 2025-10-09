@@ -205,6 +205,60 @@ FROM inference_nodes ORDER BY id`)
 	return out, nil
 }
 
+// ReplaceInferenceNodes deletes all nodes and inserts the given list atomically.
+func ReplaceInferenceNodes(ctx context.Context, db *sql.DB, nodes []InferenceNodeConfig) error {
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM inference_nodes`); err != nil {
+		return err
+	}
+
+	if len(nodes) == 0 {
+		return tx.Commit()
+	}
+
+	q := `
+INSERT INTO inference_nodes (
+  id, host, inference_segment, inference_port, poc_segment, poc_port, max_concurrent, models_json, hardware_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	stmt, err := tx.PrepareContext(ctx, q)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, n := range nodes {
+		modelsJSON, err := json.Marshal(n.Models)
+		if err != nil {
+			return err
+		}
+		hardwareJSON, err := json.Marshal(n.Hardware)
+		if err != nil {
+			return err
+		}
+		if _, err := stmt.ExecContext(
+			ctx,
+			n.Id,
+			n.Host,
+			n.InferenceSegment,
+			n.InferencePort,
+			n.PoCSegment,
+			n.PoCPort,
+			n.MaxConcurrent,
+			string(modelsJSON),
+			string(hardwareJSON),
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // KV helpers for dynamic config
 
 // KVSetJSON upserts an arbitrary Go value encoded as JSON at the given key.
