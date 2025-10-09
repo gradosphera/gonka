@@ -76,6 +76,14 @@ func (d *MySqlDb) BootstrapLocal(ctx context.Context) error {
 	return err
 }
 
+func (d *MySqlDb) GetDb() *sql.DB {
+	db, err := OpenMySQL(d.config)
+	if err != nil {
+		return nil
+	}
+	return db
+}
+
 // BuildDSN constructs a DSN string for go-sql-driver/mysql using only pure Go bits.
 func (c MySqlConfig) BuildDSN() string {
 	// Default tcp connection

@@ -27,6 +27,7 @@ type ConfigManager struct {
 	currentConfig  Config
 	KoanProvider   koanf.Provider
 	WriterProvider WriteCloserProvider
+	sqlDb          SqlDatabase
 	mutex          sync.Mutex
 }
 
@@ -60,6 +61,7 @@ func LoadDefaultConfigManager() (*ConfigManager, error) {
 	manager := ConfigManager{
 		KoanProvider:   getFileProvider(),
 		WriterProvider: NewFileWriteCloserProvider(getConfigPath()),
+		sqlDb:          db,
 		mutex:          sync.Mutex{},
 	}
 	err := manager.Load()
