@@ -60,6 +60,7 @@ def load_config_from_env():
         "KEYRING_BACKEND": "file",
         "SYNC_WITH_SNAPSHOTS": "true",
         "SNAPSHOT_INTERVAL": "200",
+        "IS_TEST_NET": "true",
     }
     
     config = default_config.copy()
