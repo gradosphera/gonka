@@ -1,55 +1,48 @@
+Earlier today, Gonka Chain experienced a temporary chain halt triggered by a deterministic panic.
+- The incident did not cause a network partition, the state remains fully consistent
+- More than two-thirds of the network has already recovered and is operating normally
+- To resume block production, validators can perform a single-block rollback and upgrade to the patched binary
 
-# Claim Recovery
+Proposed fix: https://github.com/gonka-ai/gonka/pull/384
 
-Current version are not able to claim reward under the high load. Having the new version, we can try to re-claim.
+Recovery Instructions  
 
-
-## Step 1: Check binary hashes
-
-Check API binary:
-
-# Check API binary
-echo "43c2ebe46d5f5a1f336926397a562b67df02821920e4e434d136124a5757f83b .dapi/cosmovisor/current/bin/decentralized-api" | sudo sha256sum -c --status - && echo "API: UPGRADE NOT NEEDED" || echo "API: UPGRADE NEEDED"
+1\ Stop the container (from gonka/deploy/join/ directory)
+```
+docker compose down node && sudo rm -rf .inference/data/upgrade-info.json
 ```
 
-If it**UPGRADE NEEDED**, it might be worth to check recovery.
-
-## Step 2: Stop container
-
-```bash
-source config.env && docker compose down api
+2\ Open the terminal of the container
+```shell
+source config.env && docker compose run -it node  /bin/sh
 ```
 
-
-## Step 2: Recover API binary (if failed)
-
-```bash
-# Download and verify the API binary
-wget https://github.com/gonka-ai/gonka/releases/download/release%2Fv0.2.3-manual/decentralized-api-amd64.zip
-echo "9239001463b4aa0bb664779fbd28f62c914b059124b51e9387ad915276223a3c decentralized-api-amd64.zip" | sha256sum -c --status - && echo SUCCESS || echo FAILED
-
-# Install and symlink
-sudo rm -rf .dapi/data/upgrade-info.json
-
-sudo rm -rf .dapi/cosmovisor/upgrades/v0.2.3-patch/bin/
-sudo mkdir -p .dapi/cosmovisor/upgrades/v0.2.3-patch/bin/
-unzip decentralized-api-amd64.zip -d temp-api/
-sudo cp temp-api/decentralized-api .dapi/cosmovisor/upgrades/v0.2.3-patch/bin/
-sudo chmod +x .dapi/cosmovisor/upgrades/v0.2.3-patch/bin/decentralized-api
-sudo rm .dapi/cosmovisor/current
-sudo ln -sf upgrades/v0.2.3-patch .dapi/cosmovisor/current
-rm -rf temp-api/ decentralized-api-amd64.zip
+3\ Rollback gonka blockchain one block back
+```
+inferenced rollback --home /root/.inference/
 ```
 
-## Step 3: Verify API binary recovery
-
-```bash
-# Check API binary hash
-echo "43c2ebe46d5f5a1f336926397a562b67df02821920e4e434d136124a5757f83b .dapi/cosmovisor/current/bin/decentralized-api" | sudo sha256sum -c --status - && echo "API: UPGRADE NOT NEEDED" || echo "API: UPGRADE NEEDED"
+4\ Exit the container terminal
+```
+exit
 ```
 
-## Step 4: Restart container
+5\ Download the new version of the chain node with the patch
+```shell
+wget -O inferenced https://github.com/gonka-ai/gonka/releases/download/release%2Fv0.2.3-patch3/inferenced
 
-```bash
-source config.env && docker compose up -d api --force-recreate
+sudo mkdir -p .inference/cosmovisor/upgrades/v0.2.3-patch3/bin/
+sudo cp inferenced .inference/cosmovisor/upgrades/v0.2.3-patch3/bin/inferenced
+sudo chmod +x .inference/cosmovisor/upgrades/v0.2.3-patch3/bin/inferenced
+sudo rm .inference/cosmovisor/current
+sudo ln -sf upgrades/v0.2.3-patch3 .inference/cosmovisor/current
+
+echo "699b26ee2212146406ed4fe336428bfc134aade5cf03c55ba5c4f7ebf3ca6c90  .inference/cosmovisor/current/bin/inferenced" | sudo sha256sum -c --status - && echo SUCCESS || echo FAILED
+```
+You should get SUCCESS in return
+
+6\ Start the updated node
+```shell
+source config.env && \
+    docker compose up node api proxy -d --no-deps --force-recreate
 ```
