@@ -81,6 +81,17 @@ CREATE TABLE IF NOT EXISTS kv_config (
   value_json TEXT NOT NULL,
   updated_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%d %H:%M:%f','now')),
   created_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%d %H:%M:%f','now'))
+);
+
+CREATE TABLE IF NOT EXISTS seed_info (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL, -- 'current', 'previous', 'upcoming'
+  seed INTEGER NOT NULL,
+  epoch_index INTEGER NOT NULL,
+  signature TEXT NOT NULL,
+  claimed BOOLEAN NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%d %H:%M:%f','now'))
 );`
 	_, err := db.ExecContext(ctx, stmt)
 	return err
@@ -257,6 +268,74 @@ INSERT INTO inference_nodes (
 		}
 	}
 	return tx.Commit()
+}
+
+// SeedInfo typed accessors
+
+// SetActiveSeed deactivates previous active seed of given type and inserts a new active row.
+func SetActiveSeed(ctx context.Context, db *sql.DB, seedType string, info SeedInfo) error {
+	if db == nil {
+		return errors.New("db is nil")
+	}
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `UPDATE seed_info SET is_active = 0 WHERE type = ? AND is_active = 1`, seedType); err != nil {
+		return err
+	}
+	q := `INSERT INTO seed_info(type, seed, epoch_index, signature, claimed, is_active) VALUES(?, ?, ?, ?, ?, 1)`
+	if _, err := tx.ExecContext(ctx, q, seedType, info.Seed, info.EpochIndex, info.Signature, info.Claimed); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// GetActiveSeed returns the active seed for type; ok=false if none.
+func GetActiveSeed(ctx context.Context, db *sql.DB, seedType string) (SeedInfo, bool, error) {
+	if db == nil {
+		return SeedInfo{}, false, errors.New("db is nil")
+	}
+	row := db.QueryRowContext(ctx, `SELECT seed, epoch_index, signature, claimed FROM seed_info WHERE type = ? AND is_active = 1 ORDER BY id DESC LIMIT 1`, seedType)
+	var s SeedInfo
+	if err := row.Scan(&s.Seed, &s.EpochIndex, &s.Signature, &s.Claimed); err != nil {
+		if err == sql.ErrNoRows {
+			return SeedInfo{}, false, nil
+		}
+		return SeedInfo{}, false, err
+	}
+	return s, true, nil
+}
+
+// MarkSeedClaimed sets claimed=true for current active seed of given type. ok=false if none.
+func MarkSeedClaimed(ctx context.Context, db *sql.DB, seedType string) (ok bool, err error) {
+	if db == nil {
+		return false, errors.New("db is nil")
+	}
+	res, err := db.ExecContext(ctx, `UPDATE seed_info SET claimed = 1 WHERE type = ? AND is_active = 1`, seedType)
+	if err != nil {
+		return false, err
+	}
+	affected, _ := res.RowsAffected()
+	return affected > 0, nil
+}
+
+// IsSeedClaimed reads claimed for active seed of given type. ok=false if none.
+func IsSeedClaimed(ctx context.Context, db *sql.DB, seedType string) (claimed bool, ok bool, err error) {
+	if db == nil {
+		return false, false, errors.New("db is nil")
+	}
+	row := db.QueryRowContext(ctx, `SELECT claimed FROM seed_info WHERE type = ? AND is_active = 1 ORDER BY id DESC LIMIT 1`, seedType)
+	var c bool
+	if err := row.Scan(&c); err != nil {
+		if err == sql.ErrNoRows {
+			return false, false, nil
+		}
+		return false, false, err
+	}
+	return c, true, nil
 }
 
 // KV helpers for dynamic config

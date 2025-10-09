@@ -28,6 +28,7 @@ type ConfigManager struct {
 	WriterProvider WriteCloserProvider
 	sqlDb          SqlDatabase
 	mutex          sync.Mutex
+	dirty          dirtyState
 }
 
 type WriteCloserProvider interface {
@@ -74,7 +75,11 @@ func LoadDefaultConfigManager() (*ConfigManager, error) {
 	if err := manager.LoadNodeConfig(ctx); err != nil {
 		log.Fatalf("error loading node config: %v", err)
 	}
-
+	// Hydrate in-memory dynamic state from DB once
+	if err := manager.HydrateFromDB(context.Background()); err != nil {
+		log.Printf("Error hydrating dynamic data from DB: %+v", err)
+		return nil, err
+	}
 	return &manager, nil
 }
 
@@ -112,16 +117,6 @@ func (cm *ConfigManager) GetNatsConfig() NatsServerConfig {
 }
 
 func (cm *ConfigManager) GetNodes() []InferenceNodeConfig {
-	// Prefer DB state; fall back to static if DB empty/unavailable
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = cm.ensureDbReady(ctx)
-	if db := cm.sqlDb.GetDb(); db != nil {
-		nodes, err := ReadNodes(ctx, db)
-		if err == nil && len(nodes) > 0 {
-			return nodes
-		}
-	}
 	nodes := make([]InferenceNodeConfig, len(cm.currentConfig.Nodes))
 	copy(nodes, cm.currentConfig.Nodes)
 	return nodes
@@ -136,28 +131,11 @@ func (cm *ConfigManager) getConfig() *Config {
 	return &cm.currentConfig
 }
 
-func (cm *ConfigManager) GetUpgradePlan() UpgradePlan {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = cm.ensureDbReady(ctx)
-	var plan UpgradePlan
-	if ok, err := KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyUpgradePlan, &plan); err == nil && ok {
-		return plan
-	}
-	return cm.currentConfig.UpgradePlan
-}
+func (cm *ConfigManager) GetUpgradePlan() UpgradePlan { return cm.currentConfig.UpgradePlan }
 
 func (cm *ConfigManager) SetUpgradePlan(plan UpgradePlan) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err := cm.ensureDbReady(ctx); err != nil {
-		return err
-	}
-	if err := KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyUpgradePlan, plan); err != nil {
-		return err
-	}
 	cm.currentConfig.UpgradePlan = plan
 	logging.Info("Setting upgrade plan", types.Config, "plan", plan)
 	return nil
@@ -166,14 +144,6 @@ func (cm *ConfigManager) SetUpgradePlan(plan UpgradePlan) error {
 func (cm *ConfigManager) ClearUpgradePlan() error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err := cm.ensureDbReady(ctx); err != nil {
-		return err
-	}
-	if err := KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyUpgradePlan, UpgradePlan{}); err != nil {
-		return err
-	}
 	cm.currentConfig.UpgradePlan = UpgradePlan{}
 	logging.Info("Clearing upgrade plan", types.Config)
 	return nil
@@ -182,52 +152,24 @@ func (cm *ConfigManager) ClearUpgradePlan() error {
 func (cm *ConfigManager) SetHeight(height int64) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := cm.ensureDbReady(ctx); err != nil {
-		return err
-	}
-	if err := KVSetInt64(ctx, cm.sqlDb.GetDb(), kvKeyCurrentHeight, height); err != nil {
-		return err
-	}
 	cm.currentConfig.CurrentHeight = height
 	logging.Info("Setting height", types.Config, "height", height)
 	return nil
 }
 
 func (cm *ConfigManager) GetLastProcessedHeight() int64 {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = cm.ensureDbReady(ctx)
-	if v, ok, err := KVGetInt64(ctx, cm.sqlDb.GetDb(), kvKeyLastProcessedHeight); err == nil && ok {
-		return v
-	}
 	return cm.currentConfig.LastProcessedHeight
 }
 
 func (cm *ConfigManager) SetLastProcessedHeight(height int64) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := cm.ensureDbReady(ctx); err != nil {
-		return err
-	}
-	if err := KVSetInt64(ctx, cm.sqlDb.GetDb(), kvKeyLastProcessedHeight, height); err != nil {
-		return err
-	}
 	cm.currentConfig.LastProcessedHeight = height
 	logging.Info("Setting last processed height", types.Config, "height", height)
 	return nil
 }
 
 func (cm *ConfigManager) GetCurrentNodeVersion() string {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = cm.ensureDbReady(ctx)
-	if v, ok, err := KVGetString(ctx, cm.sqlDb.GetDb(), kvKeyCurrentNodeVersion); err == nil && ok {
-		return v
-	}
 	return cm.currentConfig.CurrentNodeVersion
 }
 
@@ -235,14 +177,6 @@ func (cm *ConfigManager) SetCurrentNodeVersion(version string) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 	oldVersion := cm.currentConfig.CurrentNodeVersion
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := cm.ensureDbReady(ctx); err != nil {
-		return err
-	}
-	if err := KVSetString(ctx, cm.sqlDb.GetDb(), kvKeyCurrentNodeVersion, version); err != nil {
-		return err
-	}
 	cm.currentConfig.CurrentNodeVersion = version
 	logging.Info("Setting current node version", types.Config, "oldVersion", oldVersion, "newVersion", version)
 	return nil
@@ -311,26 +245,12 @@ func (cm *ConfigManager) GetHeight() int64 {
 }
 
 func (cm *ConfigManager) GetLastUsedVersion() string {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = cm.ensureDbReady(ctx)
-	if v, ok, err := KVGetString(ctx, cm.sqlDb.GetDb(), kvKeyLastUsedVersion); err == nil && ok {
-		return v
-	}
 	return cm.currentConfig.LastUsedVersion
 }
 
 func (cm *ConfigManager) SetLastUsedVersion(version string) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := cm.ensureDbReady(ctx); err != nil {
-		return err
-	}
-	if err := KVSetString(ctx, cm.sqlDb.GetDb(), kvKeyLastUsedVersion, version); err != nil {
-		return err
-	}
 	cm.currentConfig.LastUsedVersion = version
 	logging.Info("Setting last used version", types.Config, "version", version)
 	return nil
@@ -345,14 +265,6 @@ func (cm *ConfigManager) ShouldRefreshClients() bool {
 func (cm *ConfigManager) SetPreviousSeed(seed SeedInfo) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := cm.ensureDbReady(ctx); err != nil {
-		return err
-	}
-	if err := KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyPreviousSeed, seed); err != nil {
-		return err
-	}
 	cm.currentConfig.PreviousSeed = seed
 	logging.Info("Setting previous seed", types.Config, "seed", seed)
 	return nil
@@ -361,22 +273,10 @@ func (cm *ConfigManager) SetPreviousSeed(seed SeedInfo) error {
 func (cm *ConfigManager) MarkPreviousSeedClaimed() error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := cm.ensureDbReady(ctx); err != nil {
-		return err
-	}
-	// Load, set, save
 	prev := cm.currentConfig.PreviousSeed
-	if ok, err := KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyPreviousSeed, &prev); err == nil && ok {
-		// loaded from DB
-	}
 	prev.Claimed = true
-	if err := KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyPreviousSeed, prev); err != nil {
-		return err
-	}
 	cm.currentConfig.PreviousSeed = prev
-	logging.Info("Marking previous seed as claimed", types.Config, "epochIndex", prev.EpochIndex)
+	logging.Info("Marking previous seed as claimed", types.Config, "epochIndex", cm.currentConfig.PreviousSeed.EpochIndex)
 	return nil
 }
 
@@ -386,67 +286,30 @@ func (cm *ConfigManager) IsPreviousSeedClaimed() bool {
 }
 
 func (cm *ConfigManager) GetPreviousSeed() SeedInfo {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = cm.ensureDbReady(ctx)
-	var s SeedInfo
-	if ok, err := KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyPreviousSeed, &s); err == nil && ok {
-		return s
-	}
 	return cm.currentConfig.PreviousSeed
 }
 
 func (cm *ConfigManager) SetCurrentSeed(seed SeedInfo) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := cm.ensureDbReady(ctx); err != nil {
-		return err
-	}
-	if err := KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyCurrentSeed, seed); err != nil {
-		return err
-	}
 	cm.currentConfig.CurrentSeed = seed
 	logging.Info("Setting current seed", types.Config, "seed", seed)
 	return nil
 }
 
 func (cm *ConfigManager) GetCurrentSeed() SeedInfo {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = cm.ensureDbReady(ctx)
-	var s SeedInfo
-	if ok, err := KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyCurrentSeed, &s); err == nil && ok {
-		return s
-	}
 	return cm.currentConfig.CurrentSeed
 }
 
 func (cm *ConfigManager) SetUpcomingSeed(seed SeedInfo) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := cm.ensureDbReady(ctx); err != nil {
-		return err
-	}
-	if err := KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyUpcomingSeed, seed); err != nil {
-		return err
-	}
 	cm.currentConfig.UpcomingSeed = seed
 	logging.Info("Setting upcoming seed", types.Config, "seed", seed)
 	return nil
 }
 
 func (cm *ConfigManager) GetUpcomingSeed() SeedInfo {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = cm.ensureDbReady(ctx)
-	var s SeedInfo
-	if ok, err := KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyUpcomingSeed, &s); err == nil && ok {
-		return s
-	}
 	return cm.currentConfig.UpcomingSeed
 }
 
@@ -456,14 +319,6 @@ func (cm *ConfigManager) GetUpcomingSeed() SeedInfo {
 func (cm *ConfigManager) SetNodes(nodes []InferenceNodeConfig) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err := cm.ensureDbReady(ctx); err != nil {
-		return err
-	}
-	if err := WriteNodes(ctx, cm.sqlDb.GetDb(), nodes); err != nil {
-		return err
-	}
 	cm.currentConfig.Nodes = nodes
 	logging.Info("Setting nodes", types.Config, "nodes", nodes)
 	return nil
@@ -475,16 +330,7 @@ func (cm *ConfigManager) CreateWorkerKey() (string, error) {
 	workerPublicKeyString := base64.StdEncoding.EncodeToString(workerPublicKey.Bytes())
 	workerPrivateKey := workerKey.Bytes()
 	workerPrivateKeyString := base64.StdEncoding.EncodeToString(workerPrivateKey)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err := cm.ensureDbReady(ctx); err != nil {
-		return "", err
-	}
-	// Persist to DB as dynamic data
 	cfg := MLNodeKeyConfig{WorkerPublicKey: workerPublicKeyString, WorkerPrivateKey: workerPrivateKeyString}
-	if err := KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyMLNodeKeyConfig, cfg); err != nil {
-		return "", err
-	}
 	cm.currentConfig.MLNodeKeyConfig = cfg
 	return workerPublicKeyString, nil
 }
@@ -688,16 +534,15 @@ func (cm *ConfigManager) migrateDynamicDataToDb(ctx context.Context) error {
 		_ = KVSetInt64(ctx, cm.sqlDb.GetDb(), kvKeyLastProcessedHeight, config.LastProcessedHeight)
 	}
 
-	// Seeds
-	var tmp SeedInfo
-	if ok, _ := func() (bool, error) { return KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyCurrentSeed, &tmp) }(); !ok && (config.CurrentSeed.Seed != 0 || config.CurrentSeed.Signature != "") {
-		_ = KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyCurrentSeed, config.CurrentSeed)
+	// Seeds (migrate once into typed table if not already present)
+	if s := config.CurrentSeed; s.Seed != 0 || s.Signature != "" {
+		_ = SetActiveSeed(ctx, cm.sqlDb.GetDb(), "current", s)
 	}
-	if ok, _ := func() (bool, error) { return KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyPreviousSeed, &tmp) }(); !ok && (config.PreviousSeed.Seed != 0 || config.PreviousSeed.Signature != "") {
-		_ = KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyPreviousSeed, config.PreviousSeed)
+	if s := config.PreviousSeed; s.Seed != 0 || s.Signature != "" {
+		_ = SetActiveSeed(ctx, cm.sqlDb.GetDb(), "previous", s)
 	}
-	if ok, _ := func() (bool, error) { return KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyUpcomingSeed, &tmp) }(); !ok && (config.UpcomingSeed.Seed != 0 || config.UpcomingSeed.Signature != "") {
-		_ = KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyUpcomingSeed, config.UpcomingSeed)
+	if s := config.UpcomingSeed; s.Seed != 0 || s.Signature != "" {
+		_ = SetActiveSeed(ctx, cm.sqlDb.GetDb(), "upcoming", s)
 	}
 
 	// Upgrade plan
@@ -731,6 +576,143 @@ func (cm *ConfigManager) migrateDynamicDataToDb(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// HydrateFromDB loads dynamic fields from DB into memory ONCE during startup.
+func (cm *ConfigManager) HydrateFromDB(_ context.Context) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = cm.ensureDbReady(ctx)
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+	if db := cm.sqlDb.GetDb(); db != nil {
+		if nodes, err := ReadNodes(ctx, db); err == nil && len(nodes) >= 0 {
+			cm.currentConfig.Nodes = nodes
+		}
+		if s, ok, err := GetActiveSeed(ctx, db, "current"); err == nil && ok {
+			cm.currentConfig.CurrentSeed = s
+		}
+		if s, ok, err := GetActiveSeed(ctx, db, "previous"); err == nil && ok {
+			cm.currentConfig.PreviousSeed = s
+		}
+		if s, ok, err := GetActiveSeed(ctx, db, "upcoming"); err == nil && ok {
+			cm.currentConfig.UpcomingSeed = s
+		}
+		if v, ok, err := KVGetInt64(ctx, db, kvKeyCurrentHeight); err == nil && ok {
+			cm.currentConfig.CurrentHeight = v
+		}
+		if v, ok, err := KVGetInt64(ctx, db, kvKeyLastProcessedHeight); err == nil && ok {
+			cm.currentConfig.LastProcessedHeight = v
+		}
+		var up UpgradePlan
+		if ok, err := KVGetJSON(ctx, db, kvKeyUpgradePlan, &up); err == nil && ok {
+			cm.currentConfig.UpgradePlan = up
+		}
+		if v, ok, err := KVGetString(ctx, db, kvKeyCurrentNodeVersion); err == nil && ok {
+			cm.currentConfig.CurrentNodeVersion = v
+		}
+		if v, ok, err := KVGetString(ctx, db, kvKeyLastUsedVersion); err == nil && ok {
+			cm.currentConfig.LastUsedVersion = v
+		}
+		var vp ValidationParamsCache
+		if ok, err := KVGetJSON(ctx, db, kvKeyValidationParams, &vp); err == nil && ok {
+			cm.currentConfig.ValidationParams = vp
+		}
+		var bp BandwidthParamsCache
+		if ok, err := KVGetJSON(ctx, db, kvKeyBandwidthParams, &bp); err == nil && ok {
+			cm.currentConfig.BandwidthParams = bp
+		}
+		var mk MLNodeKeyConfig
+		if ok, err := KVGetJSON(ctx, db, kvKeyMLNodeKeyConfig, &mk); err == nil && ok {
+			cm.currentConfig.MLNodeKeyConfig = mk
+		}
+	}
+	return nil
+}
+
+// StartAutoFlush launches a background goroutine that periodically flushes dynamic fields to DB.
+func (cm *ConfigManager) StartAutoFlush(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	go func() {
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				_ = cm.flushToDB(context.Background())
+				return
+			case <-t.C:
+				_ = cm.flushToDB(context.Background())
+			}
+		}
+	}()
+}
+
+// FlushNow flushes dynamic fields immediately.
+func (cm *ConfigManager) FlushNow(ctx context.Context) error {
+	return cm.flushToDB(ctx)
+}
+
+// flushToDB writes all dynamic fields if there were any changes since last flush.
+func (cm *ConfigManager) flushToDB(_ context.Context) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := cm.ensureDbReady(ctx); err != nil {
+		return err
+	}
+	cm.mutex.Lock()
+	dirty := cm.dirty
+	cfg := cm.currentConfig
+	cm.dirty = dirtyState{}
+	cm.mutex.Unlock()
+
+	if !dirty.any() {
+		return nil
+	}
+	db := cm.sqlDb.GetDb()
+	if db == nil {
+		return nil
+	}
+
+	if dirty.Nodes {
+		if err := ReplaceInferenceNodes(ctx, db, cfg.Nodes); err != nil {
+			return err
+		}
+	}
+	if dirty.Seeds {
+		_ = SetActiveSeed(ctx, db, "current", cfg.CurrentSeed)
+		_ = SetActiveSeed(ctx, db, "previous", cfg.PreviousSeed)
+		_ = SetActiveSeed(ctx, db, "upcoming", cfg.UpcomingSeed)
+	}
+	if dirty.Heights {
+		_ = KVSetInt64(ctx, db, kvKeyCurrentHeight, cfg.CurrentHeight)
+		_ = KVSetInt64(ctx, db, kvKeyLastProcessedHeight, cfg.LastProcessedHeight)
+	}
+	if dirty.Versions {
+		_ = KVSetJSON(ctx, db, kvKeyUpgradePlan, cfg.UpgradePlan)
+		_ = KVSetString(ctx, db, kvKeyCurrentNodeVersion, cfg.CurrentNodeVersion)
+		_ = KVSetString(ctx, db, kvKeyLastUsedVersion, cfg.LastUsedVersion)
+		_ = KVSetJSON(ctx, db, kvKeyMLNodeKeyConfig, cfg.MLNodeKeyConfig)
+	}
+	if dirty.ValidationParams {
+		_ = KVSetJSON(ctx, db, kvKeyValidationParams, cfg.ValidationParams)
+	}
+	if dirty.BandwidthParams {
+		_ = KVSetJSON(ctx, db, kvKeyBandwidthParams, cfg.BandwidthParams)
+	}
+	return nil
+}
+
+type dirtyState struct {
+	Nodes            bool
+	Seeds            bool
+	Heights          bool
+	Versions         bool
+	ValidationParams bool
+	BandwidthParams  bool
+}
+
+func (d dirtyState) any() bool {
+	return d.Nodes || d.Seeds || d.Heights || d.Versions || d.ValidationParams || d.BandwidthParams
 }
 
 // ensureDbReady pings the DB and attempts to reopen if needed

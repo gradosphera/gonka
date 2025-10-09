@@ -130,6 +130,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // Ensure resources are cleaned up
 
+	// Start periodic config auto-flush of dynamic data to DB
+	config.StartAutoFlush(ctx, 60*time.Second)
+
 	training.NewAssigner(recorder, &tendermintClient, ctx)
 	trainingExecutor := training.NewExecutor(ctx, nodeBroker, recorder)
 
