@@ -494,7 +494,8 @@ func parseInferenceNodesFromNodeConfigJson(nodeConfigPath string) ([]InferenceNo
 }
 
 func (cm *ConfigManager) migrateDynamicDataToDb(ctx context.Context) error {
-	err := WriteNodes(ctx, cm.sqlDb.GetDb(), cm.GetNodes())
+	config := cm.currentConfig
+	err := WriteNodes(ctx, cm.sqlDb.GetDb(), config.Nodes)
 	if err != nil {
 		logging.Error("Error writing nodes to DB", types.Config, "error", err)
 		return err
