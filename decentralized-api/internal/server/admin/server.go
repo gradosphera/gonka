@@ -72,6 +72,9 @@ func NewServer(
 
 	g.POST("debug/create-dummy-training-task", s.postDummyTrainingTask)
 
+	// Export DB state (human-readable JSON) for admin purposes
+	g.GET("export/db", s.exportDb)
+
 	// Manual validation recovery and claim endpoint
 	g.POST("claim-reward/recover", s.postClaimRewardRecover)
 

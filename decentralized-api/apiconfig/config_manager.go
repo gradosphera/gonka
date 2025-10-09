@@ -120,6 +120,11 @@ func (cm *ConfigManager) GetNodes() []InferenceNodeConfig {
 	return nodes
 }
 
+// SqlDb returns the configured SQL database handle if available
+func (cm *ConfigManager) SqlDb() SqlDatabase {
+	return cm.sqlDb
+}
+
 func (cm *ConfigManager) getConfig() *Config {
 	return &cm.currentConfig
 }

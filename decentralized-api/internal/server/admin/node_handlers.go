@@ -221,3 +221,21 @@ func (s *Server) disableNode(c echo.Context) error {
 		"node_id": nodeId,
 	})
 }
+
+// exportDb returns a human-readable JSON snapshot of DB-backed dynamic config
+func (s *Server) exportDb(c echo.Context) error {
+	ctx := c.Request().Context()
+	db := s.configManager.SqlDb()
+	if db == nil || db.GetDb() == nil {
+		logging.Error("DB not initialized", types.Nodes)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "db not initialized"})
+	}
+	nodes, err := apiconfig.ReadNodes(ctx, db.GetDb())
+	if err != nil {
+		logging.Error("Failed to read nodes from DB", types.Nodes, "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"nodes": nodes,
+	})
+}

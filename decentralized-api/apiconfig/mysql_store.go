@@ -31,6 +31,7 @@ type SqlDatabase interface {
 
 type MySqlDb struct {
 	config MySqlConfig
+	db     *sql.DB
 }
 
 func NewMySQLDb(cfg MySqlConfig) *MySqlDb {
@@ -40,49 +41,52 @@ func NewMySQLDb(cfg MySqlConfig) *MySqlDb {
 func (d *MySqlDb) BootstrapLocal(ctx context.Context) error {
 	// Try normal connect; if db missing, create it by connecting without a default DB.
 	appDB, err := OpenMySQL(d.config)
-	if err == nil {
-		if pingErr := appDB.PingContext(ctx); pingErr == nil {
-			defer appDB.Close()
-			return EnsureSchema(ctx, appDB)
-		} else if isUnknownDatabase(pingErr) {
-			_ = appDB.Close()
-			// Reconnect without database and create it
-			temp := d.config
-			temp.Database = ""
-			noDB, err2 := OpenMySQL(temp)
-			if err2 != nil {
-				return err2
-			}
-			if err := createDatabaseIfNotExists(ctx, noDB, d.config.Database); err != nil {
-				_ = noDB.Close()
-				return err
-			}
-			_ = noDB.Close()
-			// Connect again to the newly created DB and ensure schema
-			withDB, err3 := OpenMySQL(d.config)
-			if err3 != nil {
-				return err3
-			}
-			defer withDB.Close()
-			if err := withDB.PingContext(ctx); err != nil {
-				return err
-			}
-			return EnsureSchema(ctx, withDB)
-		} else {
-			return pingErr
-		}
+	if err != nil {
+		return err
 	}
-	// If open failed, surface the error to allow operator to fix local DSN/server.
-	return err
+	if pingErr := appDB.PingContext(ctx); pingErr == nil {
+		if err := EnsureSchema(ctx, appDB); err != nil {
+			_ = appDB.Close()
+			return err
+		}
+		d.db = appDB
+		return nil
+	} else if isUnknownDatabase(pingErr) {
+		_ = appDB.Close()
+		// Reconnect without database and create it
+		temp := d.config
+		temp.Database = ""
+		noDB, err2 := OpenMySQL(temp)
+		if err2 != nil {
+			return err2
+		}
+		if err := createDatabaseIfNotExists(ctx, noDB, d.config.Database); err != nil {
+			_ = noDB.Close()
+			return err
+		}
+		_ = noDB.Close()
+		// Connect again to the newly created DB and ensure schema
+		withDB, err3 := OpenMySQL(d.config)
+		if err3 != nil {
+			return err3
+		}
+		if err := withDB.PingContext(ctx); err != nil {
+			_ = withDB.Close()
+			return err
+		}
+		if err := EnsureSchema(ctx, withDB); err != nil {
+			_ = withDB.Close()
+			return err
+		}
+		d.db = withDB
+		return nil
+	} else {
+		_ = appDB.Close()
+		return pingErr
+	}
 }
 
-func (d *MySqlDb) GetDb() *sql.DB {
-	db, err := OpenMySQL(d.config)
-	if err != nil {
-		return nil
-	}
-	return db
-}
+func (d *MySqlDb) GetDb() *sql.DB { return d.db }
 
 // BuildDSN constructs a DSN string for go-sql-driver/mysql using only pure Go bits.
 func (c MySqlConfig) BuildDSN() string {
@@ -258,11 +262,63 @@ ON DUPLICATE KEY UPDATE
 	return tx.Commit()
 }
 
-// ExampleWriteNodes is an example helper showing how to connect and write nodes to MySQL.
-// It is placed in the same package and directory as config.go as requested.
+// WriteNodes is a convenience wrapper for UpsertInferenceNodes.
 func WriteNodes(ctx context.Context, db *sql.DB, nodes []InferenceNodeConfig) error {
-	if err := EnsureSchema(ctx, db); err != nil {
-		return err
-	}
 	return UpsertInferenceNodes(ctx, db, nodes)
+}
+
+// ReadNodes reads all nodes from the database and reconstructs InferenceNodeConfig entries.
+func ReadNodes(ctx context.Context, db *sql.DB) ([]InferenceNodeConfig, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT id, host, inference_segment, inference_port, poc_segment, poc_port, max_concurrent, models_json, hardware_json
+FROM inference_nodes ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []InferenceNodeConfig
+	for rows.Next() {
+		var (
+			id          string
+			host        string
+			infSeg      string
+			infPort     int
+			pocSeg      string
+			pocPort     int
+			maxConc     int
+			modelsRaw   []byte
+			hardwareRaw []byte
+		)
+		if err := rows.Scan(&id, &host, &infSeg, &infPort, &pocSeg, &pocPort, &maxConc, &modelsRaw, &hardwareRaw); err != nil {
+			return nil, err
+		}
+		var models map[string]ModelConfig
+		if len(modelsRaw) > 0 {
+			if err := json.Unmarshal(modelsRaw, &models); err != nil {
+				return nil, err
+			}
+		}
+		var hardware []Hardware
+		if len(hardwareRaw) > 0 {
+			if err := json.Unmarshal(hardwareRaw, &hardware); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, InferenceNodeConfig{
+			Host:             host,
+			InferenceSegment: infSeg,
+			InferencePort:    infPort,
+			PoCSegment:       pocSeg,
+			PoCPort:          pocPort,
+			Models:           models,
+			Id:               id,
+			MaxConcurrent:    maxConc,
+			Hardware:         hardware,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
