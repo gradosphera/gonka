@@ -129,7 +129,7 @@ func TestVestingIntegration_ParameterBased(t *testing.T) {
 	participantAddrStr := sample.AccAddress()
 
 	// Test case 1: Work coins should use vesting when WorkVestingPeriod > 0
-	workAmount := uint64(1000)
+	workAmount := int64(1000)
 	workVestingPeriod := uint64(5)
 
 	// Mock expectations for vesting flow (escrow payment goes through inference module)
@@ -143,7 +143,7 @@ func TestVestingIntegration_ParameterBased(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test case 2: Reward coins should use vesting when RewardVestingPeriod > 0
-	rewardAmount := uint64(2000)
+	rewardAmount := int64(2000)
 	rewardVestingPeriod := uint64(10)
 
 	expectedRewardCoins := sdk.NewCoins(sdk.NewInt64Coin(types.BaseCoin, int64(rewardAmount)))
@@ -170,7 +170,7 @@ func TestVestingIntegration_DirectPayment(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test: Zero vesting period should result in direct payment
-	amount := uint64(1000)
+	amount := int64(1000)
 	zeroVestingPeriod := uint64(0)
 
 	expectedCoins := sdk.NewCoins(sdk.NewInt64Coin(types.BaseCoin, int64(amount)))
@@ -259,7 +259,7 @@ func TestVestingIntegration_MixedVestingScenario(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test case 1: Work payment should be direct (vesting period = 0)
-	workAmount := uint64(500)
+	workAmount := int64(500)
 	workVestingPeriod := uint64(0)
 
 	expectedWorkCoins := sdk.NewCoins(sdk.NewInt64Coin(types.BaseCoin, int64(workAmount)))
@@ -271,7 +271,7 @@ func TestVestingIntegration_MixedVestingScenario(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test case 2: Reward payment should be vested (vesting period = 7)
-	rewardAmount := uint64(1500)
+	rewardAmount := int64(1500)
 	rewardVestingPeriod := uint64(7)
 
 	expectedRewardCoins := sdk.NewCoins(sdk.NewInt64Coin(types.BaseCoin, int64(rewardAmount)))
@@ -292,7 +292,7 @@ func TestVestingIntegration_TopMinerRewards(t *testing.T) {
 	k.SetParams(ctx, params)
 
 	participantAddrStr := sample.AccAddress()
-	rewardAmount := uint64(5000)
+	rewardAmount := int64(5000)
 	topMinerVestingPeriod := uint64(15)
 
 	expectedCoins := sdk.NewCoins(sdk.NewInt64Coin(types.BaseCoin, int64(rewardAmount)))
@@ -330,7 +330,7 @@ func TestVestingIntegration_ErrorHandling(t *testing.T) {
 	k, _, ctx, mocks := setupKeeperWithMocksForStreamVesting(t)
 
 	participantAddrStr := sample.AccAddress()
-	amount := uint64(1000)
+	amount := int64(1000)
 	vestingPeriod := uint64(5)
 
 	expectedCoins := sdk.NewCoins(sdk.NewInt64Coin(types.BaseCoin, int64(amount)))

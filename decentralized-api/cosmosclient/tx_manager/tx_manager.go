@@ -423,7 +423,7 @@ func (m *manager) broadcastMessage(id string, rawTx sdk.Msg) (*sdk.TxResponse, t
 
 		execMsg := authztypes.NewMsgExec(granteeAddress, []sdk.Msg{rawTx})
 		finalMsg = &execMsg
-		logging.Info("Using authz MsgExec", types.Messages, "grantee", granteeAddress.String(), "originalMsgType", originalMsgType)
+		logging.Debug("Using authz MsgExec", types.Messages, "grantee", granteeAddress.String(), "originalMsgType", originalMsgType)
 	}
 
 	unsignedTx, err := factory.BuildUnsignedTx(finalMsg)
@@ -442,6 +442,7 @@ func (m *manager) broadcastMessage(id string, rawTx sdk.Msg) (*sdk.TxResponse, t
 	if resp.Code != 0 {
 		logging.Error("Broadcast failed immediately", types.Messages, "code", resp.Code, "rawLog", resp.RawLog, "tx_id", id, "originalMsgType", originalMsgType)
 	}
+	logging.Debug("Broadcast successful", types.Messages, "tx_id", id, "originalMsgType", originalMsgType, "resp", resp)
 	return resp, timestamp, nil
 }
 

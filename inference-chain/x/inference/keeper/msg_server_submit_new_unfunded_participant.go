@@ -10,8 +10,6 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 )
 
-const FaucetRequests = 1000
-
 func (k msgServer) SubmitNewUnfundedParticipant(goCtx context.Context, msg *types.MsgSubmitNewUnfundedParticipant) (*types.MsgSubmitNewUnfundedParticipantResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
@@ -35,7 +33,6 @@ func (k msgServer) SubmitNewUnfundedParticipant(goCtx context.Context, msg *type
 	k.LogInfo("added account with pubkey", types.Participants, "pubkey", newAccount.GetPubKey(), "address", newAccount.GetAddress())
 
 	k.AccountKeeper.SetAccount(ctx, newAccount)
-	// TODO: Handling the message
 	newParticipant := createNewParticipant(ctx,
 		&types.MsgSubmitNewParticipant{
 			Creator:      msg.GetAddress(),

@@ -32,6 +32,9 @@ func DecodeHex(s string) ([]byte, error) {
 }
 
 func GetResponseHash(bodyBytes []byte) (string, *completionapi.Response, error) {
+	if (bodyBytes == nil) || (len(bodyBytes) == 0) {
+		return "", nil, nil
+	}
 	var response completionapi.Response
 	if err := json.Unmarshal(bodyBytes, &response); err != nil {
 		return "", nil, err

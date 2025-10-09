@@ -14,6 +14,7 @@ import (
 	"decentralized-api/cosmosclient"
 	"decentralized-api/internal/event_listener/chainevents"
 	"decentralized-api/internal/poc"
+	"decentralized-api/internal/validation"
 	"decentralized-api/logging"
 
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
@@ -62,6 +63,7 @@ type OnNewBlockDispatcher struct {
 	setHeightFunc        SetHeightFunc
 	randomSeedManager    poc.RandomSeedManager
 	configManager        *apiconfig.ConfigManager
+	validator            *validation.InferenceValidator
 }
 
 // StatusResponse matches the structure expected by getStatus function
@@ -97,6 +99,7 @@ func NewOnNewBlockDispatcher(
 	randomSeedManager poc.RandomSeedManager,
 	reconciliationConfig MlNodeReconciliationConfig,
 	configManager *apiconfig.ConfigManager,
+	validator *validation.InferenceValidator,
 ) *OnNewBlockDispatcher {
 	return &OnNewBlockDispatcher{
 		nodeBroker:           nodeBroker,
@@ -108,6 +111,7 @@ func NewOnNewBlockDispatcher(
 		setHeightFunc:        setHeightFunc,
 		randomSeedManager:    randomSeedManager,
 		configManager:        configManager,
+		validator:            validator,
 	}
 }
 
@@ -120,6 +124,7 @@ func NewOnNewBlockDispatcherFromCosmosClient(
 	cosmosClient cosmosclient.CosmosMessageClient,
 	phaseTracker *chainphase.ChainPhaseTracker,
 	reconciliationConfig MlNodeReconciliationConfig,
+	validator *validation.InferenceValidator,
 ) *OnNewBlockDispatcher {
 	// Adapt the cosmos client to our minimal interfaces
 	queryClient := cosmosClient.NewInferenceQueryClient()
@@ -143,6 +148,7 @@ func NewOnNewBlockDispatcherFromCosmosClient(
 		randomSeedManager,
 		reconciliationConfig,
 		configManager,
+		validator,
 	)
 }
 
@@ -300,14 +306,14 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 	// Check for PoC start for the next epoch. This is the most important transition.
 	if epochContext.IsStartOfPocStage(blockHeight) {
 
-		logging.Info("IsStartOfPocStage: sending StartPoCEvent to the PoC orchestrator", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
-		d.randomSeedManager.GenerateSeed(epochContext.EpochIndex)
+		logging.Info("DapiStage:IsStartOfPocStage: sending StartPoCEvent to the PoC orchestrator", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
+		d.randomSeedManager.GenerateSeedInfo(epochContext.EpochIndex)
 		return
 	}
 
 	// Check for PoC validation stage transitions
 	if epochContext.IsEndOfPoCStage(blockHeight) {
-		logging.Info("IsEndOfPoCStage. Calling MoveToValidationStage", types.Stages,
+		logging.Info("DapiStage:IsEndOfPoCStage. Calling MoveToValidationStage", types.Stages,
 			"blockHeigh", blockHeight, "blockHash", blockHash)
 		command := broker.NewInitValidateCommand()
 		err := d.nodeBroker.QueueMessage(command)
@@ -318,13 +324,14 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 	}
 
 	if epochContext.IsStartOfPoCValidationStage(blockHeight) {
-		logging.Info("IsStartOfPoCValidationStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
+		logging.Info("DapiStage:IsStartOfPoCValidationStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
 		go func() {
 			d.nodePocOrchestrator.ValidateReceivedBatches(blockHeight)
 		}()
 	}
 
 	if epochContext.IsEndOfPoCValidationStage(blockHeight) {
+		logging.Info("DapiStage:IsEndOfPoCValidationStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
 		command := broker.NewInferenceUpAllCommand()
 		err := d.nodeBroker.QueueMessage(command)
 		if err != nil {
@@ -336,16 +343,41 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 
 	// Check for other stage transitions
 	if epochContext.IsSetNewValidatorsStage(blockHeight) {
-		logging.Info("IsSetNewValidatorsStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
+		logging.Info("DapiStage:IsSetNewValidatorsStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
 		go func() {
 			d.randomSeedManager.ChangeCurrentSeed()
 		}()
 	}
 
 	if epochContext.IsClaimMoneyStage(blockHeight) {
-		logging.Info("IsClaimMoneyStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
+		logging.Info("DapiStage:IsClaimMoneyStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
+
+		// Calculate previous epoch index
+		expectedPreviousEpochIndex := epochContext.EpochIndex - 1
+		// Get the previous epoch seed for validation recovery
+		previousSeed := d.randomSeedManager.GetSeedForEpoch(expectedPreviousEpochIndex)
+
+		// Verify the seed is from the correct epoch
+		if previousSeed.EpochIndex != expectedPreviousEpochIndex {
+			logging.Warn("Previous seed epoch mismatch for recovery", types.Validation,
+				"previousSeedEpoch", previousSeed.EpochIndex,
+				"expectedPreviousEpoch", expectedPreviousEpochIndex,
+				"currentEpoch", epochContext.EpochIndex)
+		}
+
+		// Execute missed validation recovery BEFORE claiming rewards
 		go func() {
-			d.randomSeedManager.RequestMoney()
+			// First, recover any missed validations from the previous epoch
+			d.executeMissedValidationRecoveryWithSeed(expectedPreviousEpochIndex, previousSeed)
+
+			// Then, claim rewards (this ensures we've validated everything before claiming)
+			d.randomSeedManager.RequestMoney(expectedPreviousEpochIndex)
+
+			// Mark the seed as claimed to prevent duplicate claims
+			err := d.configManager.MarkPreviousSeedClaimed()
+			if err != nil {
+				logging.Error("Failed to mark seed as claimed", types.Claims, "epochIndex", expectedPreviousEpochIndex, "error", err)
+			}
 		}()
 	}
 }
@@ -420,6 +452,83 @@ func getCommandForPhase(phaseInfo chainphase.EpochState) (broker.Command, *chan 
 		return cmd, &cmd.Response
 	}
 	return nil, nil
+}
+
+// executeMissedValidationRecoveryWithSeed performs missed validation recovery for the previous epoch
+// This function runs during the Set New Validators stage to recover any missed validations
+// It accepts the seed as a parameter to avoid race conditions with ChangeCurrentSeed()
+func (d *OnNewBlockDispatcher) executeMissedValidationRecoveryWithSeed(previousEpochIndex uint64, previousSeed apiconfig.SeedInfo) {
+	if d.validator == nil {
+		logging.Warn("Missed validation recovery skipped: validator not available", types.ValidationRecovery)
+		return
+	}
+
+	// Check for genesis epoch
+	if previousEpochIndex == 0 && previousSeed.EpochIndex == 0 {
+		logging.Info("Missed validation recovery skipped: genesis epoch", types.ValidationRecovery, "previousEpochIndex", previousEpochIndex)
+		return
+	}
+
+	// Check if seed is valid
+	if previousSeed.Seed == 0 {
+		logging.Warn("Empty seed, try to reproduce", types.ValidationRecovery,
+			"previousEpochIndex", previousEpochIndex,
+			"seedEpochIndex", previousSeed.EpochIndex)
+		regeneratedSeed, err := d.randomSeedManager.CreateNewSeed(previousSeed.EpochIndex)
+		if err != nil {
+			logging.Error("Error regenerating seed", types.ValidationRecovery,
+				"err", err,
+				"previousEpochIndex", previousEpochIndex,
+				"seedEpochIndex", previousSeed.EpochIndex)
+			return
+		}
+		previousSeed.Seed = regeneratedSeed.Seed
+	}
+
+	// Verify seed epoch matches (this should always be true now, but good to verify)
+	if previousSeed.EpochIndex != previousEpochIndex {
+		logging.Warn("Missed validation recovery skipped: seed epoch mismatch", types.ValidationRecovery,
+			"previousEpochIndex", previousEpochIndex,
+			"seedEpochIndex", previousSeed.EpochIndex)
+		return
+	}
+
+	logging.Info("Starting missed validation recovery", types.ValidationRecovery,
+		"previousEpochIndex", previousEpochIndex,
+		"seed", previousSeed.Seed)
+
+	// Detect missed validations for the previous epoch
+	missedInferences, err := d.validator.DetectMissedValidations(previousEpochIndex, previousSeed.Seed)
+	if err != nil {
+		logging.Error("Failed to detect missed validations", types.ValidationRecovery,
+			"previousEpochIndex", previousEpochIndex,
+			"error", err)
+		return
+	}
+
+	if len(missedInferences) == 0 {
+		logging.Info("No missed validations found for recovery", types.ValidationRecovery, "previousEpochIndex", previousEpochIndex)
+		return
+	}
+
+	logging.Info("Found missed validations, executing recovery", types.ValidationRecovery,
+		"previousEpochIndex", previousEpochIndex,
+		"missedCount", len(missedInferences))
+
+	// Execute recovery validations
+	recoveredCount, err := d.validator.ExecuteRecoveryValidations(missedInferences)
+	if err != nil {
+		logging.Warn("Failed to execute recovery validations", types.ValidationRecovery, "error", err)
+	}
+
+	if recoveredCount > 0 {
+		logging.Info("Recovered validations", types.ValidationRecovery, "recoveredCount", recoveredCount)
+		d.validator.WaitForValidationsToBeRecorded()
+	}
+
+	logging.Info("Missed validation recovery completed", types.ValidationRecovery,
+		"previousEpochIndex", previousEpochIndex,
+		"recoveredCount", len(missedInferences))
 }
 
 // parseNewBlockInfo extracts NewBlockInfo from a JSONRPCResponse event

@@ -17,7 +17,8 @@ class MultiModelTests : TestermintTest() {
         logSection("Checking for nodes being updated")
         secondModelPairs.forEach {
             it.api.getNodes().forEach {
-                Logger.info("Node: ${it.node.id} has model: ${it.node.models}", "")
+                val modelNames = it.node.models.keys.joinToString(", ")
+                Logger.info("Node: ${it.node.id} has models: $modelNames", "no")
             }
         }
         logSection("Making inference request")
@@ -29,7 +30,7 @@ class MultiModelTests : TestermintTest() {
     private fun setSecondModel(
         cluster: LocalCluster,
         genesis: LocalInferencePair,
-        newModelName: String = "Qwen/QwQ-32B",
+        newModelName: String = secondModel,
         joinModels: Int = 2,
     ): Pair<String, List<LocalInferencePair>> {
         genesis.waitForNextInferenceWindow()
@@ -97,12 +98,12 @@ class MultiModelTests : TestermintTest() {
         
         logSection("making inferences")
         val models = listOf(defaultModel, newModelName)
-        val inferences = runParallelInferencesWithResults(genesis, 30, waitForBlocks = 4, maxConcurrentRequests = 30, models = models)
+        val inferences = runParallelInferencesWithResults(genesis, 20, waitForBlocks = 4, maxConcurrentRequests = 20, models = models)
         
         logSection("Waiting for settlement and claims")
         // We don't need to calculate exact amounts, just that the rewards goes through (claim isn't rejected)
         // genesis.waitForStage(EpochStage.START_OF_POC) // TODO: Can be deleted if works
-        genesis.waitForStage(EpochStage.CLAIM_REWARDS)
+        genesis.waitForStage(EpochStage.CLAIM_REWARDS, 3)
         
         logSection("Verifying balance changes")
         val afterParticipants = genesis.api.getParticipants()

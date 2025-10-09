@@ -214,9 +214,9 @@ fun calculateBalanceChanges(
             InferenceStatus.VALIDATED.value -> {
                 require(inference.actualCost != null) { "Actual cost is null for validated inference" }
                 require(inference.assignedTo != null) { "Assigned to is null for validated inference" }
-                require(inference.validatedBy.isNotEmpty()) { "Validated by is empty for validated inference" }
+                // ValidatedBy can be empty if the validation was done post-settle
                 require(inference.escrowAmount != null) { "Escrow amount is null for validated inference" }
-                val allValidators = listOf(inference.assignedTo) + inference.validatedBy
+                val allValidators = listOf(inference.assignedTo) + (inference.validatedBy ?: listOf())
                 val workCoins = allValidators.associateWith { validator ->
                     if (validator == inference.assignedTo) {
                         payouts.add(
@@ -297,7 +297,7 @@ fun expectedCoinBalanceChanges(inferences: List<InferencePayload>): Map<String, 
             InferenceStatus.VALIDATED.value -> {
                 require(inference.actualCost != null) { "Actual cost is null for validated inference" }
                 require(inference.assignedTo != null) { "Assigned to is null for validated inference" }
-                val validators = listOf(inference.assignedTo) + inference.validatedBy
+                val validators = listOf(inference.assignedTo) + (inference.validatedBy ?: listOf())
                 validators.forEach { validator ->
                     payouts.add(validator!!, inference.actualCost!! / validators.size, "Validator share (WorkCoins)")
                 }
@@ -365,10 +365,9 @@ fun calculateVestingScheduleChanges(
             InferenceStatus.VALIDATED.value -> {
                 require(inference.actualCost != null) { "Actual cost is null for validated inference" }
                 require(inference.assignedTo != null) { "Assigned to is null for validated inference" }
-                require(inference.validatedBy.isNotEmpty()) { "Validated by is empty for validated inference" }
                 require(inference.escrowAmount != null) { "Escrow amount is null for validated inference" }
                 
-                val allValidators = listOf(inference.assignedTo) + inference.validatedBy
+                val allValidators = listOf(inference.assignedTo) + (inference.validatedBy ?: listOf())
                 
                 // Consumer pays actual cost
                 costs.add(inference.requestedBy!!, inference.actualCost!!)

@@ -1,6 +1,7 @@
 package apiconfig
 
 import (
+	"context"
 	"decentralized-api/logging"
 	"encoding/base64"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/knadh/koanf/parsers/yaml"
@@ -18,6 +20,7 @@ import (
 	"github.com/knadh/koanf/providers/structs"
 	"github.com/knadh/koanf/v2"
 	"github.com/productscience/inference/x/inference/types"
+	"google.golang.org/grpc"
 )
 
 type ConfigManager struct {
@@ -53,7 +56,7 @@ func LoadDefaultConfigManager() (*ConfigManager, error) {
 func (cm *ConfigManager) Write() error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) Load() error {
@@ -91,29 +94,83 @@ func (cm *ConfigManager) getConfig() *Config {
 	return &cm.currentConfig
 }
 
-func (cm *ConfigManager) SetUpgradePlan(plan UpgradePlan) error {
-	cm.currentConfig.UpgradePlan = plan
-	logging.Info("Setting upgrade plan", types.Config, "plan", plan)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
-}
-
 func (cm *ConfigManager) GetUpgradePlan() UpgradePlan {
 	return cm.currentConfig.UpgradePlan
 }
 
+func (cm *ConfigManager) SetUpgradePlan(plan UpgradePlan) error {
+	cm.currentConfig.UpgradePlan = plan
+	logging.Info("Setting upgrade plan", types.Config, "plan", plan)
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
+}
+
+func (cm *ConfigManager) ClearUpgradePlan() error {
+	cm.currentConfig.UpgradePlan = UpgradePlan{}
+	logging.Info("Clearing upgrade plan", types.Config)
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
+}
+
 func (cm *ConfigManager) SetHeight(height int64) error {
 	cm.currentConfig.CurrentHeight = height
-	newVersion, found := cm.currentConfig.NodeVersions.PopIf(height)
-	if found {
-		logging.Info("New Node Version!", types.Upgrades, "version", newVersion, "oldVersion", cm.currentConfig.CurrentNodeVersion)
-		cm.currentConfig.CurrentNodeVersion = newVersion
-	}
 	logging.Info("Setting height", types.Config, "height", height)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
+}
+
+func (cm *ConfigManager) GetLastProcessedHeight() int64 {
+	return cm.currentConfig.LastProcessedHeight
+}
+
+func (cm *ConfigManager) SetLastProcessedHeight(height int64) error {
+	cm.currentConfig.LastProcessedHeight = height
+	logging.Info("Setting last processed height", types.Config, "height", height)
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) GetCurrentNodeVersion() string {
 	return cm.currentConfig.CurrentNodeVersion
+}
+
+func (cm *ConfigManager) SetCurrentNodeVersion(version string) error {
+	oldVersion := cm.currentConfig.CurrentNodeVersion
+	cm.currentConfig.CurrentNodeVersion = version
+
+	logging.Info("Setting current node version", types.Config, "oldVersion", oldVersion, "newVersion", version)
+
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
+}
+
+// SyncVersionFromChain queries the current version from chain and updates config if needed
+// This should be called when the blockchain is ready and connections are stable
+func (cm *ConfigManager) SyncVersionFromChain(cosmosClient CosmosQueryClient) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resp, err := cosmosClient.MLNodeVersion(ctx, &types.QueryGetMLNodeVersionRequest{})
+	if err != nil {
+		logging.Warn("Failed to sync MLNode version from chain, keeping current version",
+			types.Config, "error", err)
+		return err
+	}
+
+	chainVersion := resp.MlnodeVersion.CurrentVersion
+	if chainVersion == "" {
+		logging.Warn("Chain version is empty", types.Config)
+	}
+
+	currentVersion := cm.GetCurrentNodeVersion()
+	if chainVersion != currentVersion {
+		logging.Info("Version mismatch detected - updating from chain", types.Config,
+			"currentVersion", currentVersion, "chainVersion", chainVersion)
+		return cm.SetCurrentNodeVersion(chainVersion)
+	}
+
+	logging.Info("Version sync complete - no changes needed", types.Config, "version", currentVersion)
+	return nil
+}
+
+// CosmosQueryClient defines interface for querying version from cosmos
+type CosmosQueryClient interface {
+	MLNodeVersion(ctx context.Context, req *types.QueryGetMLNodeVersionRequest, opts ...grpc.CallOption) (*types.QueryGetMLNodeVersionResponse, error)
 }
 
 func (cm *ConfigManager) SetValidationParams(params ValidationParamsCache) error {
@@ -121,7 +178,7 @@ func (cm *ConfigManager) SetValidationParams(params ValidationParamsCache) error
 	defer cm.mutex.Unlock()
 	cm.currentConfig.ValidationParams = params
 	logging.Info("Setting validation params", types.Config, "params", params)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) GetValidationParams() ValidationParamsCache {
@@ -133,29 +190,47 @@ func (cm *ConfigManager) SetBandwidthParams(params BandwidthParamsCache) error {
 	defer cm.mutex.Unlock()
 	cm.currentConfig.BandwidthParams = params
 	logging.Info("Setting bandwidth params", types.Config, "params", params)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) GetBandwidthParams() BandwidthParamsCache {
 	return cm.currentConfig.BandwidthParams
 }
 
-func (cm *ConfigManager) AddNodeVersion(height int64, version string) error {
-	if !cm.currentConfig.NodeVersions.Insert(height, version) {
-		return nil
-	}
-	logging.Info("Adding node version", types.Upgrades, "height", height, "version", version)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
-}
-
 func (cm *ConfigManager) GetHeight() int64 {
 	return cm.currentConfig.CurrentHeight
+}
+
+func (cm *ConfigManager) GetLastUsedVersion() string {
+	return cm.currentConfig.LastUsedVersion
+}
+
+func (cm *ConfigManager) SetLastUsedVersion(version string) error {
+	cm.currentConfig.LastUsedVersion = version
+	logging.Info("Setting last used version", types.Config, "version", version)
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
+}
+
+func (cm *ConfigManager) ShouldRefreshClients() bool {
+	currentVersion := cm.GetCurrentNodeVersion()
+	lastUsedVersion := cm.GetLastUsedVersion()
+	return currentVersion != lastUsedVersion
 }
 
 func (cm *ConfigManager) SetPreviousSeed(seed SeedInfo) error {
 	cm.currentConfig.PreviousSeed = seed
 	logging.Info("Setting previous seed", types.Config, "seed", seed)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
+}
+
+func (cm *ConfigManager) MarkPreviousSeedClaimed() error {
+	cm.currentConfig.PreviousSeed.Claimed = true
+	logging.Info("Marking previous seed as claimed", types.Config, "epochIndex", cm.currentConfig.PreviousSeed.EpochIndex)
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
+}
+
+func (cm *ConfigManager) IsPreviousSeedClaimed() bool {
+	return cm.currentConfig.PreviousSeed.Claimed
 }
 
 func (cm *ConfigManager) GetPreviousSeed() SeedInfo {
@@ -165,7 +240,7 @@ func (cm *ConfigManager) GetPreviousSeed() SeedInfo {
 func (cm *ConfigManager) SetCurrentSeed(seed SeedInfo) error {
 	cm.currentConfig.CurrentSeed = seed
 	logging.Info("Setting current seed", types.Config, "seed", seed)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) GetCurrentSeed() SeedInfo {
@@ -175,7 +250,7 @@ func (cm *ConfigManager) GetCurrentSeed() SeedInfo {
 func (cm *ConfigManager) SetUpcomingSeed(seed SeedInfo) error {
 	cm.currentConfig.UpcomingSeed = seed
 	logging.Info("Setting upcoming seed", types.Config, "seed", seed)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) GetUpcomingSeed() SeedInfo {
@@ -185,7 +260,7 @@ func (cm *ConfigManager) GetUpcomingSeed() SeedInfo {
 func (cm *ConfigManager) SetNodes(nodes []InferenceNodeConfig) error {
 	cm.currentConfig.Nodes = nodes
 	logging.Info("Setting nodes", types.Config, "nodes", nodes)
-	return writeConfig(cm.currentConfig, cm.WriterProvider.GetWriter())
+	return writeConfig(cm.currentConfig, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) CreateWorkerKey() (string, error) {
@@ -277,10 +352,17 @@ func readConfig(provider koanf.Provider) (Config, error) {
 	if err := loadNodeConfig(&config); err != nil {
 		log.Fatalf("error loading node config: %v", err)
 	}
+
 	return config, nil
 }
 
-func writeConfig(config Config, writer WriteCloser) error {
+func writeConfig(config Config, writerProvider WriteCloserProvider) error {
+	// Skip writing in tests where WriterProvider is nil
+	if writerProvider == nil {
+		return nil
+	}
+
+	writer := writerProvider.GetWriter()
 	k := koanf.New(".")
 	parser := yaml.Parser()
 	err := k.Load(structs.Provider(config, "koanf"), nil)

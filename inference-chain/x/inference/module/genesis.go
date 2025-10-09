@@ -25,18 +25,20 @@ var IgnoreDuplicateDenomRegistration bool
 func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) {
 	// Observability: start of InitGenesis
 	k.LogInfo("InitGenesis: starting module genesis", types.System)
-	// PRTODO: set active participants here, but how?
-	// Set all the epochGroupData
-	// Add explicit InitGenesis method for setting epoch data
-	/*	for _, elem := range genState.EpochGroupDataList {
-		k.SetEpochGroupData(ctx, elem)
-	}*/
 	InitGenesisEpoch(ctx, k)
 
 	InitHoldingAccounts(ctx, k, genState)
 
 	// Init empty TokenomicsData
 	k.SetTokenomicsData(ctx, types.TokenomicsData{})
+
+	// Set MLNode version with default if not defined
+	if genState.MlnodeVersion != nil {
+		k.SetMLNodeVersion(ctx, *genState.MlnodeVersion)
+	} else {
+		// Set default MLNode version
+		k.SetMLNodeVersion(ctx, types.MLNodeVersion{CurrentVersion: "v3.0.8"})
+	}
 
 	k.SetContractsParams(ctx, genState.CosmWasmParams)
 
@@ -219,6 +221,10 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	contractsParams, found := k.GetContractsParams(ctx)
 	if found {
 		genesis.CosmWasmParams = contractsParams
+	}
+	mlnodeVersion, found := k.GetMLNodeVersion(ctx)
+	if found {
+		genesis.MlnodeVersion = &mlnodeVersion
 	}
 	genesis.ModelList = getModels(&ctx, &k)
 	// Export participants

@@ -2,15 +2,17 @@ package keeper_test
 
 import (
 	"context"
+	"log"
+	"testing"
+
 	"github.com/cosmos/cosmos-sdk/x/group"
 	"github.com/productscience/inference/testutil"
 	keeper2 "github.com/productscience/inference/testutil/keeper"
+	"github.com/productscience/inference/x/inference/calculations"
 	"github.com/productscience/inference/x/inference/keeper"
 	"github.com/productscience/inference/x/inference/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-	"log"
-	"testing"
 )
 
 const INFERENCE_ID = "inferenceId"
@@ -23,7 +25,7 @@ func TestMsgServer_Validation(t *testing.T) {
 	k.SetModel(ctx, model)
 	StubModelSubgroup(t, ctx, k, inferenceHelper.Mocks, model)
 
-	expected, err := inferenceHelper.StartInference("promptPayload", model.Id, 10020220, keeper.DefaultMaxTokens)
+	expected, err := inferenceHelper.StartInference("promptPayload", model.Id, 10020220, calculations.DefaultMaxTokens)
 	require.NoError(t, err)
 	_, err = inferenceHelper.FinishInference()
 	require.NoError(t, err)
@@ -56,7 +58,7 @@ func TestMsgServer_Validation_Invalidate(t *testing.T) {
 	k.SetModel(ctx, model)
 	StubModelSubgroup(t, ctx, k, inferenceHelper.Mocks, model)
 
-	expected, err := inferenceHelper.StartInference("promptPayload", model.Id, 10020220, keeper.DefaultMaxTokens)
+	expected, err := inferenceHelper.StartInference("promptPayload", model.Id, 10020220, calculations.DefaultMaxTokens)
 	require.NoError(t, err)
 	_, err = inferenceHelper.FinishInference()
 	require.NoError(t, err)
@@ -119,7 +121,7 @@ func TestMsgServer_NoInference(t *testing.T) {
 func TestMsgServer_NotFinished(t *testing.T) {
 	inferenceHelper, _, ctx := NewMockInferenceHelper(t)
 	requestTimestamp := int64(10020220)
-	expected, err := inferenceHelper.StartInference("promptPayload", "model1", requestTimestamp, keeper.DefaultMaxTokens)
+	expected, err := inferenceHelper.StartInference("promptPayload", "model1", requestTimestamp, calculations.DefaultMaxTokens)
 	require.NoError(t, err)
 	_, err = inferenceHelper.MessageServer.Validation(ctx, &types.MsgValidation{
 		InferenceId: expected.InferenceId,

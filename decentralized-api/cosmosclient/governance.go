@@ -16,9 +16,11 @@ type ProposalData struct {
 }
 
 func SubmitProposal(cosmosClient CosmosMessageClient, msg sdk.Msg, proposalData *ProposalData) error {
+	// cannot return err with fixed amount
+	coins, _ := types.GetCoins(100000000)
 	proposalMsg, err := v1.NewMsgSubmitProposal(
 		[]sdk.Msg{msg},
-		types.GetCoins(100000000), // FIXME: this should be equal to min deposit
+		coins, // FIXME: this should be equal to min deposit
 		cosmosClient.GetAccountAddress(),
 		proposalData.Metadata,
 		proposalData.Title,

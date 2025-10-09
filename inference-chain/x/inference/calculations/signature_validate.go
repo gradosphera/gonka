@@ -128,7 +128,7 @@ func getSignatureBytes(components SignatureComponents, signatureType SignatureTy
 	case TransferAgent:
 		bytes = getTransferBytes(components)
 	case ExecutorAgent:
-		bytes = getTransferBytes(components) // For now, use the same as TransferAgent
+		bytes = getTransferBytes(components)
 	}
 
 	return bytes

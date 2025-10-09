@@ -6,13 +6,13 @@ This directory contains the nginx reverse proxy configuration that consolidates 
 
 The nginx proxy routes requests to different backend services based on URL paths:
 
-- `/api/` → Main application API (port 9000)
+- `/api/v1/` → Main application API v1 (proxies to backend `/v1/`)
+- `/v1/` → Direct API v1 (without `/api/` prefix)
 - `/chain-rpc/` → Blockchain RPC endpoint (port 26657)
 - `/chain-api/` → Blockchain REST API (port 1317)
 - `/chain-grpc/` → Blockchain gRPC endpoint (port 9090)
-- `/dashboard/` → Explorer/Dashboard UI (port 5173)
 - `/health` → Nginx health check endpoint
-- `/` → Redirects to `/dashboard/`
+- `/` → Explorer dashboard when `DASHBOARD_PORT` is set, otherwise a simple "dashboard not configured" page
 
 ## Benefits
 
@@ -26,133 +26,195 @@ The nginx proxy routes requests to different backend services based on URL paths
 
 ## Configuration Files
 
-- `nginx.conf.template` - Nginx configuration template with environment variable placeholders
+- `nginx.unified.conf.template` - Unified nginx configuration template rendered via env vars
 - `entrypoint.sh` - Script that substitutes environment variables and starts nginx
+- `setup-ssl.sh` - Helper to fetch TLS certs from `proxy-ssl` when HTTPS is enabled
+  - Modes: `issue` (default), `renew`, `renew-if-needed` (uses stored `order.id`; see Renewal)
 - `Dockerfile` - Container image definition for the proxy service
 - `README.md` - This documentation file
 
 ## Environment Variables
 
-All backend service ports are configurable via environment variables:
+Key runtime environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_PORT` | 9000 | Main application API port |
+| `GONKA_API_PORT` | 9000 | Main application API port |
 | `CHAIN_RPC_PORT` | 26657 | Blockchain RPC endpoint port |
 | `CHAIN_API_PORT` | 1317 | Blockchain REST API port |
 | `CHAIN_GRPC_PORT` | 9090 | Blockchain gRPC endpoint port |
-| `DASHBOARD_PORT` | 5173 | Explorer/Dashboard UI port |
+| `DASHBOARD_PORT` | - | Explorer/Dashboard UI port; when set, `/` proxies to explorer |
+| `NGINX_MODE` | http | One of `http`, `https`, or `both` (controls 80/443 and SSL) |
+| `SERVER_NAME` | auto | Overrides nginx `server_name` (defaults to `CERT_ISSUER_DOMAIN` when SSL, else `localhost`) |
+| `CERT_ISSUER_DOMAIN` | - | Required when `NGINX_MODE` is `https` or `both`; used for cert issuance and `server_name` |
+| `PROXY_SSL_SERVICE_NAME` | proxy-ssl | Upstream service name for the cert issuer API |
+| `PROXY_SSL_PORT` | 8080 | Port for the cert issuer API |
+| `SSL_CERT_SOURCE` | ./secrets/nginx-ssl | Host path bind-mounted at `/etc/nginx/ssl` |
+| `PROXY_SSL_WAIT_SECONDS` | 60 | Max wait for `proxy-ssl` readiness during cert fetch |
+| `NODE_ID` | proxy | Node identifier included in cert requests to `proxy-ssl` |
+| `API_SERVICE_NAME` | api | Service name for API upstream |
+| `NODE_SERVICE_NAME` | node | Service name for chain node upstreams |
+| `EXPLORER_SERVICE_NAME` | explorer | Service name for explorer upstream |
+| `KEY_NAME` | - | Optional stack key; when set, service names are prefixed as `<KEY_NAME>-*` |
+| `RESOLVER` | 127.0.0.11 | DNS resolver for dynamic upstream resolution (override if needed) |
 
-### Setting Environment Variables
+### Modes
 
-**Option 1: In docker-compose.yml**
-```yaml
-nginx-proxy:
-  environment:
-    - API_PORT=8080
-    - CHAIN_RPC_PORT=26658
-    - DASHBOARD_PORT=3000
+- `NGINX_MODE=http`: listen on 80 only; SSL disabled.
+- `NGINX_MODE=https`: listen on 443 with SSL; requires `CERT_ISSUER_DOMAIN` and a reachable `proxy-ssl` service to obtain certs if missing.
+- `NGINX_MODE=both`: listen on 80 and 443; same SSL requirements as `https`.
+
+When SSL is enabled and no certs are present under `/etc/nginx/ssl`, `entrypoint.sh` will call `setup-ssl.sh` to fetch a certificate via the `proxy-ssl` service.
+
+### Setup Environment
+
+Below are minimal environment configurations for the compose stack under `deploy/join/config.env`. This section lists only environment variables; Docker commands are provided separately below.
+
+#### HTTP only (80 → 8000)
+
+```
+NGINX_MODE=http
+API_PORT=8000
 ```
 
-**Option 2: Using .env file**
-```bash
-# Create .env file in your project root
-API_PORT=8080
-CHAIN_RPC_PORT=26658
-CHAIN_API_PORT=1318
-CHAIN_GRPC_PORT=9091
-DASHBOARD_PORT=3000
+#### HTTPS only via proxy-ssl (443 → 8443)
+
+```
+NGINX_MODE=https
+API_SSL_PORT=8443
+CERT_ISSUER_DOMAIN=your.domain
+CERT_ISSUER_JWT_SECRET=change-me
+ACME_ACCOUNT_EMAIL=you@example.com
+ACME_DNS_PROVIDER=<route53|cloudflare|gcloud|azure|digitalocean|hetzner>
+# Provider credentials per your DNS (see proxy-ssl README)
 ```
 
-**Option 3: Export in shell**
-```bash
-export API_PORT=8080
-export DASHBOARD_PORT=3000
-docker compose up
+Notes:
+- The compose maps ports 80 and 443; with `NGINX_MODE=https`, nginx listens on 443 only.
+- Certificates are stored under `./secrets/nginx-ssl` (bind-mounted to `/etc/nginx/ssl`) and used automatically by `proxy`.
+
+#### Both HTTP & HTTPS (80/443 → 8000/8443) via proxy-ssl
+
+```
+NGINX_MODE=both
+API_PORT=8000
+API_SSL_PORT=8443
+CERT_ISSUER_DOMAIN=your.domain
+CERT_ISSUER_JWT_SECRET=change-me
+ACME_ACCOUNT_EMAIL=you@example.com
+ACME_DNS_PROVIDER=<route53|cloudflare|gcloud|azure|digitalocean|hetzner>
+# Provider credentials per your DNS (see proxy-ssl README)
 ```
 
-## Usage in Docker Compose
+#### HTTPS only with manual certs
 
-See the example in `test-net-cloud/docker-compose-with-proxy.yml`:
+Environment in `deploy/join/config.env`:
 
-```yaml
-  nginx-proxy:
-    container_name: nginx-proxy
-    build:
-      context: ../proxy
-      dockerfile: Dockerfile
-    ports:
-      - "80:80"  # Only this port needs to be exposed externally
-    environment:
-      - API_PORT=${API_PORT:-9000}
-      - CHAIN_RPC_PORT=${CHAIN_RPC_PORT:-26657}
-      - CHAIN_API_PORT=${CHAIN_API_PORT:-1317}
-      - CHAIN_GRPC_PORT=${CHAIN_GRPC_PORT:-9090}
-      - DASHBOARD_PORT=${DASHBOARD_PORT:-5173}
-    depends_on:
-      - genesis-node
-      - genesis-api
-      - explorer
-    networks:
-      - chain-public
-    restart: unless-stopped
+```
+NGINX_MODE=https
+API_SSL_PORT=8443
+SERVER_NAME=your.domain
+SSL_CERT_SOURCE=./secrets/nginx-ssl
+# do not set CERT_ISSUER_DOMAIN when using manual certs
 ```
 
-Then remove external port mappings from other services (they'll only be accessible through nginx).
+#### Both HTTP & HTTPS (80/443 → 8000/8443) (80 & 443) with manual certs
 
-## Development vs Production
-
-### Development
-- Use `localhost:80/api/` instead of `localhost:9000/`
-- Use `localhost:80/dashboard/` instead of `localhost:5173/`
-- Use `localhost:80/chain-rpc/` instead of `localhost:26657/`
-
-### Production
-- Add SSL/TLS termination in nginx
-- Use a proper domain name
-- Add rate limiting and security headers (already included basic ones)
-- Consider using nginx-proxy-manager for easier SSL certificate management
-
-## Customization
-
-### Adding New Services
-1. Add upstream definition in `nginx.conf`:
-   ```nginx
-   upstream new_service_backend {
-       server new-service:port;
-   }
-   ```
-
-2. Add location block:
-   ```nginx
-   location /new-service/ {
-       proxy_pass http://new_service_backend/;
-       # ... standard proxy headers
-   }
-   ```
-
-### SSL/HTTPS Setup
-For production, add SSL configuration:
-
-```nginx
-server {
-    listen 443 ssl http2;
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-    # ... rest of configuration
-}
-
-server {
-    listen 80;
-    return 301 https://$server_name$request_uri;
-}
 ```
+NGINX_MODE=both
+API_PORT=8000
+API_SSL_PORT=8443
+SERVER_NAME=your.domain
+SSL_CERT_SOURCE=./secrets/nginx-ssl
+# do not set CERT_ISSUER_DOMAIN when using manual certs
+```
+
+#### Manual certificate issuance (Let’s Encrypt via Certbot DNS-01)
+
+This works with any DNS provider using an interactive DNS-01 challenge. Certbot will pause and show a TXT record to add at `_acme-challenge.your.domain`. Create that record in your DNS, wait for propagation, then press Enter to continue.
+
+Recommended (one-shot, writes directly into the mounted directory `deploy/join/secrets/nginx-ssl`):
+
+- Host-installed Certbot:
+
+```
+DOMAIN=your.domain
+ACCOUNT_EMAIL=your_email@example.com
+mkdir -p secrets/nginx-ssl secrets/certbot/{config,work,logs}
+sudo certbot certonly --manual --preferred-challenges dns \
+  --config-dir ./secrets/certbot/config \
+  --work-dir ./secrets/certbot/work \
+  --logs-dir ./secrets/certbot/logs \
+  -d "$DOMAIN" \
+  --email "$ACCOUNT_EMAIL" --agree-tos --no-eff-email \
+  --deploy-hook 'install -m 0644 "$RENEWED_LINEAGE/fullchain.pem" ./secrets/nginx-ssl/cert.pem; install -m 0600 "$RENEWED_LINEAGE/privkey.pem" ./secrets/nginx-ssl/private.key'
+```
+
+- Dockerized Certbot (no host install needed):
+
+```
+DOMAIN=your.domain
+ACCOUNT_EMAIL=your_email@example.com
+mkdir -p secrets/nginx-ssl secrets/certbot
+docker run --rm -it \
+  -v "$(pwd)/secrets/certbot:/etc/letsencrypt" \
+  -v "$(pwd)/secrets/nginx-ssl:/mnt/nginx-ssl" \
+  certbot/certbot certonly --manual --preferred-challenges dns \
+  -d "$DOMAIN" --email "$ACCOUNT_EMAIL" --agree-tos --no-eff-email \
+  --deploy-hook 'install -m 0644 "$RENEWED_LINEAGE/fullchain.pem" /mnt/nginx-ssl/cert.pem; install -m 0600 "$RENEWED_LINEAGE/privkey.pem" /mnt/nginx-ssl/private.key'
+```
+
+Renewal: rerun the same one-shot command before expiry (manual DNS step required each time), then reload nginx (see Docker commands below).
+
+### Start with Docker Compose
+
+Run from `deploy/join` after setting `config.env`.
+
+- Prepare bind-mount directories (safe to rerun):
+
+```
+mkdir -p secrets/nginx-ssl secrets/certbot
+```
+
+- Initial start (enable HTTPS with proxy-ssl profile):
+
+```
+source ./config.env && \
+docker compose --profile "ssl" -f docker-compose.yml -f docker-compose.mlnode.yml up -d
+```
+
+- Update currently running node:
+  - With proxy-ssl (automated certs):
+
+```
+source ./config.env && \
+docker compose --profile "ssl" -f docker-compose.yml -f docker-compose.mlnode.yml pull proxy proxy-ssl && \
+docker compose --profile "ssl" -f docker-compose.yml -f docker-compose.mlnode.yml up -d proxy proxy-ssl
+```
+
+  - With manual certs (no proxy-ssl):
+
+```
+source ./config.env && \
+docker compose -f docker-compose.yml -f docker-compose.mlnode.yml pull proxy && \
+docker compose -f docker-compose.yml -f docker-compose.mlnode.yml up -d proxy
+```
+
+Notes:
+- Ensure your env matches one of the setups above (proxy-ssl vs manual). See sections on environment configuration and manual certificate issuance.
+- General operational guidance aligns with the Quickstart docs at [gonka.ai Host Quickstart](https://gonka.ai/host/quickstart/#how-to-stop-mlnode).
 
 ## Health Check
 
 The proxy includes a health check endpoint at `/health` that returns HTTP 200 with "healthy" response.
 
 ## Troubleshooting
+
+### TLS/SSL issues
+1. Ensure `NGINX_MODE` is `https` or `both` and `CERT_ISSUER_DOMAIN` is set.
+2. Verify `proxy-ssl` is running and reachable from `proxy` (see `proxy-ssl/README.md`).
+3. Check logs of `proxy` for "SSL setup failed" or config validation errors.
+4. Confirm DNS for `SERVER_NAME`/`CERT_ISSUER_DOMAIN` points to your proxy.
 
 ### Service Not Reachable
 1. Check if the backend service is running: `docker compose ps`
@@ -181,7 +243,7 @@ WebSocket support is configured for RPC connections and dashboard hot-reloading.
 
 If you're upgrading from a previous version with hardcoded ports:
 
-1. **Replace** `nginx.conf` with `nginx.conf.template`
+1. **Replace** `nginx.conf` with `nginx.unified.conf.template`
 2. **Update** your Dockerfile to use the new entrypoint 
 3. **Add** environment variables to your docker-compose.yml
 4. **Rebuild** your nginx container

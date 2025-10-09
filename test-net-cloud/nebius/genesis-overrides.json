@@ -61,18 +61,21 @@
       }
     },
     "inference": {
+      "mlnode_version": {
+        "current_version": "v3.0.8"
+      },
       "params": {
         "epoch_params": {
-          "epoch_length": "220",
-          "epoch_multiplier": "1",
-          "epoch_shift": "150",
-          "poc_stage_duration": "60",
-          "poc_exchange_duration": "5",
-          "poc_validation_delay": "5",
-          "poc_validation_duration": "20",
-          "set_new_validators_delay": "30",
-          "inference_validation_cutoff": "20",
-          "default_unit_of_compute_price": "100"
+        "epoch_length": "220",
+        "epoch_multiplier": "1",
+        "epoch_shift": "150",
+        "poc_stage_duration": "60",
+        "poc_exchange_duration": "5",
+        "poc_validation_delay": "5",
+        "poc_validation_duration": "20",
+        "set_new_validators_delay": "30",
+        "inference_validation_cutoff": "20",
+        "default_unit_of_compute_price": "100"
         },
         "bandwidth_limits_params": {
           "estimated_limits_per_block_kb": "10752",

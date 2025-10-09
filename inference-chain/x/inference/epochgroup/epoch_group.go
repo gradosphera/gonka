@@ -49,19 +49,16 @@ func NewEpochMemberFromStakingValidator(
 	if err != nil {
 		return nil, err
 	}
-	println("Val Address for genesis.", "opAddr", validator.OperatorAddress, "accAddr", accAddr)
 
-	// FIXME: it's definitely a wrong way to get the pubkey
 	pubKey := validator.ConsensusPubkey.String()
-	println("PUBKEY for genesis validator is", pubKey)
 
 	return &EpochMember{
 		Address:       accAddr,
 		Weight:        validator.Tokens.Int64(),
 		Pubkey:        pubKey,
-		SeedSignature: "", // TODO: do we need this for genesis epoch?
+		SeedSignature: "",
 		Reputation:    1,
-		Models:        []string{}, // FIXME: populate with genesis models? Create model sub-groups?
+		Models:        []string{},
 	}, nil
 }
 
@@ -173,7 +170,7 @@ func (eg *EpochGroup) updateEpochGroupWithNewMember(ctx context.Context, member 
 		Signature:     member.SeedSignature,
 	})
 
-	mlNodes := eg.storeMLNodeInfo(member, eg.GroupData.ModelId)
+	mlNodes := eg.getMLNodeInfo(member, eg.GroupData.ModelId)
 
 	eg.GroupData.ValidationWeights = append(eg.GroupData.ValidationWeights, &types.ValidationWeight{
 		MemberAddress: member.Address,
@@ -192,7 +189,7 @@ func (eg *EpochGroup) updateEpochGroupWithNewMember(ctx context.Context, member 
 	eg.GroupDataKeeper.SetEpochGroupData(ctx, *eg.GroupData)
 }
 
-func (eg *EpochGroup) storeMLNodeInfo(member EpochMember, modelId string) []*types.MLNodeInfo {
+func (eg *EpochGroup) getMLNodeInfo(member EpochMember, modelId string) []*types.MLNodeInfo {
 	if modelId == "" {
 		return nil // Do not store ML nodes in the parent group
 	}
@@ -227,7 +224,6 @@ func (eg *EpochGroup) addToModelGroups(ctx context.Context, member EpochMember) 
 
 		// Add the member to the sub-group with the same weight, pubkey, etc.
 		// We're explicitly passing only this model to prevent further recursion
-		// TODO: Check if this recursion prevention logic is still needed since there should be no recursion risk
 		subMember := member
 		subMember.Models = []string{modelId}
 
@@ -286,7 +282,7 @@ func (eg *EpochGroup) GetValidationWeights() (VotingData, error) {
 
 func (eg *EpochGroup) MarkChanged(ctx context.Context) error {
 	if eg.GroupData.ModelId != "" {
-		// only applies to the parent group
+		// Skip for subgroups, changed only applies to the parent group
 		return nil
 	}
 	err := eg.updateMetadata(ctx, "changed")
@@ -362,7 +358,7 @@ func (eg *EpochGroup) GetComputeResults(ctx context.Context) ([]keeper.ComputeRe
 			eg.Logger.LogError("Error decoding pubkey", types.EpochGroup, "error", err)
 			continue
 		}
-		// The VALIDATOR key, never to be confused with the account key (which is a sekp256k1 key)
+		// The VALIDATOR key (ed25519), never to be confused with the account key (secp256k1 key)
 		pubKey := ed25519.PubKey{Key: pubKeyBytes}
 
 		accAddr, err := sdk.AccAddressFromBech32(member.Member.Address)

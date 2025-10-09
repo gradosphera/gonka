@@ -1,21 +1,22 @@
 package apiconfig
 
 type Config struct {
-	Api                ApiConfig             `koanf:"api"`
-	Nodes              []InferenceNodeConfig `koanf:"nodes"`
-	NodeConfigIsMerged bool                  `koanf:"merged_node_config"`
-	ChainNode          ChainNodeConfig       `koanf:"chain_node"`
-	UpcomingSeed       SeedInfo              `koanf:"upcoming_seed"`
-	CurrentSeed        SeedInfo              `koanf:"current_seed"`
-	PreviousSeed       SeedInfo              `koanf:"previous_seed"`
-	CurrentHeight      int64                 `koanf:"current_height"`
-	UpgradePlan        UpgradePlan           `koanf:"upgrade_plan"`
-	MLNodeKeyConfig    MLNodeKeyConfig       `koanf:"ml_node_key_config"`
-	NodeVersions       NodeVersionStack      `koanf:"node_versions"`
-	Nats               NatsServerConfig      `koanf:"nats"`
-	CurrentNodeVersion string                `koanf:"current_node_version"`
-	ValidationParams   ValidationParamsCache `koanf:"validation_params"`
-	BandwidthParams    BandwidthParamsCache  `koanf:"bandwidth_params"`
+	Api                 ApiConfig             `koanf:"api"`
+	Nodes               []InferenceNodeConfig `koanf:"nodes"`
+	NodeConfigIsMerged  bool                  `koanf:"merged_node_config"`
+	ChainNode           ChainNodeConfig       `koanf:"chain_node"`
+	UpcomingSeed        SeedInfo              `koanf:"upcoming_seed"`
+	CurrentSeed         SeedInfo              `koanf:"current_seed"`
+	PreviousSeed        SeedInfo              `koanf:"previous_seed"`
+	CurrentHeight       int64                 `koanf:"current_height"`
+	LastProcessedHeight int64                 `koanf:"last_processed_height"`
+	UpgradePlan         UpgradePlan           `koanf:"upgrade_plan"`
+	MLNodeKeyConfig     MLNodeKeyConfig       `koanf:"ml_node_key_config"`
+	Nats                NatsServerConfig      `koanf:"nats"`
+	CurrentNodeVersion  string                `koanf:"current_node_version"`
+	LastUsedVersion     string                `koanf:"last_used_version"`
+	ValidationParams    ValidationParamsCache `koanf:"validation_params"`
+	BandwidthParams     BandwidthParamsCache  `koanf:"bandwidth_params"`
 }
 
 type NatsServerConfig struct {
@@ -23,75 +24,18 @@ type NatsServerConfig struct {
 	Port int    `koanf:"port"`
 }
 
-type NodeVersionStack struct {
-	Versions []NodeVersion `koanf:"versions"`
-}
-
-func (nvs *NodeVersionStack) peek() *NodeVersion {
-	if len(nvs.Versions) == 0 {
-		return nil
-	}
-	return &nvs.Versions[len(nvs.Versions)-1]
-}
-
-func (nvs *NodeVersionStack) pop() *NodeVersion {
-	nv := nvs.peek()
-	nvs.Versions = nvs.Versions[:len(nvs.Versions)-1]
-	return nv
-}
-
-func (nvs *NodeVersionStack) PopIf(height int64) (string, bool) {
-	if len(nvs.Versions) == 0 {
-		return "", false
-	}
-	peek := nvs.peek()
-	var result *NodeVersion = &NodeVersion{}
-	for peek != nil && height >= peek.Height {
-		result = nvs.pop()
-		peek = nvs.peek()
-	}
-	return result.Version, result.Version != ""
-}
-
-func (nvs *NodeVersionStack) Insert(height int64, version string) bool {
-	newVersion := NodeVersion{Height: height, Version: version}
-	versionsWithInserts := make([]NodeVersion, 0, len(nvs.Versions)+1)
-	inserted := false
-
-	for _, v := range nvs.Versions {
-		if !inserted && v.Height < height {
-			versionsWithInserts = append(versionsWithInserts, newVersion)
-			inserted = true
-		}
-		if newVersion.Version == v.Version && newVersion.Height == v.Height {
-			return false
-		}
-		versionsWithInserts = append(versionsWithInserts, v)
-	}
-
-	if !inserted {
-		versionsWithInserts = append(versionsWithInserts, newVersion)
-	}
-
-	nvs.Versions = versionsWithInserts
-	return true
-}
-
-type NodeVersion struct {
-	Height  int64  `koanf:"height"`
-	Version string `koanf:"version"`
-}
-
 type UpgradePlan struct {
-	Name     string            `koanf:"name"`
-	Height   int64             `koanf:"height"`
-	Binaries map[string]string `koanf:"binaries"`
+	Name        string            `koanf:"name"`
+	Height      int64             `koanf:"height"`
+	Binaries    map[string]string `koanf:"binaries"`
+	NodeVersion string            `koanf:"node_version"`
 }
 
 type SeedInfo struct {
 	Seed       int64  `koanf:"seed"`
 	EpochIndex uint64 `koanf:"epoch_index"`
 	Signature  string `koanf:"signature"`
+	Claimed    bool   `koanf:"claimed"`
 }
 
 type ApiConfig struct {
@@ -133,7 +77,6 @@ type InferenceNodeConfig struct {
 	Id               string                 `koanf:"id" json:"id"`
 	MaxConcurrent    int                    `koanf:"max_concurrent" json:"max_concurrent"`
 	Hardware         []Hardware             `koanf:"hardware" json:"hardware"`
-	Version          string                 `koanf:"version" json:"version"`
 }
 
 type ModelConfig struct {

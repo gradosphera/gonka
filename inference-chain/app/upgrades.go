@@ -6,18 +6,15 @@ import (
 	"context"
 	"fmt"
 
-	storetypes "cosmossdk.io/store/types"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	v0_1_4 "github.com/productscience/inference/app/upgrades/v0.1.4"
-	"github.com/productscience/inference/app/upgrades/v1_1"
-	"github.com/productscience/inference/app/upgrades/v1_10"
-	v1_13 "github.com/productscience/inference/app/upgrades/v1_13"
-	"github.com/productscience/inference/app/upgrades/v1_14"
-	"github.com/productscience/inference/app/upgrades/v1_17"
-	"github.com/productscience/inference/app/upgrades/v1_18"
-	"github.com/productscience/inference/app/upgrades/v1_8"
-	"github.com/productscience/inference/app/upgrades/v1_9"
+	districutiontypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
+	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	v0_2_2 "github.com/productscience/inference/app/upgrades/v0_2_2"
+	v0_2_3 "github.com/productscience/inference/app/upgrades/v0_2_3"
+	inferencetypes "github.com/productscience/inference/x/inference/types"
 )
 
 func CreateEmptyUpgradeHandler(
@@ -46,32 +43,30 @@ func (app *App) setupUpgradeHandlers() {
 		app.Logger().Error("Failed to read upgrade info from disk", "error", err)
 		return
 	}
-	if upgradeInfo.Name == v1_10.UpgradeName {
-		storeUpgrades := storetypes.StoreUpgrades{
-			Added: []string{
-				"wasm",
-			},
-		}
-		app.SetStoreLoader(upgradetypes.UpgradeStoreLoader(upgradeInfo.Height, &storeUpgrades))
-	}
-	if upgradeInfo.Name == v1_18.UpgradeName {
-		storeUpgrades := storetypes.StoreUpgrades{
-			Added: []string{
-				"collateral",
-				"streamvesting",
-			},
-		}
-		app.SetStoreLoader(upgradetypes.UpgradeStoreLoader(upgradeInfo.Height, &storeUpgrades))
-	}
-	app.UpgradeKeeper.SetUpgradeHandler(v1_1.UpgradeName, v1_1.CreateUpgradeHandler(app.ModuleManager, app.Configurator()))
-	app.UpgradeKeeper.SetUpgradeHandler(v0_1_4.UpgradeName, v0_1_4.CreateUpgradeHandler(app.ModuleManager, app.Configurator()))
-	app.UpgradeKeeper.SetUpgradeHandler(v1_8.UpgradeName, v1_8.CreateUpgradeHandler(app.ModuleManager, app.Configurator()))
-	app.UpgradeKeeper.SetUpgradeHandler(v1_8.UpgradeNameRestart, v1_8.CreateUpgradeHandler(app.ModuleManager, app.Configurator()))
-	app.UpgradeKeeper.SetUpgradeHandler(v1_9.UpgradeName, v1_9.CreateUpgradeHandler(app.ModuleManager, app.Configurator()))
-	app.UpgradeKeeper.SetUpgradeHandler(v1_10.UpgradeName, v1_10.CreateUpgradeHandler(app.InferenceKeeper))
-	app.UpgradeKeeper.SetUpgradeHandler(v1_13.UpgradeName, CreateEmptyUpgradeHandler(app.ModuleManager, app.Configurator()))
-	app.UpgradeKeeper.SetUpgradeHandler(v1_14.UpgradeName, v1_14.CreateUpgradeHandler(app.ModuleManager, app.Configurator(), app.InferenceKeeper))
-	// app.UpgradeKeeper.SetUpgradeHandler(v1_16.UpgradeName, v1_16.CreateUpgradeHandler(app.ModuleManager, app.Configurator(), app.InferenceKeeper))
-	app.UpgradeKeeper.SetUpgradeHandler(v1_17.UpgradeName, v1_17.CreateUpgradeHandler(app.ModuleManager, app.Configurator(), app.InferenceKeeper))
-	app.UpgradeKeeper.SetUpgradeHandler(v1_18.UpgradeName, v1_18.CreateUpgradeHandler(app.ModuleManager, app.Configurator(), app.InferenceKeeper))
+	app.Logger().Info("Applying upgrade", "upgradeInfo", upgradeInfo)
+
+	app.UpgradeKeeper.SetUpgradeHandler(v0_2_2.UpgradeName, v0_2_2.CreateUpgradeHandler(app.ModuleManager, app.Configurator(), app.InferenceKeeper))
+	app.UpgradeKeeper.SetUpgradeHandler(v0_2_3.UpgradeName, v0_2_3.CreateUpgradeHandler(app.ModuleManager, app.Configurator(), app.InferenceKeeper))
+}
+
+func (app *App) registerMigrations() {
+	app.Configurator().RegisterMigration(inferencetypes.ModuleName, 4, func(ctx sdk.Context) error {
+		return nil
+	})
+
+	app.Configurator().RegisterMigration(inferencetypes.ModuleName, 5, func(ctx sdk.Context) error {
+		return nil
+	})
+
+	app.Configurator().RegisterMigration(districutiontypes.ModuleName, 3, func(ctx sdk.Context) error {
+		return nil
+	})
+
+	app.Configurator().RegisterMigration(slashingtypes.ModuleName, 4, func(ctx sdk.Context) error {
+		return nil
+	})
+
+	app.Configurator().RegisterMigration(stakingtypes.ModuleName, 5, func(ctx sdk.Context) error {
+		return nil
+	})
 }

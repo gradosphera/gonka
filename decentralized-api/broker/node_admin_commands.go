@@ -59,7 +59,6 @@ func (c RegisterNode) Execute(b *Broker) {
 		MaxConcurrent:    c.Node.MaxConcurrent,
 		NodeNum:          curNum,
 		Hardware:         c.Node.Hardware,
-		Version:          c.Node.Version,
 	}
 
 	var currentEpoch uint64

@@ -9,3 +9,6 @@ import (
 func (app *App) setupUpgradeHandlers() {
 	app.UpgradeKeeper.SetUpgradeHandler(v2test.UpgradeName, v2test.CreateUpgradeHandler(app.ModuleManager, app.Configurator()))
 }
+
+func (app *App) registerMigrations() {
+}

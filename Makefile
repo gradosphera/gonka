@@ -46,6 +46,11 @@ proxy-release:
 	@make -C proxy release
 	@make -C proxy docker-push
 
+proxy-ssl-release:
+	@echo "Releasing proxy-ssl..."
+	@make -C proxy-ssl release
+	@make -C proxy-ssl docker-push
+
 check-docker:
 	@docker info > /dev/null 2>&1 || (echo "Docker Desktop is not running. Please start Docker Desktop." && exit 1)
 

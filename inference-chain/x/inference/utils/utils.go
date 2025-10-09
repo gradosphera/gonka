@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/base64"
 	"encoding/hex"
+
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -22,6 +23,9 @@ func PubKeyBytesToString(pubKeyBytes []byte) string {
 }
 
 func PubKeyToHexString(pubKey cryptotypes.PubKey) string {
+	if pubKey == nil {
+		return ""
+	}
 	return hex.EncodeToString(pubKey.Bytes())
 }
 

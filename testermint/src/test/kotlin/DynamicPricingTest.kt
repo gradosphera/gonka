@@ -42,8 +42,8 @@ class DynamicPricingTest : TestermintTest() {
         logSection("DPTEST: === PHASE 1: INITIAL STATE VERIFICATION ===")
 
         // Check initial price (should be MinPerTokenPrice = 1000)
-        val initialPrice = getCurrentModelPrice(genesis, "Qwen/Qwen2.5-7B-Instruct")
-        logSection("DPTEST: INITIAL_PRICE - model=Qwen/Qwen2.5-7B-Instruct, price=$initialPrice")
+        val initialPrice = getCurrentModelPrice(genesis, defaultModel)
+        logSection("DPTEST: INITIAL_PRICE - model=$defaultModel, price=$initialPrice")
         assertTrue(initialPrice == 1000L, "Expected initial price 1000, got $initialPrice")
 
         logSection("DPTEST: === PHASE 2: LOAD GENERATION & PRICE INCREASE ===")
@@ -86,7 +86,7 @@ class DynamicPricingTest : TestermintTest() {
         logSection("DPTEST: BLOCK_END - Pricing check at block $endBlock, actual_blocks_passed=$actualBlocksPassed")
 
         // Check price after high load
-        val priceAfterLoad = getCurrentModelPrice(genesis, "Qwen/Qwen2.5-7B-Instruct")
+        val priceAfterLoad = getCurrentModelPrice(genesis, defaultModel)
         logSection("DPTEST: PRICE_AFTER_LOAD - price=$priceAfterLoad, initial_price=$initialPrice, increase=${priceAfterLoad - initialPrice}")
 
         // Verify price increased due to high utilization
@@ -123,7 +123,7 @@ class DynamicPricingTest : TestermintTest() {
         logSection("DPTEST: WAIT_COMPLETE - Wait finished, duration=${(waitEndTime - waitStartTime) / 1000}s")
 
         // Check price after utilization window reset
-        val priceAfterWait = getCurrentModelPrice(genesis, "Qwen/Qwen2.5-7B-Instruct")
+        val priceAfterWait = getCurrentModelPrice(genesis, defaultModel)
         logSection("DPTEST: PRICE_AFTER_WAIT - price=$priceAfterWait, price_after_load=$priceAfterLoad, change=${priceAfterWait - priceAfterLoad}")
 
         // Verify price started decreasing (should be less than peak or moving toward 1000)
@@ -154,7 +154,7 @@ class DynamicPricingTest : TestermintTest() {
         genesis.markNeedsReboot()
         genesis.waitForStage(EpochStage.CLAIM_REWARDS)
         logSection("Run up the price with lots of inferences")
-        val initialPrice = getCurrentModelPrice(genesis, "Qwen/Qwen2.5-7B-Instruct")
+        val initialPrice = getCurrentModelPrice(genesis, defaultModel)
         assertThat(initialPrice).isEqualTo(1000L)
         val startBlock = genesis.getCurrentBlockHeight()
         val allLoadResults = runParallelInferencesWithResults(
@@ -163,13 +163,13 @@ class DynamicPricingTest : TestermintTest() {
             waitForBlocks = 4,  // Optimized from performance test
             maxConcurrentRequests = 200,  // Proven working configuration
             inferenceRequest = inferenceRequestObject,  // Back to regular size requests,
-            models = listOf("Qwen/Qwen2.5-7B-Instruct")
+            models = listOf(defaultModel)
         )
         logSection("Waiting for price increase")
         Thread.sleep(Duration.ofSeconds(20))
         val endBlock = genesis.getCurrentBlockHeight()
         val actualBlocksPassed = endBlock - startBlock
-        val newPrice = getCurrentModelPrice(genesis, "Qwen/Qwen2.5-7B-Instruct")
+        val newPrice = getCurrentModelPrice(genesis, defaultModel)
         assertThat(newPrice).isGreaterThan(1000L)
         logSection("Submit raw StartInference")
         val timestamp = Instant.now().toEpochNanos()

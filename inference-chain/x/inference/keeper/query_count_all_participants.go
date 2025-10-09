@@ -6,6 +6,6 @@ import (
 )
 
 func (k Keeper) CountParticipants(ctx context.Context, _ *types.QueryCountAllParticipantsRequest) (*types.QueryCountAllParticipantsResponse, error) {
-	total := k.CountAllParticipantsWithNotZeroBalance(ctx)
+	total := k.CountAllParticipants(ctx)
 	return &types.QueryCountAllParticipantsResponse{Total: total}, nil
 }

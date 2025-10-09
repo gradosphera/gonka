@@ -252,6 +252,9 @@ dependencies {
     // Add AssertJ for fluent assertions
     testImplementation("org.assertj:assertj-core:3.26.3")
     implementation("org.wiremock:wiremock:3.10.0")
+    // Jackson for YAML parsing with Kotlin data class support
+    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.15.2")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.15.2")
 }
 
 tasks.withType<JavaExec>().configureEach {

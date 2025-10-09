@@ -84,10 +84,13 @@ func ApplyGenesisGuardianEnhancement(ctx context.Context, k keeper.Keeper, compu
 	// Apply enhancement
 	enhancedResults, enhancedTotalPower := calculateEnhancedPower(ctx, k, computeResults, totalNetworkPower)
 
+	// Detect if enhancement was applied by comparing total power
+	wasEnhanced := enhancedTotalPower != totalNetworkPower
+
 	return &GenesisGuardianEnhancementResult{
 		ComputeResults: enhancedResults,
 		TotalPower:     enhancedTotalPower,
-		WasEnhanced:    true,
+		WasEnhanced:    wasEnhanced,
 	}
 }
 
@@ -161,7 +164,7 @@ func calculateEnhancedPower(ctx context.Context, k keeper.Keeper, computeResults
 	return enhancedResults, enhancedTotalPower
 }
 
-// validateGuardianEnhancementResults ensures enhancement was applied correctly
+// ValidateGuardianEnhancementResults ensures enhancement was applied correctly
 func ValidateGuardianEnhancementResults(original []stakingkeeper.ComputeResult, enhanced []stakingkeeper.ComputeResult, enhancedTotalPower int64) error {
 	// Check participant count consistency
 	if len(original) != len(enhanced) {

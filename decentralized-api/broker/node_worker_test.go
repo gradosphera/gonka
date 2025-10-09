@@ -286,6 +286,62 @@ func TestNodeWorkGroup_AddRemoveWorkers(t *testing.T) {
 	assert.False(t, exists1, "Worker 1 should not exist after removal")
 }
 
+func TestNodeWorker_CheckClientVersionAlive(t *testing.T) {
+	broker := NewTestBroker2(1)
+	node := createTestNode("test-node-1")
+	mainClient := mlnodeclient.NewMockClient()
+	mockFactory := mlnodeclient.NewMockClientFactory()
+
+	worker := NewNodeWorkerWithClient("test-node-1", node, mainClient, broker)
+	defer worker.Shutdown()
+
+	version := "v1.0.0"
+	versionedPocUrl := node.Node.PoCUrlWithVersion(version)
+
+	// --- Test Case 1: Version is alive ---
+	versionClient := mockFactory.GetClientForNode(versionedPocUrl)
+	assert.Nil(t, versionClient, "Client should not exist yet")
+
+	alive, err := worker.CheckClientVersionAlive(version, mockFactory)
+	assert.NoError(t, err)
+	assert.True(t, alive)
+
+	versionClient = mockFactory.GetClientForNode(versionedPocUrl)
+	assert.NotNil(t, versionClient, "Client should be created for the version")
+	assert.Equal(t, 1, versionClient.NodeStateCalled)
+
+	// --- Test Case 2: Check caching - should not call NodeState again ---
+	alive, err = worker.CheckClientVersionAlive(version, mockFactory)
+	assert.NoError(t, err)
+	assert.True(t, alive)
+	assert.Equal(t, 1, versionClient.NodeStateCalled, "NodeState should not be called again due to cache")
+
+	// --- Test Case 3: Version is not alive ---
+	mockFactory.Reset()
+	worker.availableVersions = make(map[string]bool) // Reset internal cache
+	version2 := "v2.0.0"
+	versionedPocUrl2 := node.Node.PoCUrlWithVersion(version2)
+
+	// Configure the mock client for this version to return an error
+	version2Client := mockFactory.CreateClient(versionedPocUrl2, "").(*mlnodeclient.MockClient)
+	testErr := errors.New("node not ready")
+	version2Client.NodeStateError = testErr
+
+	alive, err = worker.CheckClientVersionAlive(version2, mockFactory)
+	assert.Error(t, err)
+	assert.Equal(t, testErr, err)
+	assert.False(t, alive)
+	assert.Equal(t, 1, version2Client.NodeStateCalled)
+
+	// --- Test Case 4: Retry after failure ---
+	// It should try again. Let's make it succeed this time.
+	version2Client.NodeStateError = nil
+	alive, err = worker.CheckClientVersionAlive(version2, mockFactory)
+	assert.NoError(t, err)
+	assert.True(t, alive)
+	assert.Equal(t, 2, version2Client.NodeStateCalled, "NodeState should be called again on retry")
+}
+
 // TestCommand is a simple command for testing
 type TestCommand struct {
 	ExecuteFn func(ctx context.Context, worker *NodeWorker) NodeResult

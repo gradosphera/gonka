@@ -8,7 +8,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// TODO after nodes would be able deploy only models which network voited for, return real data
 func (k Keeper) ModelsAll(goCtx context.Context, req *types.QueryModelsAllRequest) (*types.QueryModelsAllResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid request")

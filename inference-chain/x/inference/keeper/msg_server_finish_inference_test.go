@@ -79,7 +79,7 @@ func TestMsgServer_FinishInference(t *testing.T) {
 		"promptPayload",
 		modelId,
 		requestTimestamp,
-		keeper.DefaultMaxTokens)
+		calculations.DefaultMaxTokens)
 	require.NoError(t, err)
 	savedInference, found := k.GetInference(ctx, expected.InferenceId)
 	require.True(t, found)
@@ -250,7 +250,7 @@ func (h *MockInferenceHelper) StartInference(
 		TransferSignature: taSignature,
 		AssignedTo:        h.MockExecutor.address,
 	}
-	if maxTokens != keeper.DefaultMaxTokens {
+	if maxTokens != calculations.DefaultMaxTokens {
 		startInferenceMsg.MaxTokens = maxTokens
 	}
 	_, err = h.MessageServer.StartInference(h.context, startInferenceMsg)

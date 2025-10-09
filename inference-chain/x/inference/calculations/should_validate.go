@@ -4,9 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"math"
+
 	"github.com/productscience/inference/x/inference/types"
 	"github.com/shopspring/decimal"
-	"math"
 )
 
 func ShouldValidate(
@@ -36,7 +37,7 @@ func ShouldValidate(
 	)
 }
 
-// In lieu of a real random number generator, we use a deterministic function that takes a seed and an inferenceId
+// Instead of a real random number generator, we use a deterministic function that takes a seed and an inferenceId.
 // This is more or less as random as using a seed in a deterministic random seed determined by this same hash, and has
 // the advantage of being 100% deterministic regardless of platform and also faster to compute.
 func deterministicFloat(seed int64, inferenceId string) decimal.Decimal {
@@ -52,7 +53,7 @@ func deterministicFloat(seed int64, inferenceId string) decimal.Decimal {
 	hashInt := binary.BigEndian.Uint64(hash[:8])
 
 	// Normalize the uint64 value to a decimal.Decimal in the range [0, 1)
-	maxUint64 := decimal.NewFromUint64(math.MaxUint64) // ^uint64(0) gives max uint64
+	maxUint64 := decimal.NewFromUint64(math.MaxUint64)
 	hashDecimal := decimal.NewFromUint64(hashInt)
 	return hashDecimal.Div(maxUint64)
 }

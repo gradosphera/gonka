@@ -24,7 +24,6 @@ import (
 	"github.com/productscience/inference/api/inference/inference"
 	"github.com/productscience/inference/cmd/inferenced/cmd"
 	"github.com/productscience/inference/x/inference/calculations"
-	"github.com/productscience/inference/x/inference/keeper"
 	"github.com/productscience/inference/x/inference/types"
 )
 
@@ -351,8 +350,8 @@ func (s *Server) getPromptTokenCount(text string, model string) (int, error) {
 		TokenCount int `json:"count"`
 	}
 
-	response, err := broker.LockNode(s.nodeBroker, model, s.configManager.GetCurrentNodeVersion(), func(node *broker.Node) (*http.Response, error) {
-		tokenizeUrl, err := url.JoinPath(node.InferenceUrl(), "/tokenize")
+	response, err := broker.LockNode(s.nodeBroker, model, func(node *broker.Node) (*http.Response, error) {
+		tokenizeUrl, err := url.JoinPath(node.InferenceUrlWithVersion(s.configManager.GetCurrentNodeVersion()), "/tokenize")
 		if err != nil {
 			return nil, err
 		}
@@ -425,11 +424,11 @@ func (s *Server) handleExecutorRequest(ctx echo.Context, request *ChatRequest, w
 
 	logging.Info("Attempting to lock node for inference", types.Inferences,
 		"inferenceId", inferenceId, "nodeVersion", s.configManager.GetCurrentNodeVersion())
-	resp, err := broker.LockNode(s.nodeBroker, request.OpenAiRequest.Model, s.configManager.GetCurrentNodeVersion(), func(node *broker.Node) (*http.Response, error) {
+	resp, err := broker.LockNode(s.nodeBroker, request.OpenAiRequest.Model, func(node *broker.Node) (*http.Response, error) {
 		logging.Info("Successfully acquired node lock for inference", types.Inferences,
-			"inferenceId", inferenceId, "node", node.Id, "url", node.InferenceUrl())
+			"inferenceId", inferenceId, "node", node.Id, "url", node.InferenceUrlWithVersion(s.configManager.GetCurrentNodeVersion()))
 
-		completionsUrl, err := url.JoinPath(node.InferenceUrl(), "/v1/chat/completions")
+		completionsUrl, err := url.JoinPath(node.InferenceUrlWithVersion(s.configManager.GetCurrentNodeVersion()), "/v1/chat/completions")
 		if err != nil {
 			return nil, err
 		}
@@ -826,7 +825,7 @@ func (s *Server) validateRequester(ctx context.Context, request *ChatRequest, re
 	}
 
 	if request.OpenAiRequest.MaxTokens == 0 {
-		request.OpenAiRequest.MaxTokens = keeper.DefaultMaxTokens
+		request.OpenAiRequest.MaxTokens = calculations.DefaultMaxTokens
 	}
 
 	var escrowNeeded uint64
