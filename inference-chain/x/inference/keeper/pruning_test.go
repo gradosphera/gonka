@@ -277,6 +277,8 @@ func TestPoCValidationsPruningMaxLimit_MultiCall_EpochAdvanceAfterEmpty(t *testi
 	k, ctx := keepertest.InferenceKeeper(t)
 	require.NoError(t, k.PruningState.Set(ctx, types.PruningState{}))
 
+	prunedEpoch := int64(2)
+	prunedEpochBlockHeight := int64(20)
 	// Create 10 validations in epoch 2 (eligible when current=3, threshold=1, end=2)
 	p := mkAddr(1)
 	for i := 0; i < 10; i++ {
@@ -284,7 +286,7 @@ func TestPoCValidationsPruningMaxLimit_MultiCall_EpochAdvanceAfterEmpty(t *testi
 		k.SetPoCValidation(ctx, types.PoCValidation{
 			ParticipantAddress:          p,
 			ValidatorParticipantAddress: v,
-			PocStageStartBlockHeight:    2,
+			PocStageStartBlockHeight:    prunedEpochBlockHeight,
 		})
 	}
 
@@ -293,10 +295,15 @@ func TestPoCValidationsPruningMaxLimit_MultiCall_EpochAdvanceAfterEmpty(t *testi
 	current := int64(3) // start=1, end=2
 
 	getCount := func() uint64 {
-		c, err := k.GetPocValidationCountByStage(ctx, 2)
+		c, err := k.GetPocValidationCountByStage(ctx, prunedEpochBlockHeight)
 		require.NoError(t, err)
 		return c
 	}
+	err := k.Epochs.Set(ctx, uint64(prunedEpoch), types.Epoch{
+		Index:               uint64(prunedEpoch),
+		PocStartBlockHeight: prunedEpochBlockHeight,
+	})
+	require.NoError(t, err)
 
 	// 1st prune: epoch 1 empty so marker may become 1, epoch 2 prunes 4
 	require.NoError(t, k.Prune(ctx, current))
@@ -327,12 +334,14 @@ func TestPoCBatchesPruningMaxLimit_MultiCall_EpochAdvanceAfterEmpty(t *testing.T
 	k, ctx := keepertest.InferenceKeeper(t)
 	require.NoError(t, k.PruningState.Set(ctx, types.PruningState{}))
 
+	prunedEpoch := 2
+	prunedEpochBlockHeight := int64(20)
 	// Create 10 batches in epoch 2 (eligible when current=3, threshold=1, end=2)
 	p := mkAddr(2)
 	for i := 0; i < 10; i++ {
 		k.SetPocBatch(ctx, types.PoCBatch{
 			ParticipantAddress:       p,
-			PocStageStartBlockHeight: 2,
+			PocStageStartBlockHeight: prunedEpochBlockHeight,
 			BatchId:                  fmt.Sprintf("b-%d", i),
 		})
 	}
@@ -342,10 +351,15 @@ func TestPoCBatchesPruningMaxLimit_MultiCall_EpochAdvanceAfterEmpty(t *testing.T
 	current := int64(3)
 
 	getCount := func() uint64 {
-		c, err := k.GetPoCBatchesCountByStage(ctx, 2)
+		c, err := k.GetPoCBatchesCountByStage(ctx, prunedEpochBlockHeight)
 		require.NoError(t, err)
 		return c
 	}
+	err := k.Epochs.Set(ctx, uint64(prunedEpoch), types.Epoch{
+		Index:               uint64(prunedEpoch),
+		PocStartBlockHeight: prunedEpochBlockHeight,
+	})
+	require.NoError(t, err)
 
 	// 1st prune
 	require.NoError(t, k.Prune(ctx, current))
