@@ -74,6 +74,12 @@ func LoadDefaultConfigManager() (*ConfigManager, error) {
 		return nil, err
 	}
 	log.Printf("Saved loaded config: %+v", manager.currentConfig)
+
+	err = manager.migrateDynamicDataToDb(ctx)
+	if err != nil {
+		log.Printf("Error migrating dynamic data to DB: %+v", err)
+		return nil, err
+	}
 	return &manager, nil
 }
 
@@ -485,4 +491,13 @@ func parseInferenceNodesFromNodeConfigJson(nodeConfigPath string) ([]InferenceNo
 	}
 
 	return newNodes, nil
+}
+
+func (cm *ConfigManager) migrateDynamicDataToDb(ctx context.Context) error {
+	err := WriteNodes(ctx, cm.sqlDb.GetDb(), cm.GetNodes())
+	if err != nil {
+		logging.Error("Error writing nodes to DB", types.Config, "error", err)
+		return err
+	}
+	return nil
 }

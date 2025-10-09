@@ -260,25 +260,7 @@ ON DUPLICATE KEY UPDATE
 
 // ExampleWriteNodes is an example helper showing how to connect and write nodes to MySQL.
 // It is placed in the same package and directory as config.go as requested.
-func ExampleWriteNodes(ctx context.Context, dbHost string, dbPort int, dbUser, dbPass, dbName string, nodes []InferenceNodeConfig) error {
-	cfg := MySqlConfig{
-		Username: dbUser,
-		Password: dbPass,
-		Host:     dbHost,
-		Port:     dbPort,
-		Database: dbName,
-		Params: map[string]string{
-			"parseTime": "true",
-			"charset":   "utf8mb4",
-			"collation": "utf8mb4_0900_ai_ci",
-		},
-	}
-	db, err := OpenMySQL(cfg)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
+func WriteNodes(ctx context.Context, db *sql.DB, nodes []InferenceNodeConfig) error {
 	if err := EnsureSchema(ctx, db); err != nil {
 		return err
 	}
