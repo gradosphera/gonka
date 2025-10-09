@@ -72,11 +72,6 @@ func LoadDefaultConfigManager() (*ConfigManager, error) {
 		return nil, err
 	}
 
-	// Load dynamic data from DB into in-memory copy (for callers that read from memory)
-	if err := manager.loadDynamicFromDb(ctx); err != nil {
-		log.Printf("Error loading dynamic data from DB: %+v", err)
-		return nil, err
-	}
 	return &manager, nil
 }
 
@@ -743,57 +738,6 @@ func (cm *ConfigManager) migrateDynamicDataToDb(ctx context.Context) error {
 		_ = KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyMLNodeKeyConfig, config.MLNodeKeyConfig)
 	}
 
-	return nil
-}
-
-// loadDynamicFromDb loads known dynamic fields into memory (non-fatal if absent)
-func (cm *ConfigManager) loadDynamicFromDb(ctx context.Context) error {
-	_ = cm.ensureDbReady(ctx)
-	if db := cm.sqlDb.GetDb(); db != nil {
-		// Nodes (optional read for in-memory copy)
-		if nodes, err := ReadNodes(ctx, db); err == nil && len(nodes) > 0 {
-			cm.currentConfig.Nodes = nodes
-			cm.currentConfig.NodeConfigIsMerged = true
-		}
-		if v, ok, err := KVGetInt64(ctx, db, kvKeyCurrentHeight); err == nil && ok {
-			cm.currentConfig.CurrentHeight = v
-		}
-		if v, ok, err := KVGetInt64(ctx, db, kvKeyLastProcessedHeight); err == nil && ok {
-			cm.currentConfig.LastProcessedHeight = v
-		}
-		var s SeedInfo
-		if ok, err := KVGetJSON(ctx, db, kvKeyCurrentSeed, &s); err == nil && ok {
-			cm.currentConfig.CurrentSeed = s
-		}
-		if ok, err := KVGetJSON(ctx, db, kvKeyPreviousSeed, &s); err == nil && ok {
-			cm.currentConfig.PreviousSeed = s
-		}
-		if ok, err := KVGetJSON(ctx, db, kvKeyUpcomingSeed, &s); err == nil && ok {
-			cm.currentConfig.UpcomingSeed = s
-		}
-		var up UpgradePlan
-		if ok, err := KVGetJSON(ctx, db, kvKeyUpgradePlan, &up); err == nil && ok {
-			cm.currentConfig.UpgradePlan = up
-		}
-		if v, ok, err := KVGetString(ctx, db, kvKeyCurrentNodeVersion); err == nil && ok {
-			cm.currentConfig.CurrentNodeVersion = v
-		}
-		if v, ok, err := KVGetString(ctx, db, kvKeyLastUsedVersion); err == nil && ok {
-			cm.currentConfig.LastUsedVersion = v
-		}
-		var vp ValidationParamsCache
-		if ok, err := KVGetJSON(ctx, db, kvKeyValidationParams, &vp); err == nil && ok {
-			cm.currentConfig.ValidationParams = vp
-		}
-		var bp BandwidthParamsCache
-		if ok, err := KVGetJSON(ctx, db, kvKeyBandwidthParams, &bp); err == nil && ok {
-			cm.currentConfig.BandwidthParams = bp
-		}
-		var mk MLNodeKeyConfig
-		if ok, err := KVGetJSON(ctx, db, kvKeyMLNodeKeyConfig, &mk); err == nil && ok {
-			cm.currentConfig.MLNodeKeyConfig = mk
-		}
-	}
 	return nil
 }
 
