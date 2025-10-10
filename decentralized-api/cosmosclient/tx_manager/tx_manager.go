@@ -119,8 +119,6 @@ func StartTxManager(
 			maxBlockTimeout: 10 * time.Second,
 		},
 	}
-
-	m.isChanHalt()
 	if err := m.sendTxs(); err != nil {
 		return nil, err
 	}
@@ -160,7 +158,7 @@ func (m *manager) SendTransactionAsyncWithRetry(rawTx sdk.Msg) (*sdk.TxResponse,
 	id := uuid.New().String()
 	logging.Debug("SendTransactionAsyncWithRetry: sending tx", types.Messages, "tx_id", id)
 
-	if halt, err := m.isChanHalt(); err != nil || halt {
+	if halt, err := m.updateChainHalt(); err != nil || halt {
 		logging.Error("chain is slowing down or couldn't fetch actual chain status", types.Messages, "latest_block_timestamp", m.blockTimeTracker.latestBlockTime.Load().(time.Time))
 
 		if err := m.putOnRetry(id, "", time.Time{}, rawTx, 0, false); err != nil {
@@ -232,7 +230,7 @@ func (m *manager) putOnRetry(
 	)
 
 	if attempts >= maxAttempts {
-		logging.Info("tx reached max attempts", types.Messages, "tx_id", id)
+		logging.Warn("tx reached max attempts", types.Messages, "tx_id", id)
 		return nil
 	}
 
@@ -292,7 +290,7 @@ func (m *manager) sendTxs() error {
 	logging.Info("Tx manager: sending txs: run in background", types.Messages)
 
 	_, err := m.natsJetStream.Subscribe(server.TxsToSendStream, func(msg *nats.Msg) {
-		if halt, err := m.isChanHalt(); err != nil || halt {
+		if halt, err := m.updateChainHalt(); err != nil || halt {
 			logging.Error("chain is slowing down or couldn't fetch actual chain status", types.Messages, "latest_block_timestamp", m.blockTimeTracker.latestBlockTime.Load().(time.Time))
 			time.Sleep(3 * time.Second)
 			return
@@ -346,7 +344,7 @@ func (m *manager) sendTxs() error {
 func (m *manager) observeTxs() error {
 	logging.Info("Tx manager: observeTxs txs: run in background", types.Messages)
 	_, err := m.natsJetStream.Subscribe(server.TxsToObserveStream, func(msg *nats.Msg) {
-		if halt, err := m.isChanHalt(); err != nil || halt {
+		if halt, err := m.updateChainHalt(); err != nil || halt {
 			logging.Error("chain is slowing down or couldn't fetch actual chain status", types.Messages, "latest_block_timestamp", m.blockTimeTracker.latestBlockTime.Load().(time.Time))
 		}
 
@@ -538,7 +536,7 @@ func (m *manager) getFactory(id string) (*tx.Factory, error) {
 func (m *manager) getSignedBytes(id string, unsignedTx client.TxBuilder, factory *tx.Factory) ([]byte, time.Time, error) {
 	blockTs := m.blockTimeTracker.latestBlockTime.Load().(time.Time)
 	if blockTs.IsZero() {
-		_, err := m.isChanHalt()
+		_, err := m.updateChainHalt()
 		if err != nil {
 			return nil, time.Time{}, err
 		}
@@ -567,7 +565,7 @@ func (m *manager) getSignedBytes(id string, unsignedTx client.TxBuilder, factory
 	return txBytes, timestamp, nil
 }
 
-func (m *manager) isChanHalt() (bool, error) {
+func (m *manager) updateChainHalt() (bool, error) {
 	now := time.Now()
 	if now.Sub(m.blockTimeTracker.lastUpdatedAt) < time.Second*3 {
 		return m.blockTimeTracker.chainHalt, nil
