@@ -9,14 +9,19 @@ This document describes the process of preparing and reviewing an upgrade propos
 
 This document focuses only on full on-chain upgrades. For more details on the overall upgrade strategy using Cosmovisor, see [the upgrade strategy document](./upgrades.md).
 
-## Process
+## 1. Process
 
 The process consists of the following steps:
 
 - create a PR in the `gonka-ai` repo named "Upgrade Proposal vX.Y.Z"
 - get approval from a majority of active miners, and apply all requested edits
 - once the PR is approved, build and release the upgrade binaries and containers with version tag `vX.Y.Z` from the PR branch. **Do not merge the PR yet.**
-- submit the on-chain upgrade proposal with `./inferenced tx upgrade software-upgrade vX.Y.Z` and include links to the released binaries. The proposed upgrade height should be at least a couple of hours from the PoC phase. See [the upgrade strategy document](./upgrades.md) for a full command example.
+  - Run `make build-for-upgrade` from the repository root to build both `inferenced` and `decentralized-api` binaries
+  - Binaries are published to `public-html/v2/inferenced/` and `public-html/v2/dapi/` with checksums automatically generated
+  - Build and push Docker containers for all services with the version tag
+  - Create a GitHub release (example: https://github.com/gonka-ai/gonka/releases/tag/release%2Fv0.2.3)
+- submit the on-chain upgrade proposal with `./inferenced tx upgrade software-upgrade vX.Y.Z` and include links to the released binaries in the upgrade info JSON. The proposed upgrade height should be at least a couple of hours from the PoC phase. The governance proposal requires a deposit. See [the upgrade strategy document](./upgrades.md) for a full command example.
+- attach the static GitHub link to `proposals/governance-artifacts/update-vX.Y.Z/README.md` as metadata to the on-chain proposal using `--metadata "https://github.com/gonka-ai/gonka/blob/<commit-hash>/proposals/governance-artifacts/update-vX.Y.Z/README.md"`
 - get votes from the majority of miners
 - if voting finishes and there is approval by consensus, the upgrade is applied automatically
 - after a successful on-chain upgrade, merge the PR. This ensures the `main` branch is not in an inconsistent state where container versions do not match the on-chain binary versions.
@@ -25,8 +30,8 @@ The process consists of the following steps:
 Each upgrade proposal should start with a PR named "Upgrade Proposal vX.Y.Z". The PR should contain:
 
 - all proposed changes
-- incremented `ConsensusVersion` in each modified module
-- migrations for all incremented versions registered in `inference-chain/app/upgrades.go:registerMigrations`. If no migrations are needed, an empty migration should still be created
+- incremented `ConsensusVersion` in each modified module's `module.go` file
+- migrations for all incremented versions registered in `inference-chain/app/upgrades.go:registerMigrations`. If no migrations are needed, an empty migration should still be created to track that the module version has been processed
 - an upgrade handler created in `inference-chain/app/upgrades/vX_Y_Z` and registered in `inference-chain/app/upgrades.go:setupUpgradeHandlers`
 - container image versions in `deploy/join/docker-compose.yml` set to `X.Y.Z`
 - a description of the proposal in `proposals/governance-artifacts/update-vX.Y.Z/README.md` and in the PR description
@@ -56,12 +61,16 @@ If an upgrade proposal has multiple independent features, they should be split i
 >
 > This section should provide:
 > - A high-level summary of what the upgrade introduces.
-> - A detailed description for every commit that introduces major changes, ideally with commit hashes.
+> - A detailed description for every commit that introduces major changes, ideally with commit hashes. For example:
+>
+> #### Feature X (`<hash>`)
+>
+> A brief description of the feature and the changes it introduces.
 
 Upgrade proposals must not require changes to the base container. Binaries downloaded by `cosmovisor` must have all required files.
 
 
-## Testing
+## 2. Testing
 
 Before review starts, the upgrade proposal should pass the following checks:
 
