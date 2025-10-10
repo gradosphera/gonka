@@ -262,7 +262,7 @@ func (m *manager) putOnRetry(
 	return err
 }
 
-func (m *manager) putTxToObserve(id string, rawTx sdk.Msg, txHash string, timeout time.Time) error {
+func (m *manager) putTxToObserve(id string, rawTx sdk.Msg, txHash string, timeout time.Time, attempts int) error {
 	logging.Debug(" putTxToObserve: tx with params", types.Messages,
 		"tx_id", id,
 		"tx_hash", txHash,
@@ -275,10 +275,11 @@ func (m *manager) putTxToObserve(id string, rawTx sdk.Msg, txHash string, timeou
 	}
 
 	b, err := json.Marshal(&txInfo{
-		Id:      id,
-		RawTx:   bz,
-		TxHash:  txHash,
-		Timeout: timeout,
+		Id:       id,
+		RawTx:    bz,
+		TxHash:   txHash,
+		Timeout:  timeout,
+		Attempts: attempts,
 	})
 	if err != nil {
 		return err
@@ -332,7 +333,7 @@ func (m *manager) sendTxs() error {
 
 		logging.Debug("tx broadcast, put to observe", types.Messages, "id", tx.TxInfo.Id, "tx_hash", tx.TxInfo.TxHash, "timeout", tx.TxInfo.Timeout.String())
 
-		if err := m.putTxToObserve(tx.TxInfo.Id, rawTx, tx.TxInfo.TxHash, tx.TxInfo.Timeout); err != nil {
+		if err := m.putTxToObserve(tx.TxInfo.Id, rawTx, tx.TxInfo.TxHash, tx.TxInfo.Timeout, tx.Attempts); err != nil {
 			logging.Error("error pushing to observe queue", types.Messages, "id", tx.TxInfo.Id, "err", err)
 			msg.NakWithDelay(defaultSenderNackDelay)
 		} else {

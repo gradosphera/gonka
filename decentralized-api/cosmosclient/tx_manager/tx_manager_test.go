@@ -74,7 +74,7 @@ func TestPack_Unpack_Msg(t *testing.T) {
 }
 
 func TestTxManagerOnChainHalt(t *testing.T) {
-	const addr = "gonka1af8s0906kzuj8kyf69zn5n77jcrg9ttqhg4jwy"
+	const addr = "gonka19vqp63msjpm5vz85ghwmmx052zenxm4wkqcd3y"
 	config := apiconfig.NatsServerConfig{
 		Host: "0.0.0.0",
 		Port: 4111,
@@ -104,7 +104,7 @@ func TestTxManagerOnChainHalt(t *testing.T) {
 	acc, err := cosmoclient.Account(addr)
 	assert.NoError(t, err)
 
-	pubKeyBytes, err := base64.StdEncoding.DecodeString("AuwJlMZwZb8PhFKJbll8l6COhkBisgpkF80AX4i1BY6b")
+	pubKeyBytes, err := base64.StdEncoding.DecodeString("ArVokzTKWFnsDsrH9uRwciOr56n2jqRhMu6CEIfsheP9")
 	assert.NoError(t, err)
 
 	accountKey := secp256k1.PubKey{Key: pubKeyBytes}
