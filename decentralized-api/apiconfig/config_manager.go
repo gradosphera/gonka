@@ -71,14 +71,14 @@ func LoadDefaultConfigManager() (*ConfigManager, error) {
 		log.Printf("Error migrating dynamic data to DB: %+v", err)
 		return nil, err
 	}
-
-	if err := manager.LoadNodeConfig(ctx); err != nil {
-		log.Fatalf("error loading node config: %v", err)
-	}
 	// Hydrate in-memory dynamic state from DB once
 	if err := manager.HydrateFromDB(context.Background()); err != nil {
 		log.Printf("Error hydrating dynamic data from DB: %+v", err)
 		return nil, err
+	}
+	// Load node config JSON into in-memory struct if it's the very first run
+	if err := manager.LoadNodeConfig(ctx); err != nil {
+		log.Fatalf("error loading node config: %v", err)
 	}
 	return &manager, nil
 }
@@ -476,17 +476,13 @@ func (cm *ConfigManager) LoadNodeConfig(ctx context.Context) error {
 		return err
 	}
 
-	// Override DB state with provided nodes
-	if err := ReplaceInferenceNodes(ctx, cm.sqlDb.GetDb(), newNodes); err != nil {
-		return err
-	}
+	// Populate in-memory nodes and mark dirty. Auto-flush will persist and then set merged flag.
+	cm.mutex.Lock()
+	cm.currentConfig.Nodes = newNodes
+	cm.dirty.Nodes = true
+	cm.mutex.Unlock()
 
-	// Mark as merged
-	if err := KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyNodeConfigMerged, true); err != nil {
-		return err
-	}
-
-	logging.Info("Successfully loaded and merged node configuration", types.Config,
+	logging.Info("Loaded node configuration into memory; will persist on next flush", types.Config,
 		"new_nodes", len(newNodes))
 	return nil
 }
@@ -517,6 +513,12 @@ func parseInferenceNodesFromNodeConfigJson(nodeConfigPath string) ([]InferenceNo
 func (cm *ConfigManager) migrateDynamicDataToDb(ctx context.Context) error {
 	if err := cm.ensureDbReady(ctx); err != nil {
 		return err
+	}
+	// Only migrate once, gated by a KV flag
+	var migrated bool
+	if ok, err := KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyConfigMigrated, &migrated); err == nil && ok && migrated {
+		logging.Info("Config migration already completed. Skipping", types.Config)
+		return nil
 	}
 	config := cm.currentConfig
 	// Nodes: upsert unconditionally (idempotent)
@@ -575,6 +577,8 @@ func (cm *ConfigManager) migrateDynamicDataToDb(ctx context.Context) error {
 		_ = KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyMLNodeKeyConfig, config.MLNodeKeyConfig)
 	}
 
+	// Mark migration as done
+	_ = KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyConfigMigrated, true)
 	return nil
 }
 
@@ -677,6 +681,7 @@ func (cm *ConfigManager) flushToDB(_ context.Context) error {
 		if err := ReplaceInferenceNodes(ctx, db, cfg.Nodes); err != nil {
 			return err
 		}
+		_ = KVSetJSON(ctx, db, kvKeyNodeConfigMerged, true)
 	}
 	if dirty.Seeds {
 		_ = SetActiveSeed(ctx, db, "current", cfg.CurrentSeed)
@@ -766,4 +771,5 @@ const (
 	kvKeyBandwidthParams     = "bandwidth_params"
 	kvKeyMLNodeKeyConfig     = "ml_node_key_config"
 	kvKeyNodeConfigMerged    = "node_config_merged"
+	kvKeyConfigMigrated      = "config_migrated"
 )
