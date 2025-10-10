@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -336,6 +337,195 @@ func IsSeedClaimed(ctx context.Context, db *sql.DB, seedType string) (claimed bo
 		return false, false, err
 	}
 	return c, true, nil
+}
+
+// ExportAllDb returns a JSON-friendly dump of all user tables in the database.
+// It introspects table schemas and converts values into Go primitives suitable for JSON encoding.
+func ExportAllDb(ctx context.Context, db *sql.DB) (map[string]any, error) {
+	tables, err := listUserTables(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]any, len(tables))
+	for _, t := range tables {
+		rows, err := dumpTable(ctx, db, t)
+		if err != nil {
+			return nil, fmt.Errorf("dump table %s: %w", t, err)
+		}
+		out[t] = rows
+	}
+	return out, nil
+}
+
+func listUserTables(ctx context.Context, db *sql.DB) ([]string, error) {
+	q := `SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`
+	var out []string
+	rows, err := db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+type columnInfo struct {
+	name     string
+	declType string
+}
+
+func getTableColumns(ctx context.Context, db *sql.DB, table string) ([]columnInfo, error) {
+	rows, err := db.QueryContext(ctx, "PRAGMA table_info("+table+")")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cols []columnInfo
+	// pragma table_info returns: cid, name, type, notnull, dflt_value, pk
+	for rows.Next() {
+		var (
+			cid      int
+			name     string
+			declType string
+			notnull  int
+			dflt     sql.NullString
+			pk       int
+		)
+		if err := rows.Scan(&cid, &name, &declType, &notnull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		cols = append(cols, columnInfo{name: name, declType: declType})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return cols, nil
+}
+
+func dumpTable(ctx context.Context, db *sql.DB, table string) ([]map[string]any, error) {
+	cols, err := getTableColumns(ctx, db, table)
+	if err != nil {
+		return nil, err
+	}
+	if len(cols) == 0 {
+		return []map[string]any{}, nil
+	}
+	// Build SELECT with explicit column list for stable order
+	colNames := make([]string, len(cols))
+	for i, c := range cols {
+		colNames[i] = c.name
+	}
+	q := "SELECT " + strings.Join(colNames, ",") + " FROM " + table
+	rows, err := db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Prepare scanners based on decl types
+	results := make([]map[string]any, 0, 64)
+	for rows.Next() {
+		scanHolders := make([]any, len(cols))
+		// temporary holders
+		intH := make([]sql.NullInt64, 0)
+		floatH := make([]sql.NullFloat64, 0)
+		strH := make([]sql.NullString, 0)
+		rawH := make([][]byte, 0)
+		holderKinds := make([]string, len(cols))
+		// build holders per column
+		for i, c := range cols {
+			t := strings.ToUpper(c.declType)
+			switch {
+			case strings.Contains(t, "INT") || strings.Contains(t, "BOOL"):
+				intH = append(intH, sql.NullInt64{})
+				scanHolders[i] = &intH[len(intH)-1]
+				holderKinds[i] = "int"
+			case strings.Contains(t, "REAL") || strings.Contains(t, "FLOA") || strings.Contains(t, "DOUB"):
+				floatH = append(floatH, sql.NullFloat64{})
+				scanHolders[i] = &floatH[len(floatH)-1]
+				holderKinds[i] = "float"
+			case strings.Contains(t, "BLOB"):
+				rawH = append(rawH, nil)
+				scanHolders[i] = &rawH[len(rawH)-1]
+				holderKinds[i] = "blob"
+			default:
+				strH = append(strH, sql.NullString{})
+				scanHolders[i] = &strH[len(strH)-1]
+				holderKinds[i] = "text"
+			}
+		}
+		if err := rows.Scan(scanHolders...); err != nil {
+			return nil, err
+		}
+		// reconstruct per row map
+		rowMap := make(map[string]any, len(cols))
+		// We need indices for each holder slice to read in the same order
+		intIdx, floatIdx, strIdx, rawIdx := 0, 0, 0, 0
+		for i, c := range cols {
+			kind := holderKinds[i]
+			switch kind {
+			case "int":
+				v := intH[intIdx]
+				intIdx++
+				if !v.Valid {
+					rowMap[c.name] = nil
+					break
+				}
+				// if declared as BOOL* return true/false
+				if strings.Contains(strings.ToUpper(c.declType), "BOOL") {
+					rowMap[c.name] = v.Int64 != 0
+				} else {
+					rowMap[c.name] = v.Int64
+				}
+			case "float":
+				v := floatH[floatIdx]
+				floatIdx++
+				if !v.Valid {
+					rowMap[c.name] = nil
+					break
+				}
+				rowMap[c.name] = v.Float64
+			case "blob":
+				v := rawH[rawIdx]
+				rawIdx++
+				if v == nil {
+					rowMap[c.name] = nil
+					break
+				}
+				rowMap[c.name] = v // will JSON-encode as base64
+			default: // text
+				v := strH[strIdx]
+				strIdx++
+				if !v.Valid {
+					rowMap[c.name] = nil
+					break
+				}
+				// Special-case kv_config.value_json to decode JSON payload
+				if table == "kv_config" && c.name == "value_json" {
+					var parsed any
+					if err := json.Unmarshal([]byte(v.String), &parsed); err == nil {
+						rowMap[c.name] = parsed
+						break
+					}
+				}
+				rowMap[c.name] = v.String
+			}
+		}
+		results = append(results, rowMap)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 // KV helpers for dynamic config

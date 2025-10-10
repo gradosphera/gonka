@@ -230,12 +230,10 @@ func (s *Server) exportDb(c echo.Context) error {
 		logging.Error("DB not initialized", types.Nodes)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "db not initialized"})
 	}
-	nodes, err := apiconfig.ReadNodes(ctx, db.GetDb())
+	payload, err := apiconfig.ExportAllDb(ctx, db.GetDb())
 	if err != nil {
-		logging.Error("Failed to read nodes from DB", types.Nodes, "error", err)
+		logging.Error("Failed to export DB state", types.Nodes, "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"nodes": nodes,
-	})
+	return c.JSON(http.StatusOK, payload)
 }

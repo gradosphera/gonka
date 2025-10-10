@@ -36,9 +36,13 @@ type WriteCloserProvider interface {
 }
 
 func LoadDefaultConfigManager() (*ConfigManager, error) {
-	dbPath := getSqlitePath()
+	return LoadConfigManagerWithPaths(getConfigPath(), getSqlitePath(), os.Getenv("NODE_CONFIG_PATH"))
+}
+
+// LoadConfigManagerWithPaths allows tests to supply explicit paths.
+func LoadConfigManagerWithPaths(configPath, sqlitePath, nodeConfigPath string) (*ConfigManager, error) {
 	defaultDbCfg := SqliteConfig{
-		Path: dbPath,
+		Path: sqlitePath,
 	}
 
 	db := NewSQLiteDb(defaultDbCfg)
@@ -50,8 +54,8 @@ func LoadDefaultConfigManager() (*ConfigManager, error) {
 	}
 
 	manager := ConfigManager{
-		KoanProvider:   getFileProvider(),
-		WriterProvider: NewFileWriteCloserProvider(getConfigPath()),
+		KoanProvider:   file.Provider(configPath),
+		WriterProvider: NewFileWriteCloserProvider(configPath),
 		sqlDb:          db,
 		mutex:          sync.Mutex{},
 	}
@@ -77,7 +81,7 @@ func LoadDefaultConfigManager() (*ConfigManager, error) {
 		return nil, err
 	}
 	// Load node config JSON into in-memory struct if it's the very first run
-	if err := manager.LoadNodeConfig(ctx); err != nil {
+	if err := manager.LoadNodeConfig(ctx, nodeConfigPath); err != nil {
 		log.Fatalf("error loading node config: %v", err)
 	}
 	return &manager, nil
@@ -451,7 +455,7 @@ type WriteCloser interface {
 
 // LoadNodeConfig loads additional nodes from a JSON file and writes them into the DB once.
 // Idempotent via KV flag kvKeyNodeConfigMerged.
-func (cm *ConfigManager) LoadNodeConfig(ctx context.Context) error {
+func (cm *ConfigManager) LoadNodeConfig(ctx context.Context, nodeConfigPathOverride string) error {
 	if err := cm.ensureDbReady(ctx); err != nil {
 		return err
 	}
@@ -463,8 +467,15 @@ func (cm *ConfigManager) LoadNodeConfig(ctx context.Context) error {
 		return nil
 	}
 
-	nodeConfigPath, found := os.LookupEnv("NODE_CONFIG_PATH")
-	if !found || strings.TrimSpace(nodeConfigPath) == "" {
+	nodeConfigPath := nodeConfigPathOverride
+	if strings.TrimSpace(nodeConfigPath) == "" {
+		var found bool
+		nodeConfigPath, found = os.LookupEnv("NODE_CONFIG_PATH")
+		if !found {
+			nodeConfigPath = ""
+		}
+	}
+	if strings.TrimSpace(nodeConfigPath) == "" {
 		logging.Info("NODE_CONFIG_PATH not set. No additional nodes will be added to config", types.Config)
 		return nil
 	}
