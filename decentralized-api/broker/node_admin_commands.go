@@ -115,6 +115,13 @@ type UpdateNode struct {
 	Response chan *apiconfig.InferenceNodeConfig
 }
 
+func NewUpdateNodeCommand(node apiconfig.InferenceNodeConfig) UpdateNode {
+	return UpdateNode{
+		Node:     node,
+		Response: make(chan *apiconfig.InferenceNodeConfig, 2),
+	}
+}
+
 func (u UpdateNode) GetResponseChannelCapacity() int {
 	return cap(u.Response)
 }

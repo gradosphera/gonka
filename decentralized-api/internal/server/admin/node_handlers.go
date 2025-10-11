@@ -109,8 +109,9 @@ func (s *Server) createNewNode(ctx echo.Context) error {
 	}
 
 	if exists {
-		response := make(chan *apiconfig.InferenceNodeConfig, 2)
-		err := s.nodeBroker.QueueMessage(broker.UpdateNode{Node: newNode, Response: response})
+		command := broker.NewUpdateNodeCommand(newNode)
+		response := command.Response
+		err := s.nodeBroker.QueueMessage(command)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err)
 		}

@@ -557,8 +557,9 @@ func TestUpdateNodeConfiguration(t *testing.T) {
 	}
 
 	// Queue UpdateNode
-	resp := make(chan *apiconfig.InferenceNodeConfig)
-	err = broker.QueueMessage(UpdateNode{Node: updated, Response: resp})
+	command := NewUpdateNodeCommand(node)
+	resp := command.Response
+	err = broker.QueueMessage(command)
 	require.NoError(t, err)
 	out := <-resp
 	require.NotNil(t, out)
