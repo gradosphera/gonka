@@ -179,13 +179,18 @@ merged_node_config: false
 	}
 	require.Contains(t, ids, "yaml-node")
 
-	// After Write(), static-only YAML should be persisted; dynamic fields removed
+	// After Write(), static-only YAML should be persisted; dynamic fields zeroed (e.g., current_height: 0)
 	// Call Write() explicitly and re-read file
 	require.NoError(t, mgr.Write())
 	data, err := os.ReadFile(cfgPath)
 	require.NoError(t, err)
 	s := string(data)
-	require.NotContains(t, s, "current_height:")
+	require.Contains(t, s, "current_height: 0")
+
+	// Now reload manager and ensure zero in YAML is ignored and DB value is used (should be 7)
+	mgr2, err := apiconfig.LoadConfigManagerWithPaths(cfgPath, dbPath, "")
+	require.NoError(t, err)
+	require.Equal(t, int64(7), mgr2.GetHeight())
 }
 
 // Scenario 4: Relaunch after migration; ignore dynamic YAML and skip migration
