@@ -65,46 +65,52 @@ def test_get_task_id(manager, sample_model, sample_model_no_commit):
     assert manager._get_task_id(sample_model_no_commit) == "test/model:latest"
 
 
-@patch('api.models.manager.scan_cache_dir')
-def test_is_model_exist_with_commit(mock_scan, manager, sample_model):
+@patch('api.models.manager.snapshot_download')
+def test_is_model_exist_with_commit(mock_snapshot, manager, sample_model):
     """Test checking if model exists with specific commit."""
-    # Mock cache with the model
-    revision = MockRevision("abc123")
-    repo = MockRepo("test/model", [revision])
-    mock_scan.return_value = MockCacheInfo([repo])
+    # Mock successful verification (no exception = model exists and is valid)
+    mock_snapshot.return_value = "/tmp/test_cache/models/test/model"
     
     assert manager.is_model_exist(sample_model) is True
-    mock_scan.assert_called_once_with(manager.cache_dir)
+    mock_snapshot.assert_called_once_with(
+        repo_id="test/model",
+        revision="abc123",
+        cache_dir=manager.cache_dir,
+        local_files_only=True,
+    )
 
 
-@patch('api.models.manager.scan_cache_dir')
-def test_is_model_exist_without_commit(mock_scan, manager, sample_model_no_commit):
+@patch('api.models.manager.snapshot_download')
+def test_is_model_exist_without_commit(mock_snapshot, manager, sample_model_no_commit):
     """Test checking if model exists without specific commit."""
-    # Mock cache with any revision
-    revision = MockRevision("xyz789")
-    repo = MockRepo("test/model", [revision])
-    mock_scan.return_value = MockCacheInfo([repo])
+    # Mock successful verification (no exception = model exists and is valid)
+    mock_snapshot.return_value = "/tmp/test_cache/models/test/model"
     
     assert manager.is_model_exist(sample_model_no_commit) is True
-    mock_scan.assert_called_once_with(manager.cache_dir)
+    mock_snapshot.assert_called_once_with(
+        repo_id="test/model",
+        revision=None,
+        cache_dir=manager.cache_dir,
+        local_files_only=True,
+    )
 
 
-@patch('api.models.manager.scan_cache_dir')
-def test_is_model_exist_not_found(mock_scan, manager, sample_model):
+@patch('api.models.manager.snapshot_download')
+def test_is_model_exist_not_found(mock_snapshot, manager, sample_model):
     """Test checking if model exists when it doesn't."""
-    # Mock empty cache
-    mock_scan.return_value = MockCacheInfo([])
+    # Mock model not found (raise exception)
+    from huggingface_hub.utils import RepositoryNotFoundError
+    mock_snapshot.side_effect = RepositoryNotFoundError("Not found")
     
     assert manager.is_model_exist(sample_model) is False
 
 
-@patch('api.models.manager.scan_cache_dir')
-def test_is_model_exist_wrong_commit(mock_scan, manager, sample_model):
+@patch('api.models.manager.snapshot_download')
+def test_is_model_exist_wrong_commit(mock_snapshot, manager, sample_model):
     """Test checking if model exists with wrong commit."""
-    # Mock cache with different commit
-    revision = MockRevision("different123")
-    repo = MockRepo("test/model", [revision])
-    mock_scan.return_value = MockCacheInfo([repo])
+    # Mock cache with different commit (local_files_only will fail)
+    from huggingface_hub.utils import RevisionNotFoundError
+    mock_snapshot.side_effect = RevisionNotFoundError("Revision not found")
     
     assert manager.is_model_exist(sample_model) is False
 
@@ -194,11 +200,15 @@ async def test_download_model_error(mock_snapshot, manager, sample_model):
 @patch('api.models.manager.snapshot_download')
 async def test_download_model_cancelled(mock_snapshot, manager, sample_model):
     """Test model download cancellation."""
-    # Make snapshot_download slow so we can cancel it
-    async def slow_download(*args, **kwargs):
-        await asyncio.sleep(10)
+    # Make snapshot_download block so we can cancel it
+    # Since it's run in an executor, we need to make it sleep synchronously
+    import time as sync_time
     
-    mock_snapshot.side_effect = lambda *args, **kwargs: slow_download()
+    def slow_download(*args, **kwargs):
+        sync_time.sleep(10)
+        return "/tmp/test_cache"
+    
+    mock_snapshot.side_effect = slow_download
     
     task_obj = DownloadTask(sample_model)
     download_task = asyncio.create_task(
@@ -276,9 +286,13 @@ async def test_cancel_download_not_found(manager, sample_model):
 
 @pytest.mark.asyncio
 @patch('api.models.manager.scan_cache_dir')
-async def test_delete_model_from_cache(mock_scan, manager, sample_model):
+@patch('api.models.manager.snapshot_download')
+async def test_delete_model_from_cache(mock_snapshot, mock_scan, manager, sample_model):
     """Test deleting a model from cache."""
-    # Mock cache with the model
+    # Mock is_model_exist to return True (model exists in cache)
+    mock_snapshot.return_value = "/tmp/test_cache"
+    
+    # Mock cache with the model for deletion
     revision = MockRevision("abc123")
     repo = MockRepo("test/model", [revision])
     cache_info = MockCacheInfo([repo])
@@ -342,15 +356,11 @@ def test_get_disk_space(mock_disk_usage, mock_scan, manager):
 
 @pytest.mark.asyncio
 @patch('api.models.manager.snapshot_download')
-@patch('api.models.manager.scan_cache_dir')
-async def test_download_model_with_retry_success(mock_scan, mock_snapshot, manager, sample_model):
+async def test_download_model_with_retry_success(mock_snapshot, manager, sample_model):
     """Test successful download with retry logic."""
-    # First call to is_model_exist returns False (before download)
-    # Second call returns True (after download for verification)
-    mock_scan.side_effect = [
-        MockCacheInfo([]),  # is_model_exist check before download
-        MockCacheInfo([MockRepo("test/model", [MockRevision("abc123")])]),  # verification after download
-    ]
+    # snapshot_download is called twice:
+    # 1. During download (without local_files_only)
+    # 2. During verification (with local_files_only=True)
     mock_snapshot.return_value = "/tmp/test_cache"
     
     task_obj = DownloadTask(sample_model)
@@ -358,15 +368,14 @@ async def test_download_model_with_retry_success(mock_scan, mock_snapshot, manag
     
     assert task_obj.status == ModelStatus.DOWNLOADED
     assert task_obj.error_message is None
-    mock_snapshot.assert_called_once()
+    # Should be called twice: once for download, once for verification
+    assert mock_snapshot.call_count == 2
 
 
 @pytest.mark.asyncio
 @patch('api.models.manager.snapshot_download')
-@patch('api.models.manager.scan_cache_dir')
-async def test_download_model_with_retry_network_error(mock_scan, mock_snapshot, manager, sample_model):
+async def test_download_model_with_retry_network_error(mock_snapshot, manager, sample_model):
     """Test download with network error and retries."""
-    mock_scan.return_value = MockCacheInfo([])
     # Simulate network error that should trigger retries
     mock_snapshot.side_effect = requests.exceptions.ConnectionError("Network error")
     
@@ -375,25 +384,20 @@ async def test_download_model_with_retry_network_error(mock_scan, mock_snapshot,
     
     assert task_obj.status == ModelStatus.ERROR
     assert "retry attempts" in task_obj.error_message.lower()
-    # Should retry 5 times
+    # Should retry 5 times (no verification call since download never succeeds)
     assert mock_snapshot.call_count == 5
 
 
 @pytest.mark.asyncio
 @patch('api.models.manager.snapshot_download')
-@patch('api.models.manager.scan_cache_dir')
-async def test_download_model_with_retry_eventual_success(mock_scan, mock_snapshot, manager, sample_model):
+async def test_download_model_with_retry_eventual_success(mock_snapshot, manager, sample_model):
     """Test download succeeds after initial failures."""
-    # First 2 calls fail, 3rd succeeds
+    # First 2 calls fail, 3rd succeeds (download), 4th succeeds (verification)
     mock_snapshot.side_effect = [
         requests.exceptions.ConnectionError("Network error"),
         requests.exceptions.Timeout("Timeout"),
-        "/tmp/test_cache",  # Success on 3rd attempt
-    ]
-    # Verification succeeds
-    mock_scan.side_effect = [
-        MockCacheInfo([]),  # Before download
-        MockCacheInfo([MockRepo("test/model", [MockRevision("abc123")])]),  # After download
+        "/tmp/test_cache",  # Success on 3rd attempt (download)
+        "/tmp/test_cache",  # Success on 4th attempt (verification)
     ]
     
     task_obj = DownloadTask(sample_model)
@@ -401,19 +405,18 @@ async def test_download_model_with_retry_eventual_success(mock_scan, mock_snapsh
     
     assert task_obj.status == ModelStatus.DOWNLOADED
     assert task_obj.error_message is None
-    assert mock_snapshot.call_count == 3
+    # 2 failed download attempts + 1 successful download + 1 verification = 4 calls
+    assert mock_snapshot.call_count == 4
 
 
 @pytest.mark.asyncio
 @patch('api.models.manager.snapshot_download')
-@patch('api.models.manager.scan_cache_dir')
-async def test_download_verification_fails(mock_scan, mock_snapshot, manager, sample_model):
+async def test_download_verification_fails(mock_snapshot, manager, sample_model):
     """Test download with verification failure."""
-    mock_snapshot.return_value = "/tmp/test_cache"
-    # Download completes but verification fails (no files in cache)
-    mock_scan.side_effect = [
-        MockCacheInfo([]),  # Before download
-        MockCacheInfo([MockRepo("test/model", [MockRevision("abc123", num_files=0)])]),  # After download - no files
+    # Download succeeds but verification fails (corrupted files)
+    mock_snapshot.side_effect = [
+        "/tmp/test_cache",  # Download succeeds
+        Exception("Checksum validation failed"),  # Verification fails
     ]
     
     task_obj = DownloadTask(sample_model)
@@ -423,24 +426,20 @@ async def test_download_verification_fails(mock_scan, mock_snapshot, manager, sa
     assert "verification failed" in task_obj.error_message.lower()
 
 
-@patch('api.models.manager.scan_cache_dir')
-def test_is_model_exist_verifies_files(mock_scan, manager, sample_model):
+@patch('api.models.manager.snapshot_download')
+def test_is_model_exist_verifies_files(mock_snapshot, manager, sample_model):
     """Test that is_model_exist verifies files are present."""
-    # Model exists but has no files
-    revision = MockRevision("abc123", num_files=0)
-    repo = MockRepo("test/model", [revision])
-    mock_scan.return_value = MockCacheInfo([repo])
+    # Model exists but has no files or is corrupted
+    mock_snapshot.side_effect = Exception("Checksum validation failed")
     
     assert manager.is_model_exist(sample_model) is False
 
 
-@patch('api.models.manager.scan_cache_dir')
-def test_is_model_exist_with_files(mock_scan, manager, sample_model):
+@patch('api.models.manager.snapshot_download')
+def test_is_model_exist_with_files(mock_snapshot, manager, sample_model):
     """Test that is_model_exist succeeds when files present."""
-    # Model exists with files
-    revision = MockRevision("abc123", num_files=10)
-    repo = MockRepo("test/model", [revision])
-    mock_scan.return_value = MockCacheInfo([repo])
+    # Model exists with files and valid checksums
+    mock_snapshot.return_value = "/tmp/test_cache/models/test/model"
     
     assert manager.is_model_exist(sample_model) is True
 
