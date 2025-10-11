@@ -6,7 +6,6 @@ import (
 	"decentralized-api/apiconfig"
 	"decentralized-api/logging"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -112,7 +111,8 @@ func TestConfigRoundTrip(t *testing.T) {
 	require.Equal(t, "join1", testManager2.GetChainNodeConfig().SignerKeyName)
 	require.Equal(t, "test", testManager2.GetChainNodeConfig().KeyringBackend)
 	require.Equal(t, "/root/.inference", testManager2.GetChainNodeConfig().KeyringDir)
-	require.Equal(t, "v3.0.8", testManager2.GetCurrentNodeVersion())
+	// After Write() we persist only static fields; dynamic fields like version are not in YAML
+	require.Equal(t, "", testManager2.GetCurrentNodeVersion())
 }
 
 func writeTemp(t *testing.T, dir, name, content string) string {
@@ -273,13 +273,6 @@ func TestNoLoggingToStdout(t *testing.T) {
 	if buf.Len() > 0 {
 		t.Errorf("Unexpected logging to stdout: %q", buf.String())
 	}
-}
-
-// Example function in the library
-func LibraryFunctionThatShouldNotLog() {
-	// Simulate a log that should not reach stdout
-	//logging.Info("Oops, this log should fail the test")
-	fmt.Println("This should fail the test")
 }
 
 var testYaml = `
