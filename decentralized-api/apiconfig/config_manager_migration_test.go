@@ -22,7 +22,17 @@ func writeTempFile(t *testing.T, dir, name, contents string) string {
 func TestMigrationAndNodeConfigMerge_FirstRun(t *testing.T) {
 	tmp := t.TempDir()
 
-	yaml := `api:\n  port: 8080\ncurrent_height: 5\nnodes:\n  - host: http://yaml-node:8080/\n    models:\n      modelY: {args: []}\n    id: yaml-node\n    max_concurrent: 3\nmerged_node_config: false\n`
+	yaml := `api:
+  port: 8080
+current_height: 5
+nodes:
+  - host: http://yaml-node:8080/
+    models:
+      modelY: {args: []}
+    id: yaml-node
+    max_concurrent: 3
+merged_node_config: false
+`
 	cfgPath := writeTempFile(t, tmp, "config.yaml", yaml)
 
 	nodeJson := `[{"host":"http://json-node:8080/","models":{"modelZ":{"args":[]}},"id":"json-node","max_concurrent":2,"hardware":[]}]`
@@ -58,7 +68,17 @@ func TestMigrationAndNodeConfigMerge_FirstRun(t *testing.T) {
 // Scenario 3: First run without node-config.json (merged_node_config=false)
 func TestFirstRun_NoNodeConfig_UsesYamlNodesAndStripsDynamicFromYaml(t *testing.T) {
 	tmp := t.TempDir()
-	yaml := `api:\n  port: 8080\ncurrent_height: 7\nnodes:\n  - host: http://yaml-node:8080/\n    models:\n      modelY: {args: []}\n    id: yaml-node\n    max_concurrent: 3\nmerged_node_config: false\n`
+	yaml := `api:
+  port: 8080
+current_height: 7
+nodes:
+  - host: http://yaml-node:8080/
+    models:
+      modelY: {args: []}
+    id: yaml-node
+    max_concurrent: 3
+merged_node_config: false
+`
 	cfgPath := writeTempFile(t, tmp, "config.yaml", yaml)
 	// No node-config.json
 	dbPath := filepath.Join(tmp, "test.db")
@@ -104,7 +124,17 @@ func TestRelaunchAfterMigration_Idempotent(t *testing.T) {
 	require.NoError(t, mgr.FlushNow(ctx))
 
 	// Second run with conflicting YAML dynamic (try to re-introduce nonsense)
-	yaml2 := `api:\n  port: 8080\ncurrent_height: 999\nmerged_node_config: true\nnodes:\n  - host: http://yaml-node2:8080/\n    models:\n      modelY: {args: []}\n    id: yaml-node2\n    max_concurrent: 3\n`
+	yaml2 := `api:
+  port: 8080
+current_height: 999
+merged_node_config: true
+nodes:
+  - host: http://yaml-node2:8080/
+    models:
+      modelY: {args: []}
+    id: yaml-node2
+    max_concurrent: 3
+`
 	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml2), 0644))
 	mgr2, err := apiconfig.LoadConfigManagerWithPaths(cfgPath, dbPath, nodePath)
 	require.NoError(t, err)
