@@ -264,11 +264,13 @@ def test_get_disk_space(mock_disk_usage, mock_scan, client):
     
     assert response.status_code == 200
     data = response.json()
-    assert "cache_size_bytes" in data
-    assert "available_bytes" in data
+    assert "cache_size_gb" in data
+    assert "available_gb" in data
     assert "cache_path" in data
-    assert data["cache_size_bytes"] == 1000000
-    assert data["available_bytes"] == 500000000000
+    # 1000000 bytes = ~0.0 GB (rounds to 0.0)
+    assert data["cache_size_gb"] == 0.0
+    # 500000000000 bytes = ~465.66 GB
+    assert data["available_gb"] == 465.66
 
 
 @patch('api.models.manager.scan_cache_dir')

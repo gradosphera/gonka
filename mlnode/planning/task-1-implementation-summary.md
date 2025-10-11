@@ -108,11 +108,10 @@ A complete model management system for HuggingFace models with REST API endpoint
 - Returns 409 (Conflict) for duplicate attempts
 
 ### ✅ Status Management
-- DOWNLOADED - Fully downloaded and verified
+- DOWNLOADED - Fully downloaded and verified in cache
 - DOWNLOADING - In progress with progress info
-- NOT_FOUND - Not in cache
-- ERROR - Failed with error message (includes retry count)
-- PARTIAL - Cancelled with cleanup
+- NOT_FOUND - No trace of model in cache
+- PARTIAL - Some files exist but model is incomplete (failed or cancelled, includes error message)
 
 ### ✅ REST API
 - All endpoints use JSON body (avoids URL encoding issues)
@@ -443,4 +442,27 @@ After thorough review, the following improvements were made:
    - If library API fails, fail gracefully rather than complex workarounds
 
 **Result**: Significantly more reliable verification, catches all failure modes, much simpler code
+
+### Improvements from Status Refactoring (2024-10-11)
+
+10. **Removed ERROR Status - Simplified to Cache States** ✅
+   - Removed `ERROR` status enum value
+   - Status now reflects **cache state**, not operation outcome
+   - `NOT_FOUND`: No trace of model in cache
+   - `PARTIAL`: Some files exist but model is incomplete
+   - Failed downloads now set status to `PARTIAL` with error details in `error_message` field
+   - Added `_has_partial_files()` method to detect incomplete models in cache
+   - More intuitive API: status tells you what's in the cache, error_message tells you what went wrong
+   - Cleaner separation of concerns
+
+**Result**: More intuitive status semantics - status = cache state, error_message = what went wrong
+
+11. **Added Status to List Endpoint** ✅
+   - List endpoint now returns `ModelListItem` with both model and status
+   - Shows DOWNLOADED or PARTIAL for each model in cache
+   - Allows clients to see incomplete models at a glance
+   - No need to call status endpoint for each model individually
+   - Better UX - users can identify and clean up partial downloads easily
+
+**Result**: List endpoint now provides complete cache visibility including partial downloads
 

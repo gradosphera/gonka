@@ -34,9 +34,8 @@ def get_model_manager(request: Request) -> ModelManager:
     Returns the current status of the model:
     - DOWNLOADED: Model is fully downloaded and verified
     - DOWNLOADING: Download is in progress (includes progress info)
-    - NOT_FOUND: Model is not in cache
-    - ERROR: Download or verification failed
-    - PARTIAL: Partial download (e.g., cancelled)
+    - NOT_FOUND: No trace of model in cache
+    - PARTIAL: Some files exist but model is incomplete (e.g., failed or cancelled download)
     
     Example request:
     ```json
@@ -258,19 +257,27 @@ async def delete_model(
     summary="List cached models",
     description="""List all models currently in the HuggingFace cache.
     
-    Returns all model revisions found in the cache directory.
+    Returns all model revisions found in the cache directory with their status:
+    - DOWNLOADED: Fully downloaded and verified
+    - PARTIAL: Some files exist but model is incomplete
     
     Example response:
     ```json
     {
         "models": [
             {
-                "hf_repo": "meta-llama/Llama-2-7b-hf",
-                "hf_commit": "abc123def456"
+                "model": {
+                    "hf_repo": "meta-llama/Llama-2-7b-hf",
+                    "hf_commit": "abc123def456"
+                },
+                "status": "DOWNLOADED"
             },
             {
-                "hf_repo": "microsoft/phi-2",
-                "hf_commit": "def789ghi012"
+                "model": {
+                    "hf_repo": "microsoft/phi-2",
+                    "hf_commit": "def789ghi012"
+                },
+                "status": "PARTIAL"
             }
         ]
     }
@@ -301,16 +308,16 @@ async def list_models(request: Request) -> ModelListResponse:
     description="""Get information about disk space usage and availability.
     
     Returns:
-    - Total size of HuggingFace cache
-    - Available disk space
+    - Total size of HuggingFace cache in GB
+    - Available disk space in GB
     - Cache directory path
     
     Example response:
     ```json
     {
-        "cache_size_bytes": 13958643712,
-        "available_bytes": 500000000000,
-        "cache_path": "/root/.cache/huggingface"
+        "cache_size_gb": 13.0,
+        "available_gb": 465.66,
+        "cache_path": "/root/.cache/hub"
     }
     ```
     """,
@@ -322,8 +329,8 @@ async def get_disk_space(request: Request) -> DiskSpaceInfo:
     try:
         space_info = manager.get_disk_space()
         logger.info(
-            f"Disk space: cache={space_info.cache_size_bytes} bytes, "
-            f"available={space_info.available_bytes} bytes"
+            f"Disk space: cache={space_info.cache_size_gb} GB, "
+            f"available={space_info.available_gb} GB"
         )
         
         return space_info

@@ -26,9 +26,8 @@ class ModelStatus(str, Enum):
     """Status of a model in the cache."""
     DOWNLOADED = "DOWNLOADED"  # Model fully downloaded and verified
     DOWNLOADING = "DOWNLOADING"  # Download in progress
-    NOT_FOUND = "NOT_FOUND"  # Model not in cache
-    ERROR = "ERROR"  # Download or verification failed
-    PARTIAL = "PARTIAL"  # Partial download (e.g., cancelled)
+    NOT_FOUND = "NOT_FOUND"  # No trace of model in cache
+    PARTIAL = "PARTIAL"  # Some files exist but model is incomplete
 
 
 class DownloadProgress(BaseModel):
@@ -49,7 +48,7 @@ class ModelStatusResponse(BaseModel):
         model: The model being queried
         status: Current status of the model
         progress: Download progress (only present when status is DOWNLOADING)
-        error_message: Error description (only present when status is ERROR)
+        error_message: Error description (present when download failed)
     """
     model: Model
     status: ModelStatus
@@ -81,24 +80,35 @@ class DeleteResponse(BaseModel):
     model: Model
 
 
+class ModelListItem(BaseModel):
+    """A model in the cache with its status.
+    
+    Attributes:
+        model: The model identifier
+        status: Status of the model (DOWNLOADED or PARTIAL)
+    """
+    model: Model
+    status: ModelStatus = Field(..., description="Status: DOWNLOADED or PARTIAL")
+
+
 class ModelListResponse(BaseModel):
     """Response containing list of cached models.
     
     Attributes:
-        models: List of models in the cache
+        models: List of models in the cache with their status
     """
-    models: List[Model] = Field(..., description="List of cached models")
+    models: List[ModelListItem] = Field(..., description="List of cached models with status")
 
 
 class DiskSpaceInfo(BaseModel):
     """Information about disk space usage.
     
     Attributes:
-        cache_size_bytes: Total size of HuggingFace cache in bytes
-        available_bytes: Available disk space in bytes
+        cache_size_gb: Total size of HuggingFace cache in GB
+        available_gb: Available disk space in GB
         cache_path: Path to the HuggingFace cache directory
     """
-    cache_size_bytes: int = Field(..., description="Total cache size in bytes")
-    available_bytes: int = Field(..., description="Available disk space in bytes")
+    cache_size_gb: float = Field(..., description="Total cache size in GB")
+    available_gb: float = Field(..., description="Available disk space in GB")
     cache_path: str = Field(..., description="Path to cache directory")
 

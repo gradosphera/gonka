@@ -7,8 +7,19 @@ import time
 from typing import Dict, Optional, List
 from pathlib import Path
 
-from huggingface_hub import scan_cache_dir, snapshot_download, HfFileSystemResolvedPath
-from huggingface_hub.utils import RepositoryNotFoundError, RevisionNotFoundError, HfHubHTTPError
+from huggingface_hub import (
+    scan_cache_dir,
+    snapshot_download,
+    HfFileSystemResolvedPath,
+    list_repo_files,
+    hf_hub_download,
+)
+from huggingface_hub.utils import (
+    RepositoryNotFoundError,
+    RevisionNotFoundError,
+    HfHubHTTPError,
+    EntryNotFoundError,
+)
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -24,6 +35,7 @@ from api.models.types import (
     ModelStatusResponse,
     DownloadProgress,
     DiskSpaceInfo,
+    ModelListItem,
 )
 from common.logger import create_logger
 
@@ -61,9 +73,15 @@ class ModelManager:
     def __init__(self, cache_dir: Optional[str] = None):
         """
         Args:
-            cache_dir: Optional custom cache directory. If None, uses HF_HOME or default.
+            cache_dir: Optional custom HuggingFace Hub cache directory. 
+                       If None, uses $HF_HOME/hub or default /root/.cache/hub.
         """
-        self.cache_dir = cache_dir or os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
+        if cache_dir:
+            self.cache_dir = cache_dir
+        else:
+            hf_home = os.environ.get("HF_HOME", "/root/.cache")
+            self.cache_dir = os.path.join(hf_home, "hub")
+        
         self._download_tasks: Dict[str, DownloadTask] = {}
         self._lock = asyncio.Lock()
         logger.info(f"ModelManager initialized with cache_dir: {self.cache_dir}")
@@ -71,40 +89,89 @@ class ModelManager:
     def _get_task_id(self, model: Model) -> str:
         return model.get_identifier()
     
-    def is_model_exist(self, model: Model) -> bool:
-        """Checks if a model exists and is valid in the cache.
+    def _has_partial_files(self, model: Model) -> bool:
+        """Checks if the model has any files in cache (even if incomplete).
         
-        Uses snapshot_download with local_files_only=True to validate checksums
-        of all files on disk. This is the canonical way to verify model integrity
-        without making network requests. It detects missing, incomplete, or corrupted files.
+        Returns True if the repo/revision exists in cache, False otherwise.
         """
         try:
-            # Temporarily override HF_HUB_OFFLINE to ensure cache can be checked.
-            old_offline = os.environ.get("HF_HUB_OFFLINE")
+            cache_info = scan_cache_dir(self.cache_dir)
+            
+            # Check if repo exists in cache
+            repo = next((r for r in cache_info.repos if r.repo_id == model.hf_repo), None)
+            if not repo:
+                return False
+            
+            # If specific commit requested, check if that revision exists
+            if model.hf_commit:
+                revision = next((r for r in repo.revisions if r.commit_hash == model.hf_commit), None)
+                return revision is not None
+            
+            # If no commit specified, any revision counts
+            return len(repo.revisions) > 0
+            
+        except Exception as e:
+            logger.debug(f"Error checking partial files for {model.hf_repo}: {e}")
+            return False
+    
+    def is_model_exist(self, model: Model) -> bool:
+        """Checks if a model exists and is fully downloaded in the cache.
+        
+        Verifies all files are present and validates their checksums using
+        hf_hub_download with local_files_only=True.
+        """
+        try:
             try:
-                os.environ["HF_HUB_OFFLINE"] = "0"
-                snapshot_download(
+                expected_files = list(list_repo_files(
                     repo_id=model.hf_repo,
                     revision=model.hf_commit,
-                    cache_dir=self.cache_dir,
-                    local_files_only=True,
+                    repo_type="model"
+                ))
+            except Exception as e:
+                logger.debug(
+                    f"Failed to get file list from HuggingFace for "
+                    f"{model.hf_repo}@{model.hf_commit or 'main'}: {e}"
                 )
-                logger.info(
-                    f"Model {model.hf_repo}@{model.hf_commit or 'main'} "
-                    f"verified with checksums validated"
+                return False
+            
+            if not expected_files:
+                logger.debug(f"No files found in remote repo {model.hf_repo}")
+                return False
+            
+            missing_or_corrupt = []
+            for filename in expected_files:
+                try:
+                    hf_hub_download(
+                        repo_id=model.hf_repo,
+                        filename=filename,
+                        revision=model.hf_commit,
+                        cache_dir=self.cache_dir,
+                        local_files_only=True,
+                    )
+                except EntryNotFoundError:
+                    missing_or_corrupt.append(filename)
+                except Exception as e:
+                    logger.debug(f"Error verifying {filename}: {e}")
+                    missing_or_corrupt.append(filename)
+            
+            if missing_or_corrupt:
+                logger.debug(
+                    f"Model {model.hf_repo}@{model.hf_commit or 'main'} incomplete: "
+                    f"{len(missing_or_corrupt)}/{len(expected_files)} files missing/corrupt. "
+                    f"Examples: {missing_or_corrupt[:5]}"
                 )
-                return True
-            finally:
-                # Restore original HF_HUB_OFFLINE value
-                if old_offline is None:
-                    os.environ.pop("HF_HUB_OFFLINE", None)
-                else:
-                    os.environ["HF_HUB_OFFLINE"] = old_offline
+                return False
+            
+            logger.info(
+                f"Model {model.hf_repo}@{model.hf_commit or 'main'} verified complete "
+                f"with all {len(expected_files)} files present and valid"
+            )
+            return True
+            
         except Exception as e:
-            # Any exception means the model is not fully cached or is corrupted.
             logger.debug(
                 f"Model {model.hf_repo}@{model.hf_commit or 'main'} "
-                f"not fully cached or corrupted: {e}"
+                f"verification failed: {e}"
             )
             return False
     
@@ -126,23 +193,13 @@ class ModelManager:
                 f"Downloading {model.hf_repo} "
                 f"(commit: {model.hf_commit or 'latest'})"
             )
-            # Temporarily override HF_HUB_OFFLINE to ensure downloads work
-            old_offline = os.environ.get("HF_HUB_OFFLINE")
-            try:
-                os.environ["HF_HUB_OFFLINE"] = "0"
-                return snapshot_download(
-                    repo_id=model.hf_repo,
-                    revision=model.hf_commit,
-                    cache_dir=self.cache_dir,
-                    resume_download=True,
-                    local_files_only=False,
-                )
-            finally:
-                # Restore original HF_HUB_OFFLINE value
-                if old_offline is None:
-                    os.environ.pop("HF_HUB_OFFLINE", None)
-                else:
-                    os.environ["HF_HUB_OFFLINE"] = old_offline
+            return snapshot_download(
+                repo_id=model.hf_repo,
+                revision=model.hf_commit,
+                cache_dir=self.cache_dir,
+                resume_download=True,
+                local_files_only=False,
+            )
         
         return _download_with_retry()
     
@@ -198,14 +255,7 @@ class ModelManager:
     async def _download_model(
         self, task_id: str, model: Model, task_obj: DownloadTask
     ):
-        """Wrapper for the download process with error handling and status updates.
-        
-        This method:
-        1. Downloads with retry logic in a thread pool to avoid blocking asyncio loop.
-        2. Verifies download integrity after completion.
-        3. Sets a 24-hour timeout to prevent hangs.
-        4. Handles exceptions and updates the download task's status.
-        """
+        """Downloads model with retry logic, verification, and error handling."""
         try:
             logger.info(
                 f"Starting download for model {model.hf_repo} "
@@ -230,21 +280,21 @@ class ModelManager:
                 task_obj.status = ModelStatus.DOWNLOADED
                 logger.info(f"Successfully downloaded and verified model {task_id}")
             else:
-                task_obj.status = ModelStatus.ERROR
+                task_obj.status = ModelStatus.PARTIAL
                 task_obj.error_message = "Download verification failed - model files incomplete or corrupted"
                 logger.error(f"Download verification failed for {task_id}")
             
         except RepositoryNotFoundError as e:
             logger.error(f"Repository not found: {model.hf_repo}")
-            task_obj.status = ModelStatus.ERROR
+            task_obj.status = ModelStatus.PARTIAL
             task_obj.error_message = f"Repository not found: {model.hf_repo}"
         except RevisionNotFoundError as e:
             logger.error(f"Revision not found: {model.hf_commit}")
-            task_obj.status = ModelStatus.ERROR
+            task_obj.status = ModelStatus.PARTIAL
             task_obj.error_message = f"Revision not found: {model.hf_commit}"
         except asyncio.TimeoutError:
             logger.error(f"Download timeout (24 hours) for {task_id}")
-            task_obj.status = ModelStatus.ERROR
+            task_obj.status = ModelStatus.PARTIAL
             task_obj.error_message = "Download timeout after 24 hours"
         except asyncio.CancelledError:
             logger.info(f"Download cancelled for {task_id}")
@@ -253,24 +303,31 @@ class ModelManager:
             # HuggingFace Hub handles partial download cleanup automatically
             raise
         except NETWORK_EXCEPTIONS as e:
-            # This occurs after all retry attempts are exhausted
             logger.error(
                 f"Network error downloading model {task_id} after "
                 f"5 retry attempts: {e}"
             )
-            task_obj.status = ModelStatus.ERROR
+            task_obj.status = ModelStatus.PARTIAL
             task_obj.error_message = (
                 f"Network error after 5 retry attempts: {str(e)}"
             )
         except Exception as e:
             logger.error(f"Error downloading model {task_id}: {e}", exc_info=True)
-            task_obj.status = ModelStatus.ERROR
+            task_obj.status = ModelStatus.PARTIAL
             task_obj.error_message = str(e)
     
     def get_model_status(self, model: Model) -> ModelStatusResponse:
-        """Gets the current status of a model."""
+        """Gets the current status of a model.
+        
+        Status determination:
+        - DOWNLOADING: Currently downloading (has active task)
+        - DOWNLOADED: Fully downloaded and verified in cache
+        - PARTIAL: Some files exist in cache but model is incomplete
+        - NOT_FOUND: No trace of model in cache
+        """
         task_id = self._get_task_id(model)
         
+        # Check if there's an active or recent download task
         if task_id in self._download_tasks:
             task = self._download_tasks[task_id]
             
@@ -289,12 +346,21 @@ class ModelManager:
                 error_message=task.error_message
             )
         
+        # Check cache state (no active task)
         if self.is_model_exist(model):
             return ModelStatusResponse(
                 model=model,
                 status=ModelStatus.DOWNLOADED
             )
         
+        # Check if there are partial files in cache
+        if self._has_partial_files(model):
+            return ModelStatusResponse(
+                model=model,
+                status=ModelStatus.PARTIAL
+            )
+        
+        # Nothing in cache
         return ModelStatusResponse(
             model=model,
             status=ModelStatus.NOT_FOUND
@@ -380,8 +446,13 @@ class ModelManager:
         
         return "deleted"
     
-    def list_models(self) -> List[Model]:
-        """Lists all models in the cache."""
+    def list_models(self) -> List[ModelListItem]:
+        """Lists all models in the cache (both complete and partial).
+        
+        Returns models with their status:
+        - DOWNLOADED: Fully downloaded and verified
+        - PARTIAL: Some files exist but incomplete
+        """
         models = []
         
         try:
@@ -389,16 +460,32 @@ class ModelManager:
             
             for repo in cache_info.repos:
                 for revision in repo.revisions:
-                    models.append(Model(
+                    model = Model(
                         hf_repo=repo.repo_id,
                         hf_commit=revision.commit_hash
+                    )
+                    
+                    # Determine status
+                    if self.is_model_exist(model):
+                        status = ModelStatus.DOWNLOADED
+                    else:
+                        status = ModelStatus.PARTIAL
+                    
+                    models.append(ModelListItem(
+                        model=model,
+                        status=status
                     ))
             
-            logger.info(f"Found {len(models)} models in cache")
+            downloaded_count = sum(1 for m in models if m.status == ModelStatus.DOWNLOADED)
+            partial_count = sum(1 for m in models if m.status == ModelStatus.PARTIAL)
+            logger.info(
+                f"Found {len(models)} models in cache: "
+                f"{downloaded_count} complete, {partial_count} partial"
+            )
             return models
             
         except Exception as e:
-            logger.error(f"Error listing models: {e}")
+            logger.error(f"Error listing models: {e}", exc_info=True)
             return []
     
     def get_disk_space(self) -> DiskSpaceInfo:
@@ -409,18 +496,20 @@ class ModelManager:
             
             stat = shutil.disk_usage(self.cache_dir)
             
+            cache_size_gb = cache_size / (1024 ** 3)
+            available_gb = stat.free / (1024 ** 3)
+            
             return DiskSpaceInfo(
-                cache_size_bytes=cache_size,
-                available_bytes=stat.free,
+                cache_size_gb=round(cache_size_gb, 2),
+                available_gb=round(available_gb, 2),
                 cache_path=self.cache_dir
             )
             
         except Exception as e:
-            logger.error(f"Error getting disk space: {e}")
-            # Return default values on error
+            logger.error(f"Error getting disk space: {e}", exc_info=True)
             return DiskSpaceInfo(
-                cache_size_bytes=0,
-                available_bytes=0,
+                cache_size_gb=0.0,
+                available_gb=0.0,
                 cache_path=self.cache_dir
             )
 

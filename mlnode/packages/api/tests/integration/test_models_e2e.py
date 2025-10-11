@@ -76,7 +76,7 @@ def test_e2e_download_real_model(client_with_temp_cache, temp_cache_dir):
         
         if status == "DOWNLOADED":
             break
-        elif status == "ERROR":
+        elif status == "PARTIAL":
             pytest.fail(f"Download failed: {response.json().get('error_message')}")
         
         time.sleep(1)
@@ -97,7 +97,7 @@ def test_e2e_download_real_model(client_with_temp_cache, temp_cache_dir):
     assert response.status_code == 200
     models = response.json()["models"]
     assert len(models) > 0
-    assert any(m["hf_repo"] == TINY_MODEL for m in models)
+    assert any(m["model"]["hf_repo"] == TINY_MODEL and m["status"] == "DOWNLOADED" for m in models)
     
     # 7. Delete the model
     response = client.request("DELETE", "/api/v1/models", json=model_data)
@@ -164,7 +164,7 @@ def test_e2e_concurrent_downloads(client_with_temp_cache):
         if status1 == "DOWNLOADED" and status2 == "DOWNLOADED":
             break
         
-        if status1 == "ERROR" or status2 == "ERROR":
+        if status1 == "PARTIAL" or status2 == "PARTIAL":
             pytest.fail("One of the downloads failed")
         
         time.sleep(2)
@@ -172,8 +172,8 @@ def test_e2e_concurrent_downloads(client_with_temp_cache):
     # Verify both are downloaded
     response = client.get("/api/v1/models/list")
     models = response.json()["models"]
-    assert any(m["hf_repo"] == TINY_MODEL for m in models)
-    assert any(m["hf_repo"] == TINY_MODEL_2 for m in models)
+    assert any(m["model"]["hf_repo"] == TINY_MODEL and m["status"] == "DOWNLOADED" for m in models)
+    assert any(m["model"]["hf_repo"] == TINY_MODEL_2 and m["status"] == "DOWNLOADED" for m in models)
 
 
 @pytest.mark.slow
@@ -204,12 +204,12 @@ def test_e2e_disk_space(client_with_temp_cache, temp_cache_dir):
     response = client.get("/api/v1/models/space")
     assert response.status_code == 200
     data = response.json()
-    assert "cache_size_bytes" in data
-    assert "available_bytes" in data
+    assert "cache_size_gb" in data
+    assert "available_gb" in data
     assert "cache_path" in data
     assert data["cache_path"] == temp_cache_dir
     
-    initial_cache_size = data["cache_size_bytes"]
+    initial_cache_size = data["cache_size_gb"]
     
     # Download a model
     model_data = {"hf_repo": TINY_MODEL, "hf_commit": None}
@@ -228,7 +228,7 @@ def test_e2e_disk_space(client_with_temp_cache, temp_cache_dir):
     # Check disk space again - should have increased
     response = client.get("/api/v1/models/space")
     assert response.status_code == 200
-    new_cache_size = response.json()["cache_size_bytes"]
+    new_cache_size = response.json()["cache_size_gb"]
     
     # Cache should have grown (tiny model is ~1MB)
     assert new_cache_size > initial_cache_size
@@ -246,16 +246,16 @@ def test_e2e_invalid_model(client_with_temp_cache):
     response = client.post("/api/v1/models/download", json=model_data)
     assert response.status_code == 202
     
-    # Wait a bit and check status - should be ERROR
+    # Wait a bit and check status - should be PARTIAL (failed download)
     time.sleep(5)
     
     response = client.post("/api/v1/models/status", json=model_data)
     data = response.json()
-    # Should either be ERROR or NOT_FOUND (depending on when we check)
-    assert data["status"] in ["ERROR", "NOT_FOUND", "DOWNLOADING"]
+    # Should either be PARTIAL or NOT_FOUND (depending on when we check)
+    assert data["status"] in ["PARTIAL", "NOT_FOUND", "DOWNLOADING"]
     
-    # If ERROR, should have an error message
-    if data["status"] == "ERROR":
+    # If PARTIAL, should have an error message
+    if data["status"] == "PARTIAL":
         assert data["error_message"] is not None
         assert len(data["error_message"]) > 0
 

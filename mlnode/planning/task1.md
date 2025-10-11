@@ -22,9 +22,13 @@ Implement a ModelManager class and REST API for managing HuggingFace models with
 - Won't impact vLLM proxy performance (all async I/O-bound operations)
 
 ### Additional Features
-- Status types: `DOWNLOADED`, `DOWNLOADING`, `NOT_FOUND`, `ERROR`, `PARTIAL` (for cancelled downloads)
+- Status types: `DOWNLOADED`, `DOWNLOADING`, `NOT_FOUND`, `PARTIAL` (for incomplete/failed downloads)
+  - `DOWNLOADED`: Model fully downloaded and verified
+  - `DOWNLOADING`: Download currently in progress
+  - `NOT_FOUND`: No trace of model in cache
+  - `PARTIAL`: Some files exist in cache but model is incomplete (failed or cancelled)
 - Include `LIST` endpoint to enumerate cached models
-- Progress tracking with bytes downloaded, total size, ETA
+- Progress tracking with start time and elapsed seconds
 
 ## Implementation Details
 
@@ -43,7 +47,6 @@ class ModelStatus(str, Enum):
     DOWNLOADED = "DOWNLOADED"
     DOWNLOADING = "DOWNLOADING"
     NOT_FOUND = "NOT_FOUND"
-    ERROR = "ERROR"
     PARTIAL = "PARTIAL"
 
 class DownloadProgress(BaseModel):
@@ -112,11 +115,22 @@ Response: {"status": "deleted"}
 
 #### GET /api/models/list
 - **Query params**: None
-- **Returns**: `{"models": [Model, ...]}`
-- **Description**: List all cached models
+- **Returns**: `{"models": [ModelListItem, ...]}`
+- **Description**: List all cached models with their status (DOWNLOADED or PARTIAL)
 - **Example**:
 ```json
-Response: {"models": [{"hf_repo": "meta-llama/Llama-2-7b-hf", "hf_commit": "abc123"}]}
+Response: {
+  "models": [
+    {
+      "model": {"hf_repo": "meta-llama/Llama-2-7b-hf", "hf_commit": "abc123"},
+      "status": "DOWNLOADED"
+    },
+    {
+      "model": {"hf_repo": "microsoft/phi-2", "hf_commit": "def456"},
+      "status": "PARTIAL"
+    }
+  ]
+}
 ```
 
 #### GET /api/models/space

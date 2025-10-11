@@ -192,7 +192,7 @@ async def test_download_model_error(mock_snapshot, manager, sample_model):
     task_obj = DownloadTask(sample_model)
     await manager._download_model("test/model:abc123", sample_model, task_obj)
     
-    assert task_obj.status == ModelStatus.ERROR
+    assert task_obj.status == ModelStatus.PARTIAL
     assert "Network error" in task_obj.error_message
 
 
@@ -261,6 +261,52 @@ async def test_get_model_status_downloading(manager, sample_model):
         assert status.progress is not None
 
 
+def test_get_model_status_partial(manager, sample_model):
+    """Test getting status for model with partial files in cache."""
+    with patch.object(manager, 'is_model_exist', return_value=False), \
+         patch.object(manager, '_has_partial_files', return_value=True):
+        
+        status = manager.get_model_status(sample_model)
+        
+        assert status.model == sample_model
+        assert status.status == ModelStatus.PARTIAL
+        assert status.progress is None
+
+
+def test_has_partial_files_repo_not_in_cache(manager, sample_model):
+    """Test _has_partial_files when repo is not in cache."""
+    mock_cache_info = MagicMock()
+    mock_cache_info.repos = []
+    
+    with patch('api.models.manager.scan_cache_dir', return_value=mock_cache_info):
+        assert manager._has_partial_files(sample_model) is False
+
+
+def test_has_partial_files_repo_in_cache(manager, sample_model):
+    """Test _has_partial_files when repo is in cache."""
+    mock_repo = MagicMock()
+    mock_repo.repo_id = sample_model.hf_repo
+    mock_revision = MagicMock()
+    mock_revision.commit_hash = "abc123"
+    mock_repo.revisions = [mock_revision]
+    
+    mock_cache_info = MagicMock()
+    mock_cache_info.repos = [mock_repo]
+    
+    with patch('api.models.manager.scan_cache_dir', return_value=mock_cache_info):
+        # Without specific commit
+        model_no_commit = Model(hf_repo=sample_model.hf_repo, hf_commit=None)
+        assert manager._has_partial_files(model_no_commit) is True
+        
+        # With matching commit
+        model_with_commit = Model(hf_repo=sample_model.hf_repo, hf_commit="abc123")
+        assert manager._has_partial_files(model_with_commit) is True
+        
+        # With non-matching commit
+        model_wrong_commit = Model(hf_repo=sample_model.hf_repo, hf_commit="xyz789")
+        assert manager._has_partial_files(model_wrong_commit) is False
+
+
 @pytest.mark.asyncio
 async def test_cancel_download(manager, sample_model):
     """Test cancelling a download."""
@@ -322,7 +368,7 @@ async def test_delete_model_cancel_download(manager, sample_model):
 
 @patch('api.models.manager.scan_cache_dir')
 def test_list_models(mock_scan, manager):
-    """Test listing models."""
+    """Test listing models with status."""
     # Mock cache with models
     revision1 = MockRevision("abc123")
     revision2 = MockRevision("def456")
@@ -330,11 +376,22 @@ def test_list_models(mock_scan, manager):
     repo2 = MockRepo("test/model2", [revision2])
     mock_scan.return_value = MockCacheInfo([repo1, repo2])
     
-    models = manager.list_models()
+    # Mock is_model_exist to return True for first model, False for second
+    def mock_exists(model):
+        return model.hf_repo == "test/model1"
+    
+    with patch.object(manager, 'is_model_exist', side_effect=mock_exists):
+        models = manager.list_models()
     
     assert len(models) == 2
-    assert any(m.hf_repo == "test/model1" for m in models)
-    assert any(m.hf_repo == "test/model2" for m in models)
+    
+    # Check model 1 - should be DOWNLOADED
+    model1 = next(m for m in models if m.model.hf_repo == "test/model1")
+    assert model1.status == ModelStatus.DOWNLOADED
+    
+    # Check model 2 - should be PARTIAL
+    model2 = next(m for m in models if m.model.hf_repo == "test/model2")
+    assert model2.status == ModelStatus.PARTIAL
 
 
 @patch('api.models.manager.scan_cache_dir')
@@ -349,8 +406,10 @@ def test_get_disk_space(mock_disk_usage, mock_scan, manager):
     
     info = manager.get_disk_space()
     
-    assert info.cache_size_bytes == 1000000
-    assert info.available_bytes == 500000000000
+    # 1000000 bytes = ~0.0 GB (rounds to 0.0)
+    assert info.cache_size_gb == 0.0
+    # 500000000000 bytes = ~465.66 GB
+    assert info.available_gb == 465.66
     assert info.cache_path == manager.cache_dir
 
 
@@ -382,7 +441,7 @@ async def test_download_model_with_retry_network_error(mock_snapshot, manager, s
     task_obj = DownloadTask(sample_model)
     await manager._download_model("test/model:abc123", sample_model, task_obj)
     
-    assert task_obj.status == ModelStatus.ERROR
+    assert task_obj.status == ModelStatus.PARTIAL
     assert "retry attempts" in task_obj.error_message.lower()
     # Should retry 5 times (no verification call since download never succeeds)
     assert mock_snapshot.call_count == 5
@@ -422,7 +481,7 @@ async def test_download_verification_fails(mock_snapshot, manager, sample_model)
     task_obj = DownloadTask(sample_model)
     await manager._download_model("test/model:abc123", sample_model, task_obj)
     
-    assert task_obj.status == ModelStatus.ERROR
+    assert task_obj.status == ModelStatus.PARTIAL
     assert "verification failed" in task_obj.error_message.lower()
 
 
