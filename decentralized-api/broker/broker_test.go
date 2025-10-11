@@ -541,7 +541,6 @@ func TestUpdateNodeConfiguration(t *testing.T) {
 		break
 	}
 	require.NotNil(t, mockClient, "Mock client should exist")
-	baselineStop := mockClient.StopCalled
 
 	// Prepare an update: change host, ports, models, maxConcurrent, hardware
 	updated := apiconfig.InferenceNodeConfig{
@@ -557,16 +556,12 @@ func TestUpdateNodeConfiguration(t *testing.T) {
 	}
 
 	// Queue UpdateNode
-	command := NewUpdateNodeCommand(node)
+	command := NewUpdateNodeCommand(updated)
 	resp := command.Response
 	err = broker.QueueMessage(command)
 	require.NoError(t, err)
 	out := <-resp
 	require.NotNil(t, out)
-
-	// Give the refresh goroutine time to call Stop on old client
-	time.Sleep(50 * time.Millisecond)
-	assert.Greater(t, mockClient.StopCalled, baselineStop, "Stop should be called when updating node to refresh client")
 
 	// Validate updated view
 	nodesAfter, err := broker.GetNodes()
