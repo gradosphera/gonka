@@ -30,21 +30,13 @@ def temp_cache_dir():
 
 
 @pytest.fixture
-def client_with_temp_cache(temp_cache_dir):
+def client_with_temp_cache(temp_cache_dir, monkeypatch):
     """Create a test client with a temporary cache directory."""
-    # Override the ModelManager's cache_dir
-    original_init = ModelManager.__init__
+    # Set HF_HOME environment variable so ModelManager uses our temp directory
+    monkeypatch.setenv("HF_HOME", temp_cache_dir)
     
-    def patched_init(self, cache_dir=None):
-        original_init(self, cache_dir=temp_cache_dir)
-    
-    ModelManager.__init__ = patched_init
-    client = TestClient(app)
-    
-    yield client
-    
-    # Restore original
-    ModelManager.__init__ = original_init
+    with TestClient(app) as client:
+        yield client
 
 
 @pytest.mark.slow

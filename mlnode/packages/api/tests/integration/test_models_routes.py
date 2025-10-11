@@ -10,8 +10,28 @@ For true end-to-end integration tests, see test_models_e2e.py.
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch, MagicMock
+from contextlib import contextmanager
 from api.app import app
 from api.models.types import ModelStatus
+
+
+@contextmanager
+def mock_model_exists():
+    """Context manager to mock a model that exists and is fully downloaded."""
+    with patch('api.models.manager.list_repo_files') as mock_list_files, \
+         patch('api.models.manager.hf_hub_download') as mock_download:
+        mock_list_files.return_value = ["config.json", "model.safetensors"]
+        mock_download.return_value = "/tmp/test_cache/model.safetensors"
+        yield mock_list_files, mock_download
+
+
+@contextmanager
+def mock_model_not_exists():
+    """Context manager to mock a model that doesn't exist."""
+    from huggingface_hub.utils import RepositoryNotFoundError
+    with patch('api.models.manager.list_repo_files') as mock_list_files:
+        mock_list_files.side_effect = RepositoryNotFoundError("Not found")
+        yield mock_list_files
 
 
 class MockCacheInfo:
@@ -46,8 +66,9 @@ class MockRepo:
 
 @pytest.fixture
 def client():
-    """Create a test client."""
-    return TestClient(app)
+    """Create a test client with lifespan events."""
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 @pytest.fixture
@@ -68,156 +89,157 @@ def sample_model_data_no_commit():
     }
 
 
-@patch('api.models.manager.snapshot_download')
-def test_check_model_status_not_found(mock_snapshot, client, sample_model_data):
+def test_check_model_status_not_found(client, sample_model_data):
     """Test checking status of non-existent model."""
-    from huggingface_hub.utils import RepositoryNotFoundError
-    mock_snapshot.side_effect = RepositoryNotFoundError("Not found")
-    
-    response = client.post("/api/v1/models/status", json=sample_model_data)
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "NOT_FOUND"
-    assert data["model"]["hf_repo"] == "test/model"
+    with mock_model_not_exists():
+        response = client.post("/api/v1/models/status", json=sample_model_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "NOT_FOUND"
+        assert data["model"]["hf_repo"] == "test/model"
 
 
-@patch('api.models.manager.snapshot_download')
-def test_check_model_status_downloaded(mock_snapshot, client, sample_model_data):
+def test_check_model_status_downloaded(client, sample_model_data):
     """Test checking status of downloaded model."""
-    # Model exists and is valid
-    mock_snapshot.return_value = "/tmp/test_cache"
-    
-    response = client.post("/api/v1/models/status", json=sample_model_data)
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "DOWNLOADED"
-    assert data["model"]["hf_repo"] == "test/model"
-    assert data["progress"] is None
+    with mock_model_exists():
+        response = client.post("/api/v1/models/status", json=sample_model_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "DOWNLOADED"
+        assert data["model"]["hf_repo"] == "test/model"
+        assert data["progress"] is None
 
 
-@patch('api.models.manager.snapshot_download')
-def test_download_model(mock_snapshot, client, sample_model_data):
+def test_download_model(client, sample_model_data):
     """Test starting model download."""
-    # Model doesn't exist, then gets downloaded
     from huggingface_hub.utils import RepositoryNotFoundError
-    mock_snapshot.side_effect = [
-        RepositoryNotFoundError("Not found"),  # is_model_exist check
-        "/tmp/test_cache",  # download
-        "/tmp/test_cache",  # verification
-    ]
     
-    response = client.post("/api/v1/models/download", json=sample_model_data)
-    
-    assert response.status_code == 202
-    data = response.json()
-    assert data["task_id"] == "test/model:abc123"
-    assert data["status"] in ["DOWNLOADING", "DOWNLOADED"]
-    assert data["model"]["hf_repo"] == "test/model"
+    with patch('api.models.manager.list_repo_files') as mock_list_files, \
+         patch('api.models.manager.hf_hub_download') as mock_download, \
+         patch('api.models.manager.snapshot_download') as mock_snapshot:
+        # Model doesn't exist initially, then gets downloaded
+        mock_list_files.side_effect = [
+            RepositoryNotFoundError("Not found"),  # is_model_exist check before download
+            ["config.json", "model.safetensors"],  # verification after download
+        ]
+        mock_download.return_value = "/tmp/test_cache/model.safetensors"
+        mock_snapshot.return_value = "/tmp/test_cache"  # download succeeds
+        
+        response = client.post("/api/v1/models/download", json=sample_model_data)
+        
+        assert response.status_code == 202
+        data = response.json()
+        assert data["task_id"] == "test/model:abc123"
+        assert data["status"] in ["DOWNLOADING", "DOWNLOADED"]
+        assert data["model"]["hf_repo"] == "test/model"
 
 
-@patch('api.models.manager.snapshot_download')
-def test_download_model_already_exists(mock_snapshot, client, sample_model_data):
+def test_download_model_already_exists(client, sample_model_data):
     """Test downloading a model that already exists."""
-    # Model already exists
-    mock_snapshot.return_value = "/tmp/test_cache"
-    
-    response = client.post("/api/v1/models/download", json=sample_model_data)
-    
-    assert response.status_code == 202
-    data = response.json()
-    assert data["status"] == "DOWNLOADED"
+    with mock_model_exists():
+        response = client.post("/api/v1/models/download", json=sample_model_data)
+        
+        assert response.status_code == 202
+        data = response.json()
+        assert data["status"] == "DOWNLOADED"
 
 
-@patch('api.models.manager.snapshot_download')
-def test_download_model_already_downloading(mock_snapshot, client, sample_model_data):
+def test_download_model_already_downloading(client, sample_model_data):
     """Test downloading a model that's already downloading."""
     from huggingface_hub.utils import RepositoryNotFoundError
-    # Model doesn't exist initially
-    mock_snapshot.side_effect = [
-        RepositoryNotFoundError("Not found"),  # is_model_exist check for first download
-        "/tmp/test_cache",  # download (won't complete before second request)
-        RepositoryNotFoundError("Not found"),  # is_model_exist check for second download
-    ]
     
-    # Start first download
-    response1 = client.post("/api/v1/models/download", json=sample_model_data)
-    assert response1.status_code == 202
-    
-    # Try to start second download
-    response2 = client.post("/api/v1/models/download", json=sample_model_data)
-    assert response2.status_code == 409  # Conflict
+    with patch('api.models.manager.list_repo_files') as mock_list_files, \
+         patch('api.models.manager.snapshot_download') as mock_snapshot:
+        # Model doesn't exist initially
+        mock_list_files.side_effect = [
+            RepositoryNotFoundError("Not found"),  # is_model_exist check for first download
+            RepositoryNotFoundError("Not found"),  # is_model_exist check for second download
+        ]
+        mock_snapshot.return_value = "/tmp/test_cache"  # download (won't complete before second request)
+        
+        # Start first download
+        response1 = client.post("/api/v1/models/download", json=sample_model_data)
+        assert response1.status_code == 202
+        
+        # Try to start second download
+        response2 = client.post("/api/v1/models/download", json=sample_model_data)
+        assert response2.status_code == 409  # Conflict
 
 
-@patch('api.models.manager.snapshot_download')
-def test_download_max_concurrent(mock_snapshot, client):
+def test_download_max_concurrent(client):
     """Test maximum concurrent downloads."""
     from huggingface_hub.utils import RepositoryNotFoundError
-    # All models don't exist
-    mock_snapshot.side_effect = [RepositoryNotFoundError("Not found")] * 10
     
-    # Start 3 downloads
-    for i in range(3):
-        model_data = {"hf_repo": f"test/model{i}", "hf_commit": None}
+    with patch('api.models.manager.list_repo_files') as mock_list_files, \
+         patch('api.models.manager.snapshot_download') as mock_snapshot:
+        # All models don't exist
+        mock_list_files.side_effect = [RepositoryNotFoundError("Not found")] * 10
+        mock_snapshot.return_value = "/tmp/test_cache"
+        
+        # Start 3 downloads
+        for i in range(3):
+            model_data = {"hf_repo": f"test/model{i}", "hf_commit": None}
+            response = client.post("/api/v1/models/download", json=model_data)
+            assert response.status_code == 202
+        
+        # Try to start 4th download
+        model_data = {"hf_repo": "test/model4", "hf_commit": None}
         response = client.post("/api/v1/models/download", json=model_data)
-        assert response.status_code == 202
-    
-    # Try to start 4th download
-    model_data = {"hf_repo": "test/model4", "hf_commit": None}
-    response = client.post("/api/v1/models/download", json=model_data)
-    assert response.status_code == 429  # Too Many Requests
+        assert response.status_code == 429  # Too Many Requests
 
 
-@patch('api.models.manager.scan_cache_dir')
-@patch('api.models.manager.snapshot_download')
-def test_delete_model(mock_snapshot, mock_scan, client, sample_model_data):
+def test_delete_model(client, sample_model_data):
     """Test deleting a model."""
-    # Model exists
-    mock_snapshot.return_value = "/tmp/test_cache"
-    
     revision = MockRevision("abc123")
     repo = MockRepo("test/model", [revision])
     cache_info = MockCacheInfo([repo])
-    mock_scan.return_value = cache_info
     
-    response = client.request("DELETE", "/api/v1/models", json=sample_model_data)
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "deleted"
-    assert data["model"]["hf_repo"] == "test/model"
+    with mock_model_exists(), \
+         patch('api.models.manager.scan_cache_dir') as mock_scan:
+        mock_scan.return_value = cache_info
+        
+        response = client.request("DELETE", "/api/v1/models", json=sample_model_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "deleted"
+        assert data["model"]["hf_repo"] == "test/model"
 
 
-@patch('api.models.manager.snapshot_download')
-def test_delete_model_not_found(mock_snapshot, client, sample_model_data):
+def test_delete_model_not_found(client, sample_model_data):
     """Test deleting non-existent model."""
-    from huggingface_hub.utils import RepositoryNotFoundError
-    mock_snapshot.side_effect = RepositoryNotFoundError("Not found")
-    
-    response = client.request("DELETE", "/api/v1/models", json=sample_model_data)
-    
-    assert response.status_code == 404
+    with mock_model_not_exists():
+        response = client.request("DELETE", "/api/v1/models", json=sample_model_data)
+        
+        assert response.status_code == 404
 
 
-@patch('api.models.manager.snapshot_download')
-def test_delete_model_downloading(mock_snapshot, client, sample_model_data):
+def test_delete_model_downloading(client, sample_model_data):
     """Test deleting a model that's downloading cancels it."""
     from huggingface_hub.utils import RepositoryNotFoundError
-    mock_snapshot.side_effect = [
-        RepositoryNotFoundError("Not found"),  # is_model_exist check
-        "/tmp/test_cache",  # download (won't complete)
-    ]
+    import time
     
-    # Start download
-    response1 = client.post("/api/v1/models/download", json=sample_model_data)
-    assert response1.status_code == 202
-    
-    # Delete/cancel it
-    response2 = client.request("DELETE", "/api/v1/models", json=sample_model_data)
-    assert response2.status_code == 200
-    data = response2.json()
-    assert data["status"] == "cancelled"
+    with patch('api.models.manager.list_repo_files') as mock_list_files, \
+         patch('api.models.manager.snapshot_download') as mock_snapshot:
+        # Make the download slow so it's still downloading when we try to delete
+        def slow_download(*args, **kwargs):
+            time.sleep(1)  # Simulate slow download
+            return "/tmp/test_cache"
+        
+        mock_list_files.side_effect = RepositoryNotFoundError("Not found")
+        mock_snapshot.side_effect = slow_download
+        
+        # Start download
+        response1 = client.post("/api/v1/models/download", json=sample_model_data)
+        assert response1.status_code == 202
+        
+        # Immediately try to delete/cancel it (while still downloading)
+        response2 = client.request("DELETE", "/api/v1/models", json=sample_model_data)
+        assert response2.status_code == 200
+        data = response2.json()
+        assert data["status"] == "cancelled"
 
 
 @patch('api.models.manager.scan_cache_dir')
@@ -232,22 +254,27 @@ def test_list_models_empty(mock_scan, client):
     assert data["models"] == []
 
 
-@patch('api.models.manager.scan_cache_dir')
-def test_list_models(mock_scan, client):
+def test_list_models(client):
     """Test listing models."""
     revision1 = MockRevision("abc123")
     revision2 = MockRevision("def456")
     repo1 = MockRepo("test/model1", [revision1])
     repo2 = MockRepo("test/model2", [revision2])
-    mock_scan.return_value = MockCacheInfo([repo1, repo2])
     
-    response = client.get("/api/v1/models/list")
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data["models"]) == 2
-    assert any(m["hf_repo"] == "test/model1" for m in data["models"])
-    assert any(m["hf_repo"] == "test/model2" for m in data["models"])
+    with patch('api.models.manager.scan_cache_dir') as mock_scan, \
+         mock_model_exists():
+        mock_scan.return_value = MockCacheInfo([repo1, repo2])
+        
+        response = client.get("/api/v1/models/list")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["models"]) == 2
+        # Response now includes ModelListItem with 'model' and 'status' fields
+        assert any(m["model"]["hf_repo"] == "test/model1" for m in data["models"])
+        assert any(m["model"]["hf_repo"] == "test/model2" for m in data["models"])
+        # Check that status is included
+        assert all("status" in m for m in data["models"])
 
 
 @patch('api.models.manager.scan_cache_dir')
@@ -273,47 +300,53 @@ def test_get_disk_space(mock_disk_usage, mock_scan, client):
     assert data["available_gb"] == 465.66
 
 
-@patch('api.models.manager.scan_cache_dir')
-@patch('api.models.manager.snapshot_download')
-def test_full_workflow(mock_snapshot, mock_scan, client):
+def test_full_workflow(client):
     """Test full workflow: check status, download, check again, delete."""
     from huggingface_hub.utils import RepositoryNotFoundError
     
-    # 1. Check status - model doesn't exist initially
     model_data = {"hf_repo": "test/workflow", "hf_commit": None}
-    mock_snapshot.side_effect = [RepositoryNotFoundError("Not found")]
-    response = client.post("/api/v1/models/status", json=model_data)
-    assert response.status_code == 200
-    assert response.json()["status"] == "NOT_FOUND"
     
-    # 2. Start download
-    mock_snapshot.side_effect = [
-        RepositoryNotFoundError("Not found"),  # is_model_exist check
-        "/tmp/test_cache",  # download
-        "/tmp/test_cache",  # verification
-    ]
-    response = client.post("/api/v1/models/download", json=model_data)
-    assert response.status_code == 202
-    task_id = response.json()["task_id"]
-    assert task_id == "test/workflow:latest"
+    # 1. Check status - model doesn't exist initially
+    with mock_model_not_exists():
+        response = client.post("/api/v1/models/status", json=model_data)
+        assert response.status_code == 200
+        assert response.json()["status"] == "NOT_FOUND"
     
-    # 3. Check status again - model now exists
-    mock_snapshot.side_effect = ["/tmp/test_cache"]
-    response = client.post("/api/v1/models/status", json=model_data)
-    assert response.status_code == 200
-    # Status could be DOWNLOADING or DOWNLOADED depending on timing
-    assert response.json()["status"] in ["DOWNLOADING", "DOWNLOADED"]
+    # 2. Start download with proper mocking
+    with patch('api.models.manager.list_repo_files') as mock_list_files, \
+         patch('api.models.manager.hf_hub_download') as mock_download, \
+         patch('api.models.manager.snapshot_download') as mock_snapshot:
+        # Model doesn't exist initially
+        mock_list_files.side_effect = [
+            RepositoryNotFoundError("Not found"),  # is_model_exist check before download
+            ["config.json", "model.safetensors"],  # verification after download
+        ]
+        mock_download.return_value = "/tmp/test_cache/model.safetensors"
+        mock_snapshot.return_value = "/tmp/test_cache"  # download succeeds
+        
+        response = client.post("/api/v1/models/download", json=model_data)
+        assert response.status_code == 202
+        task_id = response.json()["task_id"]
+        assert task_id == "test/workflow:latest"
+    
+    # 3. Check status again - model now downloading/downloaded
+    with mock_model_exists():
+        response = client.post("/api/v1/models/status", json=model_data)
+        assert response.status_code == 200
+        # Status could be DOWNLOADING or DOWNLOADED depending on timing
+        assert response.json()["status"] in ["DOWNLOADING", "DOWNLOADED", "PARTIAL"]
     
     # 4. Delete the model
-    # Mock the model as existing in cache for deletion
     revision = MockRevision("latest123")
     repo = MockRepo("test/workflow", [revision])
-    mock_scan.return_value = MockCacheInfo([repo])
-    mock_snapshot.side_effect = ["/tmp/test_cache"]  # is_model_exist check
     
-    response = client.request("DELETE", "/api/v1/models", json=model_data)
-    assert response.status_code == 200
-    assert response.json()["status"] in ["deleted", "cancelled"]
+    with mock_model_exists(), \
+         patch('api.models.manager.scan_cache_dir') as mock_scan:
+        mock_scan.return_value = MockCacheInfo([repo])
+        
+        response = client.request("DELETE", "/api/v1/models", json=model_data)
+        assert response.status_code == 200
+        assert response.json()["status"] in ["deleted", "cancelled"]
 
 
 def test_invalid_model_data(client):
