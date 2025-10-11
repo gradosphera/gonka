@@ -180,17 +180,6 @@ func (c UpdateNode) Execute(b *Broker) {
 	// Apply update
 	existing.Node = updated
 
-	// Capture worker for client refresh
-	worker, _ := b.nodeWorkGroup.GetWorker(c.Node.Id)
-	b.mu.Unlock()
-
-	if worker != nil {
-		// Refresh client immediately so it picks up new URLs
-		oldVersion := b.configManager.GetLastUsedVersion()
-		newVersion := b.configManager.GetCurrentNodeVersion()
-		worker.RefreshClientImmediate(oldVersion, newVersion)
-	}
-
 	// Optionally trigger a status re-check
 	b.TriggerStatusQuery()
 
