@@ -179,6 +179,7 @@ func (c UpdateNode) Execute(b *Broker) {
 
 	// Apply update
 	existing.Node = updated
+	b.mu.Unlock()
 
 	// Optionally trigger a status re-check
 	b.TriggerStatusQuery()
