@@ -9,6 +9,9 @@ from api.inference.routes import router as inference_router
 from api.models.manager import ModelManager
 from api.models.routes import router as models_router
 
+from api.gpu.manager import GPUManager
+from api.gpu.routes import router as gpu_router
+
 from zeroband.service.manager import TrainManager
 from zeroband.service.routes import router as train_router
 
@@ -35,6 +38,7 @@ async def lifespan(app: FastAPI):
     app.state.inference_manager = InferenceManager()
     app.state.train_manager = TrainManager()
     app.state.model_manager = ModelManager()
+    app.state.gpu_manager = GPUManager()
 
     await start_vllm_proxy()
 
@@ -58,6 +62,8 @@ async def lifespan(app: FastAPI):
         app.state.inference_manager.stop()
     if app.state.train_manager.is_running():
         app.state.train_manager.stop()
+
+    app.state.gpu_manager._shutdown_nvml()
 
     await stop_vllm_proxy()
     await stop_backward_compatibility()
@@ -104,4 +110,10 @@ app.include_router(
     models_router,
     prefix=API_PREFIX + "/models",
     tags=["Models"],
+)
+
+app.include_router(
+    gpu_router,
+    prefix=API_PREFIX + "/gpu",
+    tags=["GPU"],
 )
