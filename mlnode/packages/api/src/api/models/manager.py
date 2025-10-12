@@ -444,6 +444,11 @@ class ModelManager:
         )
         strategy.execute()
         
+        # Remove from download tasks cache since the model is no longer available
+        if task_id in self._download_tasks:
+            del self._download_tasks[task_id]
+            logger.debug(f"Removed {task_id} from download tasks")
+        
         return "deleted"
     
     def list_models(self) -> List[ModelListItem]:

@@ -148,35 +148,46 @@ def test_download_model_already_exists(client, sample_model_data):
 
 def test_download_model_already_downloading(client, sample_model_data):
     """Test downloading a model that's already downloading."""
-    from huggingface_hub.utils import RepositoryNotFoundError
+    from huggingface_hub.utils import LocalEntryNotFoundError
+    import time
     
-    with patch('api.models.manager.list_repo_files') as mock_list_files, \
-         patch('api.models.manager.snapshot_download') as mock_snapshot:
-        # Model doesn't exist initially
-        mock_list_files.side_effect = [
-            RepositoryNotFoundError("Not found"),  # is_model_exist check for first download
-            RepositoryNotFoundError("Not found"),  # is_model_exist check for second download
-        ]
-        mock_snapshot.return_value = "/tmp/test_cache"  # download (won't complete before second request)
+    with patch('api.models.manager.snapshot_download') as mock_snapshot:
+        # Make the download slow so it's still downloading when we try to start a second one
+        def slow_download(*args, **kwargs):
+            # If local_files_only=True (for is_model_exist check), raise exception
+            if kwargs.get('local_files_only'):
+                raise LocalEntryNotFoundError("Not in cache")
+            # Otherwise it's the actual download - make it slow
+            time.sleep(2)  # Simulate slow download
+            return "/tmp/test_cache"
+        
+        mock_snapshot.side_effect = slow_download
         
         # Start first download
         response1 = client.post("/api/v1/models/download", json=sample_model_data)
         assert response1.status_code == 202
         
-        # Try to start second download
+        # Try to start second download immediately (while first is still running)
         response2 = client.post("/api/v1/models/download", json=sample_model_data)
         assert response2.status_code == 409  # Conflict
 
 
 def test_download_max_concurrent(client):
     """Test maximum concurrent downloads."""
-    from huggingface_hub.utils import RepositoryNotFoundError
+    from huggingface_hub.utils import LocalEntryNotFoundError
+    import time
     
-    with patch('api.models.manager.list_repo_files') as mock_list_files, \
-         patch('api.models.manager.snapshot_download') as mock_snapshot:
-        # All models don't exist
-        mock_list_files.side_effect = [RepositoryNotFoundError("Not found")] * 10
-        mock_snapshot.return_value = "/tmp/test_cache"
+    with patch('api.models.manager.snapshot_download') as mock_snapshot:
+        # Make downloads slow so they're all still running when we hit the limit
+        def slow_download(*args, **kwargs):
+            # If local_files_only=True (for is_model_exist check), raise exception
+            if kwargs.get('local_files_only'):
+                raise LocalEntryNotFoundError("Not in cache")
+            # Otherwise it's the actual download - make it slow
+            time.sleep(5)  # Simulate slow download
+            return "/tmp/test_cache"
+        
+        mock_snapshot.side_effect = slow_download
         
         # Start 3 downloads
         for i in range(3):
@@ -184,7 +195,7 @@ def test_download_max_concurrent(client):
             response = client.post("/api/v1/models/download", json=model_data)
             assert response.status_code == 202
         
-        # Try to start 4th download
+        # Try to start 4th download - should fail with Too Many Requests
         model_data = {"hf_repo": "test/model4", "hf_commit": None}
         response = client.post("/api/v1/models/download", json=model_data)
         assert response.status_code == 429  # Too Many Requests
