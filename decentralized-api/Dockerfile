@@ -14,6 +14,7 @@ ENV GOOS=${GOOS} \
     CGO_ENABLED=1 \
     GO111MODULE=on \
     GOCACHE=/root/.cache/go-build \
+    GOMODCACHE=/go/pkg/mod \
     CGO_CFLAGS="-I/lib" \
     CGO_LDFLAGS="-L/lib" \
     # Override the wasmvm library path to use our musl version
@@ -40,6 +41,7 @@ WORKDIR /app/decentralized-api
 COPY decentralized-api/go.mod decentralized-api/go.sum ./
 
 RUN --mount=type=cache,id=go-build-cache3,target=/root/.cache/go-build \
+    --mount=type=cache,id=go-mod-cache3,target=/go/pkg/mod \
     CGO_ENABLED=1 CC=gcc \
     go mod download
 
@@ -47,6 +49,7 @@ COPY decentralized-api/. .
 
 # ARG LDFLAGS
 RUN --mount=type=cache,id=go-build-cache3,target=/root/.cache/go-build \
+    --mount=type=cache,id=go-mod-cache3,target=/go/pkg/mod \
     CGO_ENABLED=1 CC=gcc \
     go build -mod=readonly -tags muslc -ldflags "$LDFLAGS" \
     -o ./build/dapi \
@@ -54,6 +57,7 @@ RUN --mount=type=cache,id=go-build-cache3,target=/root/.cache/go-build \
 
 # TO FIX: temporary to have both binaries in api image
 RUN --mount=type=cache,id=go-build-cache3,target=/root/.cache/go-build \
+    --mount=type=cache,id=go-mod-cache3,target=/go/pkg/mod \
     cd /app/inference-chain && \
     CGO_ENABLED=1 CC=gcc \
     go build -mod=readonly -tags muslc -ldflags "-X github.com/cosmos/cosmos-sdk/version.Name=inference-chain -X github.com/cosmos/cosmos-sdk/version.AppName=inference-chaind" \
