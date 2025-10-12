@@ -39,6 +39,22 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
+      - name: Check initial disk space
+        run: |
+          echo "=== Disk Space Before Cleanup ==="
+          df -h
+
+      - name: Free up disk space on runner
+        run: |
+          echo "Removing large pre-installed tools..."
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          echo "Cleaning up apt and docker..."
+          sudo docker system prune -af
+          sudo apt-get clean
+          echo "=== Disk Space After Cleanup ==="
+          df -h
       - name: Checkout code
         uses: actions/checkout@v3
         with:
