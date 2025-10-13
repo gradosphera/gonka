@@ -31,6 +31,10 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 
 	// Init empty TokenomicsData
 	k.SetTokenomicsData(ctx, types.TokenomicsData{})
+	err := k.PruningState.Set(ctx, types.PruningState{})
+	if err != nil {
+		panic(err)
+	}
 
 	// Set MLNode version with default if not defined
 	if genState.MlnodeVersion != nil {
@@ -54,7 +58,10 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 
 	// Import participants provided in genesis
 	for _, p := range genState.ParticipantList {
-		k.SetParticipant(ctx, p)
+		err := k.SetParticipant(ctx, p)
+		if err != nil {
+			k.LogWarn("Error importing participant", types.System, "error", err, "participant", p)
+		}
 	}
 
 	// this line is used by starport scaffolding # genesis/module/init

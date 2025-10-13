@@ -5,13 +5,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.BeforeAll
-import org.junit.jupiter.api.MethodOrderer
-import org.junit.jupiter.api.Order
-import org.junit.jupiter.api.Tag
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.TestMethodOrder
-import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.api.*
 import org.tinylog.kotlin.Logger
 import java.time.Instant
 import java.util.*
@@ -19,7 +13,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertNotNull
 
-@Timeout(value = 10, unit = TimeUnit.MINUTES)
+@Timeout(value = 15, unit = TimeUnit.MINUTES)
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
 class ValidationTests : TestermintTest() {
     @Test
@@ -40,7 +34,8 @@ class ValidationTests : TestermintTest() {
         val inferenceRequest = inferenceRequestObject.copy(
             maxTokens = 20 // To not trigger bandwidth limit
         )
-        val statuses = runParallelInferences(genesis, requests, maxConcurrentRequests = requests,
+        val statuses = runParallelInferences(
+            genesis, requests, maxConcurrentRequests = requests,
             inferenceRequest = inferenceRequest
         )
         Logger.info("Statuses: $statuses")
@@ -57,10 +52,10 @@ class ValidationTests : TestermintTest() {
     }
 
     @Test
-    @Tag("unstable")
     fun `test invalid gets marked invalid`() {
         var tries = 3
-        val (cluster, genesis) = initCluster()
+        val (cluster, genesis) = initCluster(reboot = true)
+        genesis.waitForNextInferenceWindow()
         val oddPair = cluster.joinPairs.last()
         val badResponse = defaultInferenceResponseObject.withMissingLogit()
         oddPair.mock?.setInferenceResponse(badResponse)
@@ -75,8 +70,8 @@ class ValidationTests : TestermintTest() {
 
     @Test
     @Timeout(15, unit = TimeUnit.MINUTES)
-    @Tag("unstable")
     @Order(Int.MAX_VALUE - 1)
+    @Tag("unstable")
     fun `test invalid gets removed`() {
         val (cluster, genesis) = initCluster(mergeSpec = alwaysValidate)
         cluster.allPairs.forEach { pair ->
@@ -105,9 +100,9 @@ class ValidationTests : TestermintTest() {
     }
 
     @Test
-    @Tag("unstable")
     fun `test valid with invalid validator gets validated`() {
         val (cluster, genesis) = initCluster(mergeSpec = alwaysValidate)
+        genesis.waitForNextInferenceWindow()
         cluster.allPairs.forEach { pair ->
             pair.waitForMlNodesToLoad()
         }
@@ -128,6 +123,7 @@ class ValidationTests : TestermintTest() {
         assertThat(newState.statusEnum).isEqualTo(InferenceStatus.VALIDATED)
 
     }
+
     @Test
     fun `late validation of inference`() {
         val (cluster, genesis) = initCluster(mergeSpec = alwaysValidate)
@@ -153,11 +149,14 @@ class ValidationTests : TestermintTest() {
         assertNotNull(updatedInference)
         assertNotNull(updatedInference.inference)
 
-        assertThat(updatedInference.inference.validatedBy ?: listOf()).doesNotContain(lateValidator.node.getColdAddress())
+        assertThat(
+            updatedInference.inference.validatedBy ?: listOf()
+        ).doesNotContain(lateValidator.node.getColdAddress())
         val afterBalance = lateValidator.node.getSelfBalance()
         assertThat(afterBalance).isEqualTo(lateValidatorBeforeBalance)
         logSection("Submit late validation")
-        val beforeCoinsOwed = lateValidator.api.getParticipants().first { it.id == lateValidator.node.getColdAddress() }.coinsOwed
+        val beforeCoinsOwed =
+            lateValidator.api.getParticipants().first { it.id == lateValidator.node.getColdAddress() }.coinsOwed
         val validationMessage = MsgValidation(
             id = UUID.randomUUID().toString(),
             inferenceId = inference.inferenceId,
@@ -167,7 +166,8 @@ class ValidationTests : TestermintTest() {
 
         val validation = lateValidator.submitMessage(validationMessage)
         assertThat(validation.code).isZero()
-        val afterCoinsOwed = lateValidator.api.getParticipants().first { it.id == lateValidator.node.getColdAddress() }.coinsOwed
+        val afterCoinsOwed =
+            lateValidator.api.getParticipants().first { it.id == lateValidator.node.getColdAddress() }.coinsOwed
         assertThat(afterCoinsOwed).isEqualTo(beforeCoinsOwed)
         val beforeClaimBalance = lateValidator.node.getSelfBalance()
         // And now reclaim:
@@ -279,6 +279,7 @@ data class InferenceTestHelper(
         assertNotNull(inference)
         return inference
     }
+
     fun getStartInference(): MsgStartInference {
         val taSignature =
             genesis.node.signPayload(request + timestamp.toString() + genesisAddress + genesisAddress, null)

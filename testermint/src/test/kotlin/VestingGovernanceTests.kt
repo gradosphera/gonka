@@ -68,9 +68,6 @@ class VestingGovernanceTests : TestermintTest() {
         genesis.runProposal(cluster, UpdateParams(params = modifiedParams))
         genesis.markNeedsReboot()
         
-        logSection("4. Wait for Proposal to Pass")
-        genesis.node.waitForNextBlock(5)
-
         logSection("5. Verify Parameters Have Been Updated")
         
         // Query updated parameters to confirm the governance change took effect

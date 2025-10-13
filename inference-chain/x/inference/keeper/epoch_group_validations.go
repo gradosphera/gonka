@@ -8,12 +8,10 @@ import (
 )
 
 // SetEpochGroupValidations set a specific epochGroupValidations in the store from its index
-func (k Keeper) SetEpochGroupValidations(ctx context.Context, epochGroupValidations types.EpochGroupValidations) {
+func (k Keeper) SetEpochGroupValidations(ctx context.Context, epochGroupValidations types.EpochGroupValidations) error {
 	// use (epochIndex, participant) as composite key for deterministic ordering
 	pk := collections.Join(epochGroupValidations.EpochIndex, epochGroupValidations.Participant)
-	if err := k.EpochGroupValidationsMap.Set(ctx, pk, epochGroupValidations); err != nil {
-		panic(err)
-	}
+	return k.EpochGroupValidationsMap.Set(ctx, pk, epochGroupValidations)
 }
 
 // GetEpochGroupValidations returns a epochGroupValidations from its index

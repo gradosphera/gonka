@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+
 	"cosmossdk.io/store/prefix"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/productscience/inference/x/inference/types"
@@ -32,12 +33,16 @@ func (k Keeper) GetActiveParticipants(ctx context.Context, epochId uint64) (val 
 	return val, true
 }
 
-func (k Keeper) SetActiveParticipants(ctx context.Context, participants types.ActiveParticipants) {
+func (k Keeper) SetActiveParticipants(ctx context.Context, participants types.ActiveParticipants) error {
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	store := prefix.NewStore(storeAdapter, []byte{})
 
 	key := types.ActiveParticipantsFullKey(participants.EpochId)
 
-	b := k.cdc.MustMarshal(&participants)
+	b, err := k.cdc.Marshal(&participants)
+	if err != nil {
+		return err
+	}
 	store.Set(key, b)
+	return nil
 }

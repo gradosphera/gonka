@@ -10,7 +10,10 @@ import (
 func (k msgServer) SubmitNewParticipant(goCtx context.Context, msg *types.MsgSubmitNewParticipant) (*types.MsgSubmitNewParticipantResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	newParticipant := createNewParticipant(ctx, msg)
-	k.SetParticipant(ctx, newParticipant)
+	err := k.SetParticipant(ctx, newParticipant)
+	if err != nil {
+		return nil, err
+	}
 
 	return &types.MsgSubmitNewParticipantResponse{}, nil
 }

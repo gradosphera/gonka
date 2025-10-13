@@ -20,10 +20,12 @@ func (eg *EpochGroup) submitValidationProposals(ctx sdk.Context, inferenceId str
 	invalidateMessage := &types.MsgInvalidateInference{
 		InferenceId: inferenceId,
 		Creator:     policyAddress,
+		Invalidator: invalidator,
 	}
 	revalidateMessage := &types.MsgRevalidateInference{
 		InferenceId: inferenceId,
 		Creator:     policyAddress,
+		Invalidator: invalidator,
 	}
 	invalidateProposal := group.MsgSubmitProposal{
 		GroupPolicyAddress: policyAddress,

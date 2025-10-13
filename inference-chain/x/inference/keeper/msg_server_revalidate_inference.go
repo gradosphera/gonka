@@ -3,29 +3,13 @@ package keeper
 import (
 	"context"
 
-	errorsmod "cosmossdk.io/errors"
-
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/productscience/inference/x/inference/types"
 )
 
-func (k msgServer) RevalidateInference(goCtx context.Context, msg *types.MsgRevalidateInference) (*types.MsgRevalidateInferenceResponse, error) {
-	ctx := sdk.UnwrapSDKContext(goCtx)
-	inference, found := k.GetInference(goCtx, msg.InferenceId)
-	if !found {
-		k.LogError("Inference not found", types.Validation, "inferenceId", msg.InferenceId)
-		return nil, errorsmod.Wrapf(types.ErrInferenceNotFound, "inference with id %s not found", msg.InferenceId)
-	}
-
-	if msg.Creator != inference.ProposalDetails.PolicyAddress {
-		k.LogError("Invalid authority", types.Validation, "expected", inference.ProposalDetails.PolicyAddress, "got", msg.Creator)
-		return nil, errorsmod.Wrapf(types.ErrInvalidSigner, "invalid authority; expected %s, got %s", inference.ProposalDetails.PolicyAddress, msg.Creator)
-	}
-
-	executor, found := k.GetParticipant(ctx, inference.ExecutedBy)
-	if !found {
-		k.LogError("Participant not found", types.Validation, "address", inference.ExecutedBy)
-		return nil, errorsmod.Wrapf(types.ErrParticipantNotFound, "participant with address %s not found", inference.ExecutedBy)
+func (k msgServer) RevalidateInference(ctx context.Context, msg *types.MsgRevalidateInference) (*types.MsgRevalidateInferenceResponse, error) {
+	inference, executor, err := k.validateDecisionMessage(ctx, msg)
+	if err != nil {
+		return nil, err
 	}
 
 	if inference.Status == types.InferenceStatus_VALIDATED {
@@ -37,11 +21,17 @@ func (k msgServer) RevalidateInference(goCtx context.Context, msg *types.MsgReva
 	executor.ConsecutiveInvalidInferences = 0
 	executor.CurrentEpochStats.ValidatedInferences++
 
-	executor.Status = calculateStatus(k.Keeper.GetParams(goCtx).ValidationParams, executor)
-	k.SetParticipant(ctx, executor)
+	executor.Status = calculateStatus(k.Keeper.GetParams(ctx).ValidationParams, *executor)
+	err = k.SetParticipant(ctx, *executor)
+	if err != nil {
+		return nil, err
+	}
 
 	k.LogInfo("Saving inference", types.Validation, "inferenceId", inference.InferenceId, "status", inference.Status, "authority", inference.ProposalDetails.PolicyAddress)
-	k.SetInference(ctx, inference)
+	err = k.SetInference(ctx, *inference)
+	if err != nil {
+		return nil, err
+	}
 
 	return &types.MsgRevalidateInferenceResponse{}, nil
 }

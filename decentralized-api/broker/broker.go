@@ -448,7 +448,9 @@ func (b *Broker) lockAvailableNode(command LockAvailableNode) {
 	leastBusyNode := b.getLeastBusyNode(command)
 
 	if leastBusyNode != nil {
+		b.mu.RLock()
 		leastBusyNode.State.LockCount++
+		b.mu.RUnlock()
 	}
 	logging.Debug("Locked node", types.Nodes, "node", leastBusyNode)
 	if leastBusyNode == nil {
@@ -530,7 +532,9 @@ func (b *Broker) releaseNode(command ReleaseNode) {
 		command.Response <- false
 		return
 	} else {
+		b.mu.RLock()
 		node.State.LockCount--
+		b.mu.RUnlock()
 		if !command.Outcome.IsSuccess() {
 			logging.Error("Node failed", types.Nodes, "node_id", command.NodeId, "reason", command.Outcome.GetMessage())
 			// FIXME: need a write lock here?

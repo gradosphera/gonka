@@ -2,10 +2,9 @@ package keeper
 
 import (
 	"context"
-	"errors"
+
 	"github.com/productscience/inference/x/inference/training"
 	"github.com/productscience/inference/x/inference/types"
-	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -13,10 +12,11 @@ import (
 func (k msgServer) JoinTrainingStatus(goCtx context.Context, msg *types.MsgJoinTrainingStatus) (*types.MsgJoinTrainingStatusResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	if !strings.HasPrefix(msg.Req.NodeId, msg.Creator+"/") {
-		return nil, errors.New("nodeId must start with creator")
+	if err := k.CheckTrainingAllowList(ctx, msg); err != nil {
+		return nil, err
 	}
-	nodeId, err := training.NewGlobalNodeId(msg.Req.NodeId)
+
+	nodeId, err := training.NewGlobalNodeId(msg.Req.NodeId, msg.Creator)
 	if err != nil {
 		return nil, err
 	}

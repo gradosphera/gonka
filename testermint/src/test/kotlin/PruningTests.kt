@@ -18,11 +18,11 @@ class PruningTests : TestermintTest() {
         genesis.node.waitForNextBlock()
         val inferenceState1 = genesis.node.getInference(inferenceResult.id)
         assertNotNull(inferenceState1, "Inference not in chain")
-        genesis.waitForStage(EpochStage.START_OF_POC, offset = 2)
+        genesis.waitForStage(EpochStage.SET_NEW_VALIDATORS, offset = 2)
         logSection("Checking after one epoch")
         val inferenceState2 = genesis.node.getInference(inferenceResult.id)
         assertNotNull(inferenceState2, "Inference not in chain")
-        genesis.waitForStage(EpochStage.START_OF_POC, offset = 2)
+        genesis.waitForStage(EpochStage.SET_NEW_VALIDATORS, offset = 2)
         logSection("Checking after two epochs")
         val inferenceState3 = genesis.node.getInference(inferenceResult.id)
         assertThat(inferenceState3).withFailMessage { "Inference not pruned after two epochs" }.isNull()
@@ -46,8 +46,7 @@ class PruningTests : TestermintTest() {
         assertThat(startValidationCount).isNotZero()
 
         logSection("Waiting for next (+1) epoch. epoch.Index = ${startEpoch.index + 1}")
-        genesis.waitForStage(EpochStage.START_OF_POC)
-        genesis.waitForStage(EpochStage.CLAIM_REWARDS)
+        genesis.waitForNextEpoch()
 
         val epoch2 = genesis.getEpochData().latestEpoch
         logSection("Getting PoC counts after epoch. epoch.Index = ${epoch2.index}. epoch.pocStartBlockHeight: ${epoch2.pocStartBlockHeight}")
@@ -58,8 +57,7 @@ class PruningTests : TestermintTest() {
         assertThat(startValidationCount).isNotZero()
 
         logSection("Waiting for next (+2) epoch. epoch.Index = ${epoch2.index + 1}")
-        genesis.waitForStage(EpochStage.START_OF_POC)
-        genesis.waitForStage(EpochStage.CLAIM_REWARDS)
+        genesis.waitForNextEpoch()
 
         val epoch3 = genesis.getEpochData().latestEpoch
         logSection("Getting PoC counts after epoch. epoch.Index = ${epoch3.index}. epoch.pocStartBlockHeight: ${epoch3.pocStartBlockHeight}")

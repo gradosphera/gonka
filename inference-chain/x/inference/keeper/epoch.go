@@ -20,14 +20,16 @@ func (k Keeper) GetEffectiveEpochIndex(ctx context.Context) (uint64, bool) {
 	return v, true
 }
 
-func (k Keeper) SetEpoch(ctx context.Context, epoch *types.Epoch) {
+func (k Keeper) SetEpoch(ctx context.Context, epoch *types.Epoch) error {
 	if epoch == nil {
 		k.LogError("SetEpoch called with nil epoch, returning", types.System)
-		return
+		return types.ErrEpochNotFound
 	}
-	if err := k.Epochs.Set(ctx, epoch.Index, *epoch); err != nil {
-		panic(err)
+	err := k.Epochs.Set(ctx, epoch.Index, *epoch)
+	if err != nil {
+		return err
 	}
+	return nil
 }
 
 func (k Keeper) GetEpoch(ctx context.Context, epochIndex uint64) (*types.Epoch, bool) {

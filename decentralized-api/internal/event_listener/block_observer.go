@@ -29,6 +29,7 @@ type BlockObserver struct {
 // TmHTTPClient abstracts the subset of RPC methods we need
 type TmHTTPClient interface {
 	BlockResults(ctx context.Context, height *int64) (*coretypes.ResultBlockResults, error)
+	Status(ctx context.Context) (*coretypes.ResultStatus, error)
 }
 
 func NewBlockObserver(manager *apiconfig.ConfigManager) *BlockObserver {
@@ -99,6 +100,37 @@ func (bo *BlockObserver) updateStatus(newHeight int64, caughtUp bool) {
 	}
 }
 
+// getStartProcessingBlock determines the correct starting block height for processing
+// Returns max(currentBlock - 500, firstAvailableBlock) to handle snapshot nodes
+func (bo *BlockObserver) getStartProcessingBlock(ctx context.Context, currentBlock int64) int64 {
+	if bo.tmClient == nil {
+		logging.Warn("tmClient is nil, starting from recent block to avoid unavailable blocks", types.EventProcessing)
+		return currentBlock - 1
+	}
+
+	status, err := bo.tmClient.Status(ctx)
+	if err != nil || status == nil {
+		logging.Warn("Failed to fetch chain status, starting from recent block to avoid unavailable blocks", types.EventProcessing, "error", err)
+		return currentBlock - 1
+	}
+
+	firstAvailable := status.SyncInfo.EarliestBlockHeight
+	targetStart := currentBlock - 500
+
+	if targetStart < firstAvailable {
+		logging.Info("Adjusting start block for snapshot node", types.EventProcessing,
+			"targetStart", targetStart,
+			"firstAvailable", firstAvailable,
+			"usingBlock", firstAvailable)
+		return firstAvailable
+	}
+
+	logging.Debug("Using target start block", types.EventProcessing,
+		"startBlock", targetStart,
+		"firstAvailable", firstAvailable)
+	return targetStart
+}
+
 func (bo *BlockObserver) Process(ctx context.Context) {
 	for {
 		select {
@@ -118,6 +150,21 @@ func (bo *BlockObserver) Process(ctx context.Context) {
 			if !bo.caughtUp.Load() {
 				continue
 			}
+
+			currentHeight := bo.currentBlockHeight.Load()
+			lastQueried := bo.lastQueriedBlockHeight.Load()
+
+			// Check if lastQueried is too far behind (more than 500 blocks) or invalid
+			// This handles snapshot nodes where old blocks are unavailable
+			if lastQueried < (currentHeight-500) || lastQueried <= 0 {
+				startBlock := bo.getStartProcessingBlock(ctx, currentHeight)
+				logging.Info("Resetting lastQueriedBlockHeight for block availability", types.EventProcessing,
+					"oldLastQueried", lastQueried,
+					"currentHeight", currentHeight,
+					"newStartBlock", startBlock)
+				bo.lastQueriedBlockHeight.Store(startBlock - 1)
+			}
+
 			// Process as many contiguous blocks as available (based on lastQueried)
 			for {
 				nextHeight := bo.lastQueriedBlockHeight.Load() + 1

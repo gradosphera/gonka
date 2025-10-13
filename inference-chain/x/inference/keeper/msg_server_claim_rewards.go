@@ -113,7 +113,10 @@ func (ms msgServer) finishSettle(ctx sdk.Context, settleAmount *types.SettleAmou
 	perfSummary, found := ms.GetEpochPerformanceSummary(ctx, settleAmount.EpochIndex, settleAmount.Participant)
 	if found {
 		perfSummary.Claimed = true
-		ms.SetEpochPerformanceSummary(ctx, perfSummary)
+		err := ms.SetEpochPerformanceSummary(ctx, perfSummary)
+		if err != nil {
+			ms.LogError("Error setting epoch performance summary", types.Claims, "error", err)
+		}
 	}
 }
 

@@ -34,15 +34,27 @@ func (am AppModule) RegisterTopMiners(ctx context.Context, participants []*types
 			continue
 		case keeper.AddMiner:
 			minerFound = true
-			am.keeper.SetTopMiner(ctx, typedAction.Miner)
+			err := am.keeper.SetTopMiner(ctx, typedAction.Miner)
+			if err != nil {
+				return err
+			}
 		case keeper.UpdateMiner:
 			minerFound = true
-			am.keeper.SetTopMiner(ctx, typedAction.Miner)
+			err := am.keeper.SetTopMiner(ctx, typedAction.Miner)
+			if err != nil {
+				return err
+			}
 		case keeper.UpdateAndPayMiner:
-			am.keeper.SetTopMiner(ctx, typedAction.Miner)
-			params := am.keeper.GetParams(ctx)
+			err := am.keeper.SetTopMiner(ctx, typedAction.Miner)
+			if err != nil {
+				return err
+			}
+			params, err := am.keeper.GetParamsSafe(ctx)
+			if err != nil {
+				return err
+			}
 			topMinerVestingPeriod := &params.TokenomicsParams.TopMinerVestingPeriod
-			err := am.keeper.PayParticipantFromModule(ctx, typedAction.Miner.Address, typedAction.Payout, types.TopRewardPoolAccName, "top_miner", topMinerVestingPeriod)
+			err = am.keeper.PayParticipantFromModule(ctx, typedAction.Miner.Address, typedAction.Payout, types.TopRewardPoolAccName, "top_miner", topMinerVestingPeriod)
 			if err != nil {
 				return err
 			}

@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"fmt"
 	"math"
 
 	"cosmossdk.io/log"
@@ -67,17 +68,18 @@ func (sp *SettleParameters) getNextCutoff() int64 {
 	return nextCutoff
 }
 
-func (k *Keeper) GetSettleParameters(ctx context.Context) *SettleParameters {
-	params := k.GetParams(ctx)
+func (k *Keeper) GetSettleParameters(ctx context.Context) (*SettleParameters, error) {
+	params, err := k.GetParamsSafe(ctx)
+	if err != nil {
+		return nil, err
+	}
 	tokenomicsData, found := k.GetTokenomicsData(ctx)
 	if !found {
-		// Almost literally impossible
-		panic("Tokenomics data not found")
+		return nil, fmt.Errorf("tokenomics data not found")
 	}
 	genesisOnlyParams, found := k.GetGenesisOnlyParams(ctx)
 	if !found {
-		// Almost literally impossible
-		panic("Genesis only params not found")
+		return nil, fmt.Errorf("genesis only params not found")
 	}
 	normalizedTotalSuply := sdk.NormalizeCoin(sdk.NewInt64Coin(genesisOnlyParams.SupplyDenom, genesisOnlyParams.StandardRewardAmount))
 	return &SettleParameters{
@@ -87,7 +89,7 @@ func (k *Keeper) GetSettleParameters(ctx context.Context) *SettleParameters {
 		StageCutoff:              params.TokenomicsParams.SubsidyReductionInterval.ToFloat(),
 		StageDecrease:            params.TokenomicsParams.SubsidyReductionAmount.ToFloat32(),
 		TotalSubsidySupply:       normalizedTotalSuply.Amount.Int64(),
-	}
+	}, nil
 }
 
 func CheckAndPunishForDowntimeForParticipants(participants []types.Participant, rewards map[string]uint64, logger log.Logger) {
@@ -145,10 +147,18 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 	}
 
 	// Check governance flag to determine which reward system to use
-	params := k.GetParams(ctx)
+	params, err := k.GetParamsSafe(ctx)
+	if err != nil {
+		k.LogError("Error getting params", types.Settle, "error", err)
+		return err
+	}
 	var amounts []*SettleResult
 	var rewardAmount int64
-	settleParameters := k.GetSettleParameters(ctx)
+	settleParameters, err := k.GetSettleParameters(ctx)
+	if err != nil {
+		k.LogError("Error getting settle parameters", types.Settle, "error", err)
+		return err
+	}
 	k.LogInfo("Settle parameters", types.Settle, "parameters", settleParameters)
 
 	if params.BitcoinRewardParams.UseBitcoinRewards {
@@ -183,11 +193,14 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 		// Handle cutoff logic internally for current system
 		if subsidyResult.CrossedCutoff {
 			k.LogInfo("Crossed subsidy cutoff", types.Settle, "amount", subsidyResult.Amount)
-			k.ReduceSubsidyPercentage(ctx)
+			err = k.ReduceSubsidyPercentage(ctx)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
-	err := k.MintRewardCoins(ctx, rewardAmount, "reward_distribution")
+	err = k.MintRewardCoins(ctx, rewardAmount, "reward_distribution")
 	if err != nil {
 		k.LogError("Error minting reward coins", types.Settle, "error", err)
 		return err
@@ -223,9 +236,15 @@ func (k *Keeper) SettleAccounts(ctx context.Context, currentEpochIndex uint64, p
 			InvalidatedInferences: participant.CurrentEpochStats.InvalidatedInferences,
 			Claimed:               false,
 		}
-		k.SetEpochPerformanceSummary(ctx, epochPerformance)
+		err = k.SetEpochPerformanceSummary(ctx, epochPerformance)
+		if err != nil {
+			return err
+		}
 		participant.CurrentEpochStats = &types.CurrentEpochStats{}
-		k.SetParticipant(ctx, participant)
+		err := k.SetParticipant(ctx, participant)
+		if err != nil {
+			return err
+		}
 	}
 
 	for _, amount := range amounts {
@@ -327,13 +346,17 @@ func getSettleAmount(participant types.Participant, rewardInfo []DistributedCoin
 	}, nil
 }
 
-func (k Keeper) ReduceSubsidyPercentage(ctx context.Context) {
-	params := k.GetParams(ctx)
-	params.TokenomicsParams = params.TokenomicsParams.ReduceSubsidyPercentage()
-	err := k.SetParams(ctx, params)
+func (k Keeper) ReduceSubsidyPercentage(ctx context.Context) error {
+	params, err := k.GetParamsSafe(ctx)
 	if err != nil {
-		panic("Unable to set new subsidy percentage")
+		return err
 	}
+	params.TokenomicsParams = params.TokenomicsParams.ReduceSubsidyPercentage()
+	err = k.SetParams(ctx, params)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 type DistributedCoinInfo struct {

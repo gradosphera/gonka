@@ -104,7 +104,8 @@ func TestComputeNewWeightsWithStakingValidators(t *testing.T) {
 		ValidatorKey: "validatorKey1",
 		InferenceUrl: "http://www.yahoo.com/",
 	}
-	k.SetParticipant(ctx, participant)
+	err = k.SetParticipant(ctx, participant)
+	require.NoError(t, err)
 
 	// Set up random seed
 	seed := types.RandomSeed{

@@ -3,6 +3,7 @@ package keeper_test
 import (
 	"testing"
 
+	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
@@ -240,4 +241,124 @@ func TestInvalidateInference_NextEpoch_NoRefundNoCharge_NoSlash(t *testing.T) {
 	updatedInf, found := k.GetInference(ctx, inferenceID)
 	require.True(t, found)
 	require.Equal(t, types.InferenceStatus_INVALIDATED, updatedInf.Status)
+}
+
+func TestInvalidateInference_FailsWithWrongPolicyAddress(t *testing.T) {
+	k, ms, ctx, mocks := setupInvalidateHarness(t)
+
+	// Setup epoch and group
+	require.NoError(t, setEffectiveEpoch(ctx, k, 1, mocks))
+
+	executorAddr := sample.AccAddress()
+	payerAddr := sample.AccAddress()
+	wrongCreator := sample.AccAddress()
+
+	k.SetParticipant(ctx, types.Participant{Index: executorAddr, Address: executorAddr, CurrentEpochStats: &types.CurrentEpochStats{}})
+	k.SetParticipant(ctx, types.Participant{Index: payerAddr, Address: payerAddr, CurrentEpochStats: &types.CurrentEpochStats{}})
+
+	inferenceID := "wrong-policy"
+	k.SetInference(ctx, types.Inference{
+		Index:           inferenceID,
+		InferenceId:     inferenceID,
+		ExecutedBy:      executorAddr,
+		RequestedBy:     payerAddr,
+		Status:          types.InferenceStatus_FINISHED,
+		ActualCost:      10,
+		ProposalDetails: &types.ProposalDetails{PolicyAddress: payerAddr},
+		EpochId:         1,
+	})
+
+	// Creator is not equal to policy address -> expect error
+	_, err := ms.InvalidateInference(ctx, &types.MsgInvalidateInference{Creator: wrongCreator, InferenceId: inferenceID, Invalidator: payerAddr})
+	require.Error(t, err)
+}
+
+func TestInvalidateInference_RemovesActiveInvalidations(t *testing.T) {
+	k, ms, ctx, mocks := setupInvalidateHarness(t)
+
+	// Set epoch 1
+	require.NoError(t, setEffectiveEpoch(ctx, k, 1, mocks))
+
+	executorAddr := sample.AccAddress()
+	payerAddr := sample.AccAddress()
+	invalidator := sample.AccAddress()
+	k.SetParticipant(ctx, types.Participant{Index: executorAddr, Address: executorAddr, CurrentEpochStats: &types.CurrentEpochStats{}})
+	k.SetParticipant(ctx, types.Participant{Index: payerAddr, Address: payerAddr, CurrentEpochStats: &types.CurrentEpochStats{}})
+
+	inferenceID := "remove-active-invalidations"
+	k.SetInference(ctx, types.Inference{
+		Index:           inferenceID,
+		InferenceId:     inferenceID,
+		ExecutedBy:      executorAddr,
+		RequestedBy:     payerAddr,
+		Status:          types.InferenceStatus_FINISHED,
+		ActualCost:      100,
+		ProposalDetails: &types.ProposalDetails{PolicyAddress: payerAddr},
+		EpochId:         1,
+	})
+
+	// Add ActiveInvalidations entry for invalidator
+	addr := sdk.MustAccAddressFromBech32(invalidator)
+	require.NoError(t, k.ActiveInvalidations.Set(ctx, collections.Join(addr, inferenceID)))
+	has, err := k.ActiveInvalidations.Has(ctx, collections.Join(addr, inferenceID))
+	require.NoError(t, err)
+	require.True(t, has)
+
+	// Move to next epoch to avoid any refund/charge side effects in this focused test
+	require.NoError(t, setEffectiveEpoch(ctx, k, 2, mocks))
+	mocks.BankKeeper.EXPECT().SendCoinsFromModuleToAccount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+	mocks.BankKeeper.EXPECT().LogSubAccountTransaction(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+	mocks.CollateralKeeper.EXPECT().Slash(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+	_, err = ms.InvalidateInference(ctx, &types.MsgInvalidateInference{Creator: payerAddr, InferenceId: inferenceID, Invalidator: invalidator})
+	require.NoError(t, err)
+
+	// ActiveInvalidations should be removed
+	has, err = k.ActiveInvalidations.Has(ctx, collections.Join(addr, inferenceID))
+	require.NoError(t, err)
+	require.False(t, has)
+}
+
+func TestInvalidateInference_AlreadyInvalidated_RemovesActiveInvalidations(t *testing.T) {
+	k, ms, ctx, mocks := setupInvalidateHarness(t)
+	require.NoError(t, setEffectiveEpoch(ctx, k, 1, mocks))
+
+	executorAddr := sample.AccAddress()
+	payerAddr := sample.AccAddress()
+	invalidator := sample.AccAddress()
+	k.SetParticipant(ctx, types.Participant{Index: executorAddr, Address: executorAddr, CurrentEpochStats: &types.CurrentEpochStats{}})
+	k.SetParticipant(ctx, types.Participant{Index: payerAddr, Address: payerAddr, CurrentEpochStats: &types.CurrentEpochStats{}})
+
+	inferenceID := "already-invalidated-removes"
+	k.SetInference(ctx, types.Inference{
+		Index:           inferenceID,
+		InferenceId:     inferenceID,
+		ExecutedBy:      executorAddr,
+		RequestedBy:     payerAddr,
+		Status:          types.InferenceStatus_INVALIDATED, // already invalidated
+		ActualCost:      50,
+		ProposalDetails: &types.ProposalDetails{PolicyAddress: payerAddr},
+		EpochId:         1,
+	})
+
+	// Add ActiveInvalidations entry which should be removed even on idempotent path
+	addr := sdk.MustAccAddressFromBech32(invalidator)
+	require.NoError(t, k.ActiveInvalidations.Set(ctx, collections.Join(addr, inferenceID)))
+	has, err := k.ActiveInvalidations.Has(ctx, collections.Join(addr, inferenceID))
+	require.NoError(t, err)
+	require.True(t, has)
+
+	// Move to next epoch to avoid any refund/charge expectations
+	require.NoError(t, setEffectiveEpoch(ctx, k, 2, mocks))
+	mocks.BankKeeper.EXPECT().SendCoinsFromModuleToAccount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+	mocks.BankKeeper.EXPECT().LogSubAccountTransaction(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+	mocks.CollateralKeeper.EXPECT().Slash(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+	// Call invalidate; should succeed and remove ActiveInvalidations
+	_, err = ms.InvalidateInference(ctx, &types.MsgInvalidateInference{Creator: payerAddr, InferenceId: inferenceID, Invalidator: invalidator})
+	require.NoError(t, err)
+
+	has, err = k.ActiveInvalidations.Has(ctx, collections.Join(addr, inferenceID))
+	require.NoError(t, err)
+	require.False(t, has)
 }
