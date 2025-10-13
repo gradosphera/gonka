@@ -30,6 +30,7 @@ async def watch_managers(
                 
                 if unhealthy_counts[manager] >= MAX_UNHEALTHY_COUNT:
                     logger.critical(f"Manager {manager.__class__.__name__} has been unhealthy {MAX_UNHEALTHY_COUNT} times in a row. Shutting down the application.")
+                    # Use the proper stop() interface for all managers
                     manager.stop()
                     os._exit(1)
             else:

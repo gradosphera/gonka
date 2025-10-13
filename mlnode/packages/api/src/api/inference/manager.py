@@ -2,6 +2,7 @@ from typing import Optional, List, Type
 from pydantic import BaseModel
 import asyncio
 import time
+import threading
 
 from api.inference.vllm.runner import (
     IVLLMRunner,
@@ -10,6 +11,7 @@ from api.inference.vllm.runner import (
 
 from common.logger import create_logger
 from common.manager import IManager, ManagerState
+import api.proxy as proxy_module
 
 logger = create_logger(__name__)
 
@@ -61,16 +63,97 @@ class InferenceManager(IManager):
         self.vllm_runner.start()
         logger.info("VLLMRunner started")
 
-    def _stop(self):
-        if self._startup_task and not self._startup_task.done():
-            self._startup_task.cancel()
-            logger.info("Cancelled ongoing startup task")
+    async def _async_stop(self, timeout: float = 30.0):
+        logger.info("Starting vLLM service shutdown...")
         
-        if self.vllm_runner:
-            self.vllm_runner.stop()
-            logger.info("VLLMRunner stopped")
-        self.vllm_runner = None
-        self._exception = None
+        # Set state management to prevent unhealthy detection during shutdown
+        with self._lock:
+            self._state = ManagerState.STOPPING
+            self._is_active = False
+        
+        proxy_module.shutdown_event.set()
+        
+        try:
+            async with asyncio.timeout(timeout):
+                async with proxy_module.tasks_lock:
+                    tasks = list(proxy_module.active_proxy_tasks)
+                    proxy_module.active_proxy_tasks.clear()
+                
+                if tasks:
+                    logger.info(f"Cancelling {len(tasks)} active stream(s)...")
+                    for task in tasks:
+                        task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"Graceful shutdown timed out after {timeout}s. "
+                "Forcing termination of remaining resources."
+            )
+            
+        finally:
+            logger.info("Terminating vLLM processes and cleaning up state...")
+            
+            # Note: vllm_client stays alive for the app lifetime, managed by app lifespan
+            # Don't close it here as it's needed for health checks between restarts
+            
+            if self.vllm_runner:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.vllm_runner.stop)
+            
+            if self._startup_task and not self._startup_task.done():
+                self._startup_task.cancel()
+                try:
+                    await self._startup_task
+                except asyncio.CancelledError:
+                    pass
+
+            self.vllm_runner = None
+            self._startup_task = None
+            self._exception = None
+            proxy_module.shutdown_event.clear()
+            
+            # Update state to reflect completion
+            with self._lock:
+                self._state = ManagerState.STOPPED
+            
+            logger.info("Shutdown complete")
+
+    def _stop(self):
+        try:
+            loop = asyncio.get_running_loop()
+            
+            # In async context: use threading bridge
+            done = threading.Event()
+            error = [None]
+            
+            async def run_shutdown():
+                try:
+                    await self._async_stop()
+                except Exception as e:
+                    error[0] = e
+                finally:
+                    done.set()
+            
+            asyncio.create_task(run_shutdown())
+            done.wait(timeout=35.0)
+            
+            if error[0]:
+                raise error[0]
+                
+        except RuntimeError:
+            # No event loop: simple sync stop
+            if self._startup_task and not self._startup_task.done():
+                try:
+                    self._startup_task.cancel()
+                except:
+                    pass
+            
+            if self.vllm_runner:
+                self.vllm_runner.stop()
+            
+            self.vllm_runner = None
+            self._exception = None
 
     def is_running(self) -> bool:
         return self.vllm_runner is not None and self.vllm_runner.is_running()

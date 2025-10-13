@@ -18,7 +18,8 @@ async def inference_setup(
     
     if manager.is_running():
         logger.info("VLLM is already running, stopping first")
-        manager.stop()
+        # Use async stop in async context to avoid blocking event loop
+        await manager._async_stop()
 
     try:
         manager.start_async(init_request)
@@ -39,7 +40,8 @@ async def inference_setup_async(
     
     if manager.is_running():
         logger.info("VLLM is already running, stopping first")
-        manager.stop()
+        # Use async stop in async context to avoid blocking event loop
+        await manager._async_stop()
     
     try:
         manager.start_async(init_request)
@@ -70,7 +72,8 @@ async def inference_down(
     request: Request
 ):
     manager: InferenceManager = request.app.state.inference_manager
-    manager.stop()
+    # Use async stop in async context to avoid blocking event loop
+    await manager._async_stop()
     return {
         "status": "OK"
     }

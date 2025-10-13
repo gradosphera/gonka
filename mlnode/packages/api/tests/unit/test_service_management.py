@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock
 from fastapi import HTTPException
 
 from api.service_management import (
@@ -13,6 +13,8 @@ class MockState:
         
         self.pow_manager = MagicMock()
         self.inference_manager = MagicMock()
+        # Mock _async_stop for inference manager
+        self.inference_manager._async_stop = AsyncMock()
         self.train_manager = MagicMock()
         
         self.pow_manager.is_running.return_value = False
@@ -41,7 +43,8 @@ class MockRequest:
         ("/api/v1/pow",       False, False, False, ServiceState.STOPPED),
     ]
 )
-def test_single_service_runs_without_conflict(
+@pytest.mark.asyncio
+async def test_single_service_runs_without_conflict(
     path,
     pow_running,
     inf_running,
@@ -53,7 +56,7 @@ def test_single_service_runs_without_conflict(
     request.app.state.inference_manager.is_running.return_value = inf_running
     request.app.state.train_manager.is_running.return_value = train_running
 
-    check_service_conflicts(request)
+    await check_service_conflicts(request)
     assert request.app.state.service_state == expected_state
 
 @pytest.mark.parametrize(
@@ -65,19 +68,20 @@ def test_single_service_runs_without_conflict(
         # etc...
     ]
 )
-def test_multiple_services_raise_conflict_and_stop_all(path, pow_running, inf_running, train_running):
+@pytest.mark.asyncio
+async def test_multiple_services_raise_conflict_and_stop_all(path, pow_running, inf_running, train_running):
     request = MockRequest(path)
     request.app.state.pow_manager.is_running.return_value = pow_running
     request.app.state.inference_manager.is_running.return_value = inf_running
     request.app.state.train_manager.is_running.return_value = train_running
 
     with pytest.raises(HTTPException) as excinfo:
-        check_service_conflicts(request)
+        await check_service_conflicts(request)
 
     assert excinfo.value.status_code == 409
     # The code should stop all managers
     request.app.state.pow_manager.stop.assert_called_once()
-    request.app.state.inference_manager.stop.assert_called_once()
+    request.app.state.inference_manager._async_stop.assert_called_once()
     request.app.state.train_manager.stop.assert_called_once()
 
 @pytest.mark.parametrize(
@@ -88,7 +92,8 @@ def test_multiple_services_raise_conflict_and_stop_all(path, pow_running, inf_ru
         ("/api/v1/train",     "/api/v1/pow"),
     ]
 )
-def test_conflict_if_different_service_is_already_running(current_service_path, new_request_path):
+@pytest.mark.asyncio
+async def test_conflict_if_different_service_is_already_running(current_service_path, new_request_path):
     current_req = MockRequest(current_service_path)
 
     if "pow" in current_service_path:
@@ -105,9 +110,9 @@ def test_conflict_if_different_service_is_already_running(current_service_path, 
     new_req.app = current_req.app
 
     with pytest.raises(HTTPException) as excinfo:
-        check_service_conflicts(new_req)
+        await check_service_conflicts(new_req)
 
     assert excinfo.value.status_code == 409
     new_req.app.state.pow_manager.stop.assert_not_called()
-    new_req.app.state.inference_manager.stop.assert_not_called()
+    new_req.app.state.inference_manager._async_stop.assert_not_called()
     new_req.app.state.train_manager.stop.assert_not_called()

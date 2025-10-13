@@ -59,7 +59,8 @@ async def lifespan(app: FastAPI):
     if app.state.pow_manager.is_running():
         app.state.pow_manager.stop()
     if app.state.inference_manager.is_running():
-        app.state.inference_manager.stop()
+        # Use async stop in async context to avoid blocking event loop
+        await app.state.inference_manager._async_stop()
     if app.state.train_manager.is_running():
         app.state.train_manager.stop()
 
