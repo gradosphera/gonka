@@ -86,7 +86,13 @@ func LoadConfigManagerWithPaths(configPath, sqlitePath, nodeConfigPath string) (
 	}
 
 	// Log the resulting config in pretty JSON format for easier debugging
-	if cfgBytes, err := json.MarshalIndent(manager.currentConfig, "", "  "); err != nil {
+	// Make a copy and sanitize sensitive fields before logging
+	sanitized := manager.currentConfig
+	sanitized.CurrentSeed.Seed = 0
+	sanitized.PreviousSeed.Seed = 0
+	sanitized.UpcomingSeed.Seed = 0
+	sanitized.MLNodeKeyConfig.WorkerPrivateKey = ""
+	if cfgBytes, err := json.MarshalIndent(sanitized, "", "  "); err != nil {
 		log.Printf("Error marshaling final config to JSON: %+v", err)
 	} else {
 		log.Printf("Final loaded config (JSON):\n%s", string(cfgBytes))
@@ -232,7 +238,7 @@ func (cm *ConfigManager) SetValidationParams(params ValidationParamsCache) error
 	defer cm.mutex.Unlock()
 	cm.currentConfig.ValidationParams = params
 	logging.Info("Setting validation params", types.Config, "params", params)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) GetValidationParams() ValidationParamsCache {
@@ -244,7 +250,7 @@ func (cm *ConfigManager) SetBandwidthParams(params BandwidthParamsCache) error {
 	defer cm.mutex.Unlock()
 	cm.currentConfig.BandwidthParams = params
 	logging.Info("Setting bandwidth params", types.Config, "params", params)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) GetBandwidthParams() BandwidthParamsCache {
