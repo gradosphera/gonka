@@ -640,16 +640,22 @@ func (cm *ConfigManager) HydrateFromDB(_ context.Context) error {
 			cm.currentConfig.Nodes = nodes
 		}
 		if s, ok, err := GetActiveSeed(ctx, db, "current"); err == nil && ok {
-			logging.Info("Reading active seed from DB", types.Config, "seed", s)
 			cm.currentConfig.CurrentSeed = s
+			sanitizedS := s
+			sanitizedS.Seed = 0
+			logging.Info("Reading active seed from DB", types.Config, "sanitizedSeed", s)
 		}
 		if s, ok, err := GetActiveSeed(ctx, db, "previous"); err == nil && ok {
-			logging.Info("Reading previous seed from DB", types.Config, "seed", s)
 			cm.currentConfig.PreviousSeed = s
+			sanitizedS := s
+			sanitizedS.Seed = 0
+			logging.Info("Reading previous seed from DB", types.Config, "sanitizedSeed", s)
 		}
 		if s, ok, err := GetActiveSeed(ctx, db, "upcoming"); err == nil && ok {
-			logging.Info("Reading upcoming seed from DB", types.Config, "seed", s)
 			cm.currentConfig.UpcomingSeed = s
+			sanitizedS := s
+			sanitizedS.Seed = 0
+			logging.Info("Reading upcoming seed from DB", types.Config, "sanitizedSeed", s)
 		}
 		if v, ok, err := KVGetInt64(ctx, db, kvKeyCurrentHeight); err == nil && ok {
 			logging.Info("Reading current height from DB", types.Config, "height", v)
@@ -684,8 +690,10 @@ func (cm *ConfigManager) HydrateFromDB(_ context.Context) error {
 		}
 		var mk MLNodeKeyConfig
 		if ok, err := KVGetJSON(ctx, db, kvKeyMLNodeKeyConfig, &mk); err == nil && ok {
-			logging.Info("Reading MLNodeKeyConfig from DB", types.Config, "config", mk)
 			cm.currentConfig.MLNodeKeyConfig = mk
+			sanitizedMk := mk
+			mk.WorkerPrivateKey = ""
+			logging.Info("Reading MLNodeKeyConfig from DB", types.Config, "sanitizedConfig", sanitizedMk)
 		}
 	}
 	return nil
