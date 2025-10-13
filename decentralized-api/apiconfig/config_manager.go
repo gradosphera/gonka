@@ -63,18 +63,19 @@ func LoadConfigManagerWithPaths(configPath, sqlitePath, nodeConfigPath string) (
 	if err != nil {
 		return nil, err
 	}
-	// Persist only static config back to disk to normalize structure
-	if err = manager.Write(); err != nil {
-		log.Printf("Error writing config: %+v", err)
-		return nil, err
-	}
-	log.Printf("Saved static config after load")
 
 	err = manager.migrateDynamicDataToDb(ctx)
 	if err != nil {
 		log.Printf("Error migrating dynamic data to DB: %+v", err)
 		return nil, err
 	}
+
+	if err = manager.Write(); err != nil {
+		log.Printf("Error writing config: %+v", err)
+		return nil, err
+	}
+	log.Printf("Saved static config after load")
+
 	// Hydrate in-memory dynamic state from DB once
 	if err := manager.HydrateFromDB(context.Background()); err != nil {
 		log.Printf("Error hydrating dynamic data from DB: %+v", err)
