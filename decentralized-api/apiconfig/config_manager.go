@@ -84,6 +84,13 @@ func LoadConfigManagerWithPaths(configPath, sqlitePath, nodeConfigPath string) (
 	if err := manager.LoadNodeConfig(ctx, nodeConfigPath); err != nil {
 		log.Fatalf("error loading node config: %v", err)
 	}
+
+	// Log the resulting config in pretty JSON format for easier debugging
+	if cfgBytes, err := json.MarshalIndent(manager.currentConfig, "", "  "); err != nil {
+		log.Printf("Error marshaling final config to JSON: %+v", err)
+	} else {
+		log.Printf("Final loaded config (JSON):\n%s", string(cfgBytes))
+	}
 	return &manager, nil
 }
 
