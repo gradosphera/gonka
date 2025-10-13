@@ -99,8 +99,12 @@ class InferenceManager(IManager):
             
             if self.vllm_runner:
                 loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, self.vllm_runner.stop)
-            
+                stop_task = loop.run_in_executor(None, self.vllm_runner.stop)
+                try:
+                    await asyncio.wait_for(stop_task, timeout=35.0)
+                except asyncio.TimeoutError:
+                    logger.warning("vllm_runner.stop() timed out after 10 seconds.")
+
             if self._startup_task and not self._startup_task.done():
                 self._startup_task.cancel()
                 try:

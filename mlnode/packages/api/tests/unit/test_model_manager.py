@@ -2,7 +2,7 @@
 
 import asyncio
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 import requests
 from api.models.manager import ModelManager, DownloadTask
 from api.models.types import Model, ModelStatus
@@ -175,10 +175,16 @@ async def test_add_model_max_concurrent(manager):
 @pytest.mark.asyncio
 @patch('api.models.manager.hf_hub_download')
 @patch('api.models.manager.list_repo_files')
-@patch('api.models.manager.snapshot_download')
-async def test_download_model_success(mock_snapshot, mock_list_files, mock_download, manager, sample_model):
+@patch('api.models.manager.asyncio.create_subprocess_exec')
+async def test_download_model_success(mock_subprocess, mock_list_files, mock_download, manager, sample_model):
     """Test successful model download."""
-    mock_snapshot.return_value = "/tmp/test_cache/models/test/model"
+    # Mock subprocess that exits successfully
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    mock_process.returncode = 0
+    mock_process.communicate.return_value = (b"", b"")
+    mock_subprocess.return_value = mock_process
+    
     # Mock verification
     mock_list_files.return_value = ["config.json", "model.safetensors"]
     mock_download.return_value = "/tmp/test_cache/model.safetensors"
@@ -191,10 +197,15 @@ async def test_download_model_success(mock_snapshot, mock_list_files, mock_downl
 
 
 @pytest.mark.asyncio
-@patch('api.models.manager.snapshot_download')
-async def test_download_model_error(mock_snapshot, manager, sample_model):
+@patch('api.models.manager.asyncio.create_subprocess_exec')
+async def test_download_model_error(mock_subprocess, manager, sample_model):
     """Test model download with error."""
-    mock_snapshot.side_effect = Exception("Network error")
+    # Mock subprocess that exits with error
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    mock_process.returncode = 1
+    mock_process.communicate.return_value = (b"", b"Network error")
+    mock_subprocess.return_value = mock_process
     
     task_obj = DownloadTask(sample_model)
     await manager._download_model("test/model:abc123", sample_model, task_obj)
@@ -204,18 +215,20 @@ async def test_download_model_error(mock_snapshot, manager, sample_model):
 
 
 @pytest.mark.asyncio
-@patch('api.models.manager.snapshot_download')
-async def test_download_model_cancelled(mock_snapshot, manager, sample_model):
+@patch('api.models.manager.asyncio.create_subprocess_exec')
+async def test_download_model_cancelled(mock_subprocess, manager, sample_model):
     """Test model download cancellation."""
-    # Make snapshot_download block so we can cancel it
-    # Since it's run in an executor, we need to make it sleep synchronously
-    import time as sync_time
+    # Mock subprocess that takes time (so we can cancel it)
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    mock_process.returncode = None
     
-    def slow_download(*args, **kwargs):
-        sync_time.sleep(10)
-        return "/tmp/test_cache"
+    async def slow_communicate():
+        await asyncio.sleep(10)
+        return (b"", b"")
     
-    mock_snapshot.side_effect = slow_download
+    mock_process.communicate.side_effect = slow_communicate
+    mock_subprocess.return_value = mock_process
     
     task_obj = DownloadTask(sample_model)
     download_task = asyncio.create_task(
@@ -355,8 +368,12 @@ async def test_delete_model_from_cache(mock_scan, manager, sample_model):
 
 
 @pytest.mark.asyncio
-async def test_delete_model_cancel_download(manager, sample_model):
+@patch('api.models.manager.scan_cache_dir')
+async def test_delete_model_cancel_download(mock_scan, manager, sample_model):
     """Test deleting a model that's downloading cancels it."""
+    # Mock cache with no files (so it returns "cancelled")
+    mock_scan.return_value = MockCacheInfo([])
+    
     with patch.object(manager, 'is_model_exist', return_value=False), \
          patch.object(manager, '_download_model', return_value=None), \
          patch.object(manager, 'cancel_download') as mock_cancel:
@@ -364,10 +381,35 @@ async def test_delete_model_cancel_download(manager, sample_model):
         # Start download
         await manager.add_model(sample_model)
         
-        # Delete/cancel it
+        # Delete/cancel it (no partial files to clean up)
         result = await manager.delete_model(sample_model)
         
         assert result == "cancelled"
+        mock_cancel.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch('api.models.manager.scan_cache_dir')
+async def test_delete_model_cancel_download_with_partial_files(mock_scan, manager, sample_model):
+    """Test deleting a model that's downloading with partial files cleans them up."""
+    # Mock cache with partial files for the model
+    revision = MockRevision("abc123")
+    repo = MockRepo("test/model", [revision])
+    cache_info = MockCacheInfo([repo])
+    mock_scan.return_value = cache_info
+    
+    with patch.object(manager, 'is_model_exist', return_value=False), \
+         patch.object(manager, '_download_model', return_value=None), \
+         patch.object(manager, 'cancel_download') as mock_cancel:
+        
+        # Start download
+        await manager.add_model(sample_model)
+        
+        # Delete/cancel it (with partial files to clean up)
+        result = await manager.delete_model(sample_model)
+        
+        # Should return "deleted" because it cleaned up partial files
+        assert result == "deleted"
         mock_cancel.assert_called_once()
 
 
@@ -440,10 +482,16 @@ def test_get_disk_space(mock_disk_usage, mock_scan, manager):
 @pytest.mark.asyncio
 @patch('api.models.manager.hf_hub_download')
 @patch('api.models.manager.list_repo_files')
-@patch('api.models.manager.snapshot_download')
-async def test_download_model_with_retry_success(mock_snapshot, mock_list_files, mock_download, manager, sample_model):
+@patch('api.models.manager.asyncio.create_subprocess_exec')
+async def test_download_model_with_retry_success(mock_subprocess, mock_list_files, mock_download, manager, sample_model):
     """Test successful download with retry logic."""
-    mock_snapshot.return_value = "/tmp/test_cache"
+    # Mock subprocess that exits successfully
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    mock_process.returncode = 0
+    mock_process.communicate.return_value = (b"", b"")
+    mock_subprocess.return_value = mock_process
+    
     # Mock verification
     mock_list_files.return_value = ["config.json", "model.safetensors"]
     mock_download.return_value = "/tmp/test_cache/model.safetensors"
@@ -453,38 +501,40 @@ async def test_download_model_with_retry_success(mock_snapshot, mock_list_files,
     
     assert task_obj.status == ModelStatus.DOWNLOADED
     assert task_obj.error_message is None
-    # Should be called once for download
-    assert mock_snapshot.call_count == 1
 
 
 @pytest.mark.asyncio
-@patch('api.models.manager.snapshot_download')
-async def test_download_model_with_retry_network_error(mock_snapshot, manager, sample_model):
+@patch('api.models.manager.asyncio.create_subprocess_exec')
+async def test_download_model_with_retry_network_error(mock_subprocess, manager, sample_model):
     """Test download with network error and retries."""
-    # Simulate network error that should trigger retries
-    mock_snapshot.side_effect = requests.exceptions.ConnectionError("Network error")
+    # Mock subprocess that fails with network error (after retries inside subprocess)
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    mock_process.returncode = 1
+    mock_process.communicate.return_value = (b"", b"ConnectionError: Network error")
+    mock_subprocess.return_value = mock_process
     
     task_obj = DownloadTask(sample_model)
     await manager._download_model("test/model:abc123", sample_model, task_obj)
     
     assert task_obj.status == ModelStatus.PARTIAL
-    assert "retry attempts" in task_obj.error_message.lower()
-    # Should retry 5 times (no verification call since download never succeeds)
-    assert mock_snapshot.call_count == 5
+    # Verify error message contains the network error (retry logic is inside subprocess)
+    assert "ConnectionError" in task_obj.error_message or "Network error" in task_obj.error_message
 
 
 @pytest.mark.asyncio
 @patch('api.models.manager.hf_hub_download')
 @patch('api.models.manager.list_repo_files')
-@patch('api.models.manager.snapshot_download')
-async def test_download_model_with_retry_eventual_success(mock_snapshot, mock_list_files, mock_download, manager, sample_model):
+@patch('api.models.manager.asyncio.create_subprocess_exec')
+async def test_download_model_with_retry_eventual_success(mock_subprocess, mock_list_files, mock_download, manager, sample_model):
     """Test download succeeds after initial failures."""
-    # First 2 download calls fail, 3rd succeeds
-    mock_snapshot.side_effect = [
-        requests.exceptions.ConnectionError("Network error"),
-        requests.exceptions.Timeout("Timeout"),
-        "/tmp/test_cache",  # Success on 3rd attempt (download)
-    ]
+    # Mock subprocess that eventually succeeds (retry logic is inside subprocess)
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    mock_process.returncode = 0
+    mock_process.communicate.return_value = (b"", b"")
+    mock_subprocess.return_value = mock_process
+    
     # Mock verification
     mock_list_files.return_value = ["config.json", "model.safetensors"]
     mock_download.return_value = "/tmp/test_cache/model.safetensors"
@@ -494,22 +544,23 @@ async def test_download_model_with_retry_eventual_success(mock_snapshot, mock_li
     
     assert task_obj.status == ModelStatus.DOWNLOADED
     assert task_obj.error_message is None
-    # 2 failed download attempts + 1 successful download = 3 calls
-    assert mock_snapshot.call_count == 3
 
 
 @pytest.mark.asyncio
-@patch('api.models.manager.snapshot_download')
-async def test_download_verification_fails(mock_snapshot, manager, sample_model):
+@patch('api.models.manager.asyncio.create_subprocess_exec')
+async def test_download_verification_fails(mock_subprocess, manager, sample_model):
     """Test download with verification failure."""
-    # Download succeeds but verification fails (corrupted files)
-    mock_snapshot.side_effect = [
-        "/tmp/test_cache",  # Download succeeds
-        Exception("Checksum validation failed"),  # Verification fails
-    ]
+    # Mock subprocess that exits successfully
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    mock_process.returncode = 0
+    mock_process.communicate.return_value = (b"", b"")
+    mock_subprocess.return_value = mock_process
     
-    task_obj = DownloadTask(sample_model)
-    await manager._download_model("test/model:abc123", sample_model, task_obj)
+    # Mock verification to fail
+    with patch.object(manager, '_verify_download_success', return_value=False):
+        task_obj = DownloadTask(sample_model)
+        await manager._download_model("test/model:abc123", sample_model, task_obj)
     
     assert task_obj.status == ModelStatus.PARTIAL
     assert "verification failed" in task_obj.error_message.lower()

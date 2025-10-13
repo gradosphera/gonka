@@ -1,10 +1,9 @@
 import torch.multiprocessing as mp
 import queue
 import time
+import psutil
 from multiprocessing import Event, Queue, Value
 from typing import List, Iterator, Optional
-from itertools import count
-import torch
 
 from pow.compute.compute import ProofBatch
 from pow.compute.utils import (
@@ -19,6 +18,8 @@ from common.logger import create_logger
 from common.trackable_task import ITrackableTask
 
 logger = create_logger(__name__)
+
+TERMINATION_TIMEOUT = 10
 
 
 class Controller:
@@ -121,16 +122,45 @@ class Controller:
             time.sleep(1)
 
     def stop(self):
-        self.phase.value = Phase.STOP
-        self.process.join(timeout=10)
-        if self.process.is_alive():
-            logger.error("Worker process did not stop in time")
-            self.process.terminate()
-            self.process.join(timeout=30)
+        if not self.process.is_alive():
+            logger.warning("Controller stop called but process is not running.")
+            return
 
-        if self.process.is_alive():
-            logger.critical("Worker process did not stop in time")
-            self.process.kill()
+        self.phase.value = Phase.STOP
+        logger.info(f"Stopping controller {self.id} process (PID {self.process.pid})...")
+        
+        pid = self.process.pid
+        try:
+            parent = psutil.Process(pid)
+            processes = parent.children(recursive=True) + [parent]
+            
+            # Terminate all processes in the tree
+            for proc in processes:
+                try:
+                    proc.terminate()
+                except psutil.NoSuchProcess:
+                    pass
+            
+            logger.info(f"Sent SIGTERM to process tree (PID {pid}), waiting for graceful shutdown...")
+            
+            # Wait for processes to terminate gracefully
+            _, alive = psutil.wait_procs(processes, timeout=TERMINATION_TIMEOUT)
+            
+            # Force kill any remaining processes
+            for proc in alive:
+                try:
+                    proc.kill()
+                except psutil.NoSuchProcess:
+                    pass
+            
+        except psutil.NoSuchProcess:
+            logger.debug(f"Process {pid} already terminated")
+
+        # Reap the process
+        try:
+            self.process.join(timeout=TERMINATION_TIMEOUT)
+        except Exception as e:
+            logger.warning(f"Exception while joining process {pid}: {e}")
 
     def get_generated(self) -> List[ProofBatch]:
         return self.get_from_queue(self.generated_batch_queue)

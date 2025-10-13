@@ -6,9 +6,10 @@ import gc
 import torch
 import shutil
 import shlex
+import psutil
 from pathlib import Path
 from typing import Optional, List
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
 from common.logger import create_logger
 from common.trackable_task import ITrackableTask
@@ -137,6 +138,7 @@ class VLLMRunner(IVLLMRunner):
             process = subprocess.Popen(
                 command,
                 env=env,
+                start_new_session=True,
             )
             self.processes.append(process)
 
@@ -157,15 +159,36 @@ class VLLMRunner(IVLLMRunner):
 
         logger.info("Stopping vLLM processes...")
         for p in self.processes:
-            p.terminate()
+            pid = p.pid
+            try:
+                parent = psutil.Process(pid)
+                processes = parent.children(recursive=True) + [parent]
+                
+                for proc in processes:
+                    try:
+                        proc.terminate()
+                    except psutil.NoSuchProcess:
+                        pass
+                
+                logger.info(f"Sent SIGTERM to process tree (PID {pid}), waiting for graceful shutdown...")
+                
+                _, alive = psutil.wait_procs(processes, timeout=TERMINATION_TIMEOUT)
+                
+                for proc in alive:
+                    try:
+                        proc.kill()
+                    except psutil.NoSuchProcess:
+                        pass
+                
+            except psutil.NoSuchProcess:
+                logger.debug(f"Process {pid} already terminated")
 
         for p in self.processes:
             try:
                 p.wait(timeout=TERMINATION_TIMEOUT)
             except subprocess.TimeoutExpired:
-                logger.warning("Termination timed out; forcefully killing vLLM process.")
-                p.kill()
-                p.wait()
+                logger.warning("Termination timed out for PID %d; already handled via psutil kill.", p.pid)
+                p.wait()  # Still reap the process
 
         self.processes = []
         self._cleanup_gpu()

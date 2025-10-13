@@ -1,6 +1,13 @@
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import (
+    APIRouter,
+    Request,
+    HTTPException,
+)
 
-from api.inference.manager import InferenceManager, InferenceInitRequest
+from api.inference.manager import (
+    InferenceManager,
+    InferenceInitRequest,
+)
 
 from common.logger import create_logger
 
@@ -14,20 +21,30 @@ async def inference_setup(
     request: Request,
     init_request: InferenceInitRequest
 ):
+    """Start inference and wait for it to be ready. Returns error if already running or starting."""
     manager: InferenceManager = request.app.state.inference_manager
     
     if manager.is_running():
-        logger.info("VLLM is already running, stopping first")
-        # Use async stop in async context to avoid blocking event loop
-        await manager._async_stop()
+        raise HTTPException(
+            status_code=409,
+            detail="VLLM is already running. Use /inference/down to stop it first."
+        )
+    
+    if manager.is_starting():
+        raise HTTPException(
+            status_code=409,
+            detail="VLLM startup is already in progress. Use /inference/up/status to check status."
+        )
 
     try:
         manager.start_async(init_request)
         await manager._startup_task
         return {"status": "OK"}
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to start VLLM: {e}")
-        return {"status": "ERROR", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/inference/up/async")
@@ -35,13 +52,20 @@ async def inference_setup_async(
     request: Request,
     init_request: InferenceInitRequest
 ):
-    """Start inference asynchronously in the background."""
+    """Start inference asynchronously in the background. Returns error if already running or starting."""
     manager: InferenceManager = request.app.state.inference_manager
     
     if manager.is_running():
-        logger.info("VLLM is already running, stopping first")
-        # Use async stop in async context to avoid blocking event loop
-        await manager._async_stop()
+        raise HTTPException(
+            status_code=409,
+            detail="VLLM is already running. Use /inference/down to stop it first."
+        )
+    
+    if manager.is_starting():
+        raise HTTPException(
+            status_code=409,
+            detail="VLLM startup is already in progress. Use /inference/up/status to check status."
+        )
     
     try:
         manager.start_async(init_request)
