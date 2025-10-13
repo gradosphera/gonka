@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"time"
 
 	sdkerrors "cosmossdk.io/errors"
 	"github.com/cometbft/cometbft/crypto"
@@ -189,4 +190,30 @@ func getTransferBytes(components SignatureComponents) []byte {
 	messagePayload := getDevBytes(components)
 	messagePayload = append(messagePayload, []byte(components.ExecutorAddress)...)
 	return messagePayload
+}
+
+func ValidateTimestamp(signatureTimestamp int64, currentTimestamp int64, expirationSeconds int64, advanceSeconds int64, extraTime int64) error {
+	timestampExpirationNs := expirationSeconds * int64(time.Second)
+	timestampAdvanceNs := advanceSeconds * int64(time.Second)
+
+	// Use default values if parameters are not set
+	if timestampExpirationNs == 0 {
+		timestampExpirationNs = 10 * int64(time.Second)
+	}
+	if timestampAdvanceNs == 0 {
+		timestampAdvanceNs = 10 * int64(time.Second)
+	}
+	timestampExpirationNs += extraTime
+	timestampAdvanceNs += extraTime
+
+	requestOffset := currentTimestamp - signatureTimestamp
+
+	if requestOffset > timestampExpirationNs {
+		return types.ErrSignatureTooOld
+	}
+	if requestOffset < -timestampAdvanceNs {
+		return types.ErrSignatureInFuture
+	}
+
+	return nil
 }

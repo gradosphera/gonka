@@ -299,37 +299,19 @@ func validateRequest(request *ChatRequest, status *coretypes.ResultStatus, confi
 
 	// Get validation parameters from config
 	validationParams := configManager.GetValidationParams()
-	timestampExpirationNs := validationParams.TimestampExpiration * int64(time.Second)
-	timestampAdvanceNs := validationParams.TimestampAdvance * int64(time.Second)
-
-	// Use default values if parameters are not set
-	if timestampExpirationNs == 0 {
-		timestampExpirationNs = 10 * int64(time.Second)
-	}
-	if timestampAdvanceNs == 0 {
-		timestampAdvanceNs = 10 * int64(time.Second)
-	}
-
-	requestOffset := lastHeightTime - request.Timestamp
-	logging.Info("Request offset", types.Inferences,
-		"offset", time.Duration(requestOffset).String(),
+	logging.Info("Validating timestamp", types.Inferences,
+		"timestampExpiration", validationParams.TimestampExpiration,
+		"timestampAdvance", validationParams.TimestampAdvance,
 		"lastHeightTime", lastHeightTime,
 		"requestTimestamp", request.Timestamp)
+	err := calculations.ValidateTimestamp(request.Timestamp, lastHeightTime, validationParams.TimestampExpiration, validationParams.TimestampAdvance, 0)
 
-	if requestOffset > timestampExpirationNs {
-		logging.Warn("Request timestamp is too old", types.Inferences,
+	if err != nil {
+		logging.Warn("Invalid timestamp", types.Inferences,
 			"inferenceId", request.InferenceId,
-			"offset", time.Duration(requestOffset).String(),
-			"status", status)
-		return echo.NewHTTPError(http.StatusBadRequest, "Request timestamp is too old")
-	}
-
-	if requestOffset < -timestampAdvanceNs {
-		logging.Warn("Request timestamp is in the future", types.Inferences,
-			"inferenceId", request.InferenceId,
-			"offset", time.Duration(requestOffset).String(),
-			"status", status)
-		return echo.NewHTTPError(http.StatusBadRequest, "Request timestamp is in the future")
+			"status", status,
+			"error", err)
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
 	// Check if AuthKey has been used before for a transfer request

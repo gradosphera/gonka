@@ -130,7 +130,7 @@ message MsgValidation {
   string creator = 1;
   string id = 2;
   string inference_id = 3;
-  string response_payload = 4;
+  string response_payload = 4 [ deprecated = true];
   string response_hash = 5;
   double value = 6;
   bool   revalidation = 7;
@@ -154,6 +154,7 @@ message MsgInvalidateInference {
   option (cosmos.msg.v1.signer) = "creator";
   string creator = 1;
   string inference_id = 2;
+  string invalidator = 3;
 }
 
 message MsgInvalidateInferenceResponse {}
@@ -162,6 +163,7 @@ message MsgRevalidateInference {
   option (cosmos.msg.v1.signer) = "creator";
   string creator = 1;
   string inference_id = 2;
+  string invalidator = 3;
 }
 
 message MsgRevalidateInferenceResponse {}

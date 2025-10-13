@@ -56,8 +56,10 @@ func TestInferenceRemove(t *testing.T) {
 func TestInferenceGetAll(t *testing.T) {
 	keeper, ctx := keepertest.InferenceKeeper(t)
 	items := createNInference(keeper, ctx, 10)
+	list, err := keeper.GetAllInference(ctx)
+	require.NoError(t, err)
 	require.ElementsMatch(t,
 		nullify.Fill(items),
-		nullify.Fill(keeper.GetAllInference(ctx)),
+		nullify.Fill(list),
 	)
 }

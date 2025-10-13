@@ -33,7 +33,7 @@ func (k msgServer) FinishInference(goCtx context.Context, msg *types.MsgFinishIn
 		return nil, sdkerrors.Wrap(types.ErrParticipantNotFound, msg.TransferredBy)
 	}
 
-	err := k.verifyFinishKeys(goCtx, msg, &transferAgent, &requestor, &executor)
+	err := k.verifyFinishKeys(ctx, msg, &transferAgent, &requestor, &executor)
 	if err != nil {
 		k.LogError("FinishInference: verifyKeys failed", types.Inferences, "error", err)
 		return nil, sdkerrors.Wrap(types.ErrInvalidSignature, err.Error())
@@ -81,7 +81,10 @@ func (k msgServer) FinishInference(goCtx context.Context, msg *types.MsgFinishIn
 	if err != nil {
 		return nil, err
 	}
-	k.SetInference(ctx, *finalInference)
+	err = k.SetInference(ctx, *finalInference)
+	if err != nil {
+		return nil, err
+	}
 	if existingInference.IsCompleted() {
 		err := k.handleInferenceCompleted(ctx, finalInference)
 		if err != nil {
@@ -92,8 +95,15 @@ func (k msgServer) FinishInference(goCtx context.Context, msg *types.MsgFinishIn
 	return &types.MsgFinishInferenceResponse{}, nil
 }
 
-func (k msgServer) verifyFinishKeys(ctx context.Context, msg *types.MsgFinishInference, transferAgent *types.Participant, requestor *types.Participant, executor *types.Participant) error {
+func (k msgServer) verifyFinishKeys(ctx sdk.Context, msg *types.MsgFinishInference, transferAgent *types.Participant, requestor *types.Participant, executor *types.Participant) error {
 	components := getFinishSignatureComponents(msg)
+	// The extra seconds here need to be high enough to account for a very long inference.
+	// Remember, deduping (via inferenceId) is our first defense against replay attacks, this is only
+	// to make sure there are no replays from pruned inferences.
+	err := k.validateTimestamp(ctx, components, msg.InferenceId, 60*60)
+	if err != nil {
+		return err
+	}
 
 	// Create SignatureData with the necessary participants and signatures
 	sigData := calculations.SignatureData{
@@ -106,7 +116,7 @@ func (k msgServer) verifyFinishKeys(ctx context.Context, msg *types.MsgFinishInf
 	}
 
 	// Use the generic VerifyKeys function
-	err := calculations.VerifyKeys(ctx, components, sigData, k)
+	err = calculations.VerifyKeys(ctx, components, sigData, k)
 	if err != nil {
 		k.LogError("FinishInference: verifyKeys failed", types.Inferences, "error", err)
 		return err
@@ -206,7 +216,10 @@ func (k msgServer) handleInferenceCompleted(ctx sdk.Context, existingInference *
 		"traffic_basis", inferenceDetails.TrafficBasis,
 	)
 	k.SetInferenceValidationDetails(ctx, inferenceDetails)
-	k.SetInference(ctx, *existingInference)
+	err = k.SetInference(ctx, *existingInference)
+	if err != nil {
+		return err
+	}
 	k.SetEpochGroupData(ctx, *currentEpochGroup.GroupData)
 	return nil
 }

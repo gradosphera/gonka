@@ -2,6 +2,8 @@ package types
 
 import (
 	"fmt"
+
+	"github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 )
 
 // EpochContext provides a stable context for an Epoch, anchored by its starting block height.
@@ -21,7 +23,7 @@ func NewEpochContext(epoch Epoch, params EpochParams) EpochContext {
 }
 
 // NewEpochContextFromEffectiveEpoch determines the most up-to-date Epoch context based on the current block height.
-func NewEpochContextFromEffectiveEpoch(epoch Epoch, epochParams EpochParams, currentBlockHeight int64) *EpochContext {
+func NewEpochContextFromEffectiveEpoch(epoch Epoch, epochParams EpochParams, currentBlockHeight int64) (*EpochContext, error) {
 	ec := NewEpochContext(epoch, epochParams)
 	nextEc := NewEpochContext(
 		Epoch{
@@ -36,20 +38,17 @@ func NewEpochContextFromEffectiveEpoch(epoch Epoch, epochParams EpochParams, cur
 			EpochIndex:          epoch.Index,
 			PocStartBlockHeight: epoch.PocStartBlockHeight,
 			EpochParams:         epochParams,
-		}
+		}, nil
 	} else if currentBlockHeight <= nextEc.SetNewValidators() {
 		return &EpochContext{
 			EpochIndex:          epoch.Index + 1,
 			PocStartBlockHeight: ec.NextPoCStart(),
 			EpochParams:         epochParams,
-		}
+		}, nil
 	} else {
 		// This is a special case where the current block height is beyond the expected range.
 		// It should not happen in normal operation, but we handle it gracefully.
-		msg := fmt.Sprintf("Unexpected currentBlockHeight = %d for epoch.PocStartBlockHeight = %d",
-			currentBlockHeight,
-			epoch.PocStartBlockHeight)
-		panic(msg)
+		return nil, types.ErrInvalidHeight
 	}
 }
 

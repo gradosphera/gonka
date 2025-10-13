@@ -9,11 +9,13 @@ import (
 )
 
 // SetEpochPerformanceSummary set a specific epochPerformanceSummary in the store from its index
-func (k Keeper) SetEpochPerformanceSummary(ctx context.Context, epochPerformanceSummary types.EpochPerformanceSummary) {
-	addr := sdk.MustAccAddressFromBech32(epochPerformanceSummary.ParticipantId)
-	if err := k.EpochPerformanceSummaries.Set(ctx, collections.Join(addr, epochPerformanceSummary.EpochIndex), epochPerformanceSummary); err != nil {
-		panic(err)
+func (k Keeper) SetEpochPerformanceSummary(ctx context.Context, epochPerformanceSummary types.EpochPerformanceSummary) error {
+	addr, err := sdk.AccAddressFromBech32(epochPerformanceSummary.ParticipantId)
+	if err != nil {
+		return err
 	}
+
+	return k.EpochPerformanceSummaries.Set(ctx, collections.Join(addr, epochPerformanceSummary.EpochIndex), epochPerformanceSummary)
 }
 
 // GetEpochPerformanceSummary returns a epochPerformanceSummary from its index

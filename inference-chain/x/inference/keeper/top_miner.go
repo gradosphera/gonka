@@ -8,14 +8,15 @@ import (
 )
 
 // SetTopMiner sets a specific TopMiner in the store, indexed by sdk.AccAddress
-func (k Keeper) SetTopMiner(ctx context.Context, topMiner types.TopMiner) {
+func (k Keeper) SetTopMiner(ctx context.Context, topMiner types.TopMiner) error {
 	addr, err := sdk.AccAddressFromBech32(topMiner.Address)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	if err := k.TopMiners.Set(ctx, addr, topMiner); err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 }
 
 // GetTopMiner returns a TopMiner by address (bech32)

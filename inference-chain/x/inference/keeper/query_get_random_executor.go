@@ -72,7 +72,12 @@ func (k Keeper) createFilterFn(goCtx context.Context, modelId string) (func(memb
 		return nil, status.Error(codes.NotFound, "GetRandomExecutor: epoch params are nill")
 	}
 
-	epochContext := types.NewEpochContextFromEffectiveEpoch(*effectiveEpoch, *epochParams.EpochParams, sdkCtx.BlockHeight())
+	epochContext, err := types.NewEpochContextFromEffectiveEpoch(*effectiveEpoch, *epochParams.EpochParams, sdkCtx.BlockHeight())
+	if err != nil {
+		k.Logger().Error("GetRandomExecutor: createFilterFn: failed to create epoch context",
+			"model_id", modelId, "epoch_index", effectiveEpoch.Index, "error", err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 	currentPhase := epochContext.GetCurrentPhase(sdkCtx.BlockHeight())
 
 	k.Logger().Info("GetRandomExecutor: createFilterFn: Determined current phase",

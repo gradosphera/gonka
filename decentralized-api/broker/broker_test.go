@@ -326,22 +326,15 @@ func TestReleaseNode(t *testing.T) {
 	availableNode := make(chan *Node, 2)
 	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
 	runningNode := <-availableNode
-	if runningNode == nil {
-		t.Fatalf("expected node1, got nil")
-	}
-	if runningNode.Id != node.Id {
-		t.Fatalf("expected node1, got: " + runningNode.Id)
-	}
+	require.NotNil(t, runningNode)
+	require.Equal(t, node.Id, runningNode.Id)
 	release := make(chan bool, 2)
 	queueMessage(t, broker, ReleaseNode{node.Id, InferenceSuccess{}, release})
-	if !<-release {
-		t.Fatalf("expected true, got false")
-	}
-	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
-	if <-availableNode == nil {
-		t.Fatalf("expected node1, got nil")
-	}
 
+	b := <-release
+	require.True(t, b, "expected release response to be true")
+	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
+	require.NotNil(t, <-availableNode, "expected node1, got nil")
 }
 
 func TestRoundTripSegment(t *testing.T) {
