@@ -22,6 +22,7 @@ import (
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/productscience/inference/testenv"
 	"github.com/productscience/inference/x/inference/calculations"
 	"github.com/productscience/inference/x/inference/epochgroup"
 	"github.com/shopspring/decimal"
@@ -320,7 +321,7 @@ func (am AppModule) EndBlock(ctx context.Context) error {
 		// Apply early network protection if conditions are met
 		finalComputeResult := am.applyEarlyNetworkProtection(ctx, computeResult)
 
-		_, err = am.keeper.Staking.SetComputeValidators(ctx, finalComputeResult)
+		_, err = am.keeper.Staking.SetComputeValidators(ctx, finalComputeResult, testenv.IsTestNet())
 		if err != nil {
 			am.LogError("Unable to update epoch group", types.EpochGroup, "error", err.Error())
 		}
