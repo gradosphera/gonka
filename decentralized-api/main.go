@@ -143,13 +143,14 @@ func main() {
 	// TODO: propagate trainingExecutor
 	go listener.Start(ctx)
 
-	modelWeightManager := modelmanager.NewModelWeightManager(
+	mlnodeBackgroundManager := modelmanager.NewMLNodeBackgroundManager(
 		config,
 		chainPhaseTracker,
+		nodeBroker,
 		&mlnodeclient.HttpClientFactory{},
 		30*time.Minute,
 	)
-	go modelWeightManager.Start(ctx)
+	go mlnodeBackgroundManager.Start(ctx)
 
 	addr := fmt.Sprintf(":%v", config.GetApiConfig().PublicServerPort)
 	logging.Info("start public server on addr", types.Server, "addr", addr)

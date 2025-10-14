@@ -3,11 +3,13 @@ package modelmanager
 import (
 	"context"
 	"decentralized-api/apiconfig"
+	"decentralized-api/broker"
 	"decentralized-api/chainphase"
 	"decentralized-api/logging"
 	"decentralized-api/mlnodeclient"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/productscience/inference/x/inference/types"
@@ -17,6 +19,7 @@ import (
 type ConfigManagerInterface interface {
 	GetNodes() []apiconfig.InferenceNodeConfig
 	GetCurrentNodeVersion() string
+	SetNodes(nodes []apiconfig.InferenceNodeConfig) error
 }
 
 // PhaseTrackerInterface defines the minimal interface needed from PhaseTracker
@@ -24,50 +27,60 @@ type PhaseTrackerInterface interface {
 	GetCurrentEpochState() *chainphase.EpochState
 }
 
-// ModelWeightManager ensures MLNodes have their configured models downloaded
-// before they're needed. Runs independently as a background service.
-type ModelWeightManager struct {
+// BrokerInterface defines minimal interface for broker operations
+type BrokerInterface interface {
+	QueueMessage(command broker.Command) error
+}
+
+// MLNodeBackgroundManager handles background operations for MLNodes:
+// - Model pre-downloading for upcoming epochs
+// - GPU hardware detection and updates
+type MLNodeBackgroundManager struct {
 	configManager       ConfigManagerInterface
 	phaseTracker        PhaseTrackerInterface
+	broker              BrokerInterface
 	mlNodeClientFactory mlnodeclient.ClientFactory
 	checkInterval       time.Duration
 }
 
-// NewModelWeightManager creates a new model weight manager
-func NewModelWeightManager(
+// NewMLNodeBackgroundManager creates a new MLNode background manager
+func NewMLNodeBackgroundManager(
 	configManager ConfigManagerInterface,
 	phaseTracker PhaseTrackerInterface,
+	broker BrokerInterface,
 	clientFactory mlnodeclient.ClientFactory,
 	checkInterval time.Duration,
-) *ModelWeightManager {
-	return &ModelWeightManager{
+) *MLNodeBackgroundManager {
+	return &MLNodeBackgroundManager{
 		configManager:       configManager,
 		phaseTracker:        phaseTracker,
+		broker:              broker,
 		mlNodeClientFactory: clientFactory,
 		checkInterval:       checkInterval,
 	}
 }
 
-// Start begins the periodic model checking loop
-func (m *ModelWeightManager) Start(ctx context.Context) {
+// Start begins the periodic background tasks loop
+func (m *MLNodeBackgroundManager) Start(ctx context.Context) {
 	ticker := time.NewTicker(m.checkInterval)
 	defer ticker.Stop()
 
-	logging.Info("ModelWeightManager started", types.System, "check_interval", m.checkInterval)
+	logging.Info("MLNodeBackgroundManager started", types.System, "check_interval", m.checkInterval)
 
 	for {
 		select {
 		case <-ticker.C:
-			m.checkAndDownloadModels()
+			m.checkAndDownloadModels(ctx)
+			m.checkAndUpdateGPUs(ctx)
 		case <-ctx.Done():
-			logging.Info("ModelWeightManager stopped", types.System)
+			logging.Info("MLNodeBackgroundManager stopped", types.System)
 			return
 		}
 	}
 }
 
 // checkAndDownloadModels performs the periodic check and triggers downloads if needed
-func (m *ModelWeightManager) checkAndDownloadModels() {
+func (m *MLNodeBackgroundManager) checkAndDownloadModels(ctx context.Context) {
 	epochState := m.phaseTracker.GetCurrentEpochState()
 	if !m.isInDownloadWindow(epochState) {
 		return
@@ -85,7 +98,7 @@ func (m *ModelWeightManager) checkAndDownloadModels() {
 }
 
 // isInDownloadWindow checks if we're in a safe window to download models
-func (m *ModelWeightManager) isInDownloadWindow(epochState *chainphase.EpochState) bool {
+func (m *MLNodeBackgroundManager) isInDownloadWindow(epochState *chainphase.EpochState) bool {
 	if epochState.IsNilOrNotSynced() {
 		return false
 	}
@@ -110,7 +123,7 @@ func (m *ModelWeightManager) isInDownloadWindow(epochState *chainphase.EpochStat
 }
 
 // checkNodeModels checks and downloads models for a specific node
-func (m *ModelWeightManager) checkNodeModels(node apiconfig.InferenceNodeConfig) {
+func (m *MLNodeBackgroundManager) checkNodeModels(node apiconfig.InferenceNodeConfig) {
 	version := m.configManager.GetCurrentNodeVersion()
 	pocUrl := getPoCUrlWithVersion(node, version)
 	inferenceUrl := getInferenceUrlWithVersion(node, version)
@@ -215,4 +228,106 @@ func formatURL(host string, port int, segment string) string {
 
 func formatURLWithVersion(host string, port int, version string, segment string) string {
 	return fmt.Sprintf("http://%s:%d/%s%s", host, port, version, segment)
+}
+
+// checkAndUpdateGPUs fetches GPU info from all nodes and updates hardware
+func (m *MLNodeBackgroundManager) checkAndUpdateGPUs(ctx context.Context) {
+	nodes := m.configManager.GetNodes()
+	updatedNodes := make([]apiconfig.InferenceNodeConfig, len(nodes))
+	copy(updatedNodes, nodes)
+
+	for i := range updatedNodes {
+		node := &updatedNodes[i]
+
+		hardware, err := m.fetchNodeGPUHardware(ctx, node)
+		if err != nil {
+			var apiNotImplemented *mlnodeclient.ErrAPINotImplemented
+			if errors.As(err, &apiNotImplemented) {
+				logging.Info("GPU endpoint not available for node", types.Nodes, "node_id", node.Id)
+			} else {
+				logging.Warn("Failed to fetch GPU info for node", types.Nodes, "node_id", node.Id, "error", err.Error())
+			}
+			continue
+		}
+
+		if len(hardware) == 0 {
+			continue
+		}
+
+		// Update config
+		node.Hardware = hardware
+
+		// Update broker (for immediate chain sync)
+		responseChan := make(chan error, 1)
+		cmd := broker.UpdateNodeHardwareCommand{
+			NodeId:   node.Id,
+			Hardware: hardware,
+			Response: responseChan,
+		}
+
+		if err := m.broker.QueueMessage(cmd); err != nil {
+			logging.Warn("Failed to queue hardware update", types.Nodes, "node_id", node.Id, "error", err.Error())
+			continue
+		}
+
+		if err := <-responseChan; err != nil {
+			logging.Warn("Failed to update broker hardware", types.Nodes, "node_id", node.Id, "error", err.Error())
+		} else {
+			logging.Info("Updated GPU hardware", types.Nodes, "node_id", node.Id, "hardware_count", len(hardware))
+		}
+	}
+
+	// Persist all changes to config
+	if err := m.configManager.SetNodes(updatedNodes); err != nil {
+		logging.Error("Failed to persist GPU hardware to config", types.Nodes, "error", err.Error())
+	}
+}
+
+// fetchNodeGPUHardware fetches GPU devices and transforms to Hardware entries
+func (m *MLNodeBackgroundManager) fetchNodeGPUHardware(ctx context.Context, node *apiconfig.InferenceNodeConfig) ([]apiconfig.Hardware, error) {
+	version := m.configManager.GetCurrentNodeVersion()
+	pocUrl := getPoCUrlWithVersion(*node, version)
+	inferenceUrl := getInferenceUrlWithVersion(*node, version)
+	client := m.mlNodeClientFactory.CreateClient(pocUrl, inferenceUrl)
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	resp, err := client.GetGPUDevices(timeoutCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	return transformGPUDevicesToHardware(resp.Devices), nil
+}
+
+// transformGPUDevicesToHardware groups GPUs by type and memory, returns Hardware list
+func transformGPUDevicesToHardware(devices []mlnodeclient.GPUDevice) []apiconfig.Hardware {
+	groupCounts := make(map[string]uint32)
+
+	for _, device := range devices {
+		// Skip unavailable, errored, or GPUs without memory info
+		if !device.IsAvailable || device.ErrorMessage != nil || device.TotalMemoryMB == nil {
+			continue
+		}
+
+		memoryGB := *device.TotalMemoryMB / 1024
+		key := fmt.Sprintf("%s | %dGB", device.Name, int(memoryGB))
+		groupCounts[key]++
+	}
+
+	hardware := make([]apiconfig.Hardware, 0, len(groupCounts))
+	for gpuType, count := range groupCounts {
+		hardware = append(hardware, apiconfig.Hardware{
+			Type:  gpuType,
+			Count: count,
+		})
+	}
+
+	// Sort for consistent ordering
+	sort.Slice(hardware, func(i, j int) bool {
+		return hardware[i].Type < hardware[j].Type
+	})
+
+	return hardware
 }

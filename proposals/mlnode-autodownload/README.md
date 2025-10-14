@@ -274,3 +274,262 @@ Action: Continue to next node
 - URL formatting tests
 
 ## Part 2: Fetch GPU Info and Add to Hardware Nodes
+
+### Overview
+
+Automatic GPU hardware detection added to MLNodeBackgroundManager (renamed from ModelWeightManager) to collect GPU information and propagate to config, broker, and chain.
+
+### Design: Simple Extension
+
+Simple approach - extend existing manager with second method in same ticker loop.
+
+**Key decisions:**
+- Rename `ModelWeightManager` → `MLNodeBackgroundManager`
+- Single goroutine, single 30-minute ticker for both operations
+- Dual update pattern - config (persistence) + broker (immediate effect)
+- GPU format: `"NVIDIA RTX 3090 | 24GB"` (pipe separator, memory in GB)
+- Non-blocking - gracefully handles `ErrAPINotImplemented`, network errors
+
+### GPU Transformation Logic
+
+Transform `GPUDevice` list to `Hardware` entries:
+- Group GPUs by: `"{Name} | {MemoryGB}GB"`
+- Convert MB → GB (divide by 1024)
+- Count identical GPUs
+- Skip unavailable (`IsAvailable: false`)
+- Skip errored (`ErrorMessage != nil`)
+- Skip without memory info (`TotalMemoryMB == nil`)
+- Sort alphabetically for consistency
+
+**Example:**
+```
+Input: [
+  {Name: "NVIDIA RTX 3090", TotalMemoryMB: 24576, IsAvailable: true},
+  {Name: "NVIDIA RTX 3090", TotalMemoryMB: 24576, IsAvailable: true},
+  {Name: "NVIDIA RTX 4090", TotalMemoryMB: 24576, IsAvailable: true},
+]
+
+Output: [
+  {Type: "NVIDIA RTX 3090 | 24GB", Count: 2},
+  {Type: "NVIDIA RTX 4090 | 24GB", Count: 1},
+]
+```
+
+### Architecture
+
+**Simple structure:**
+```go
+func (m *MLNodeBackgroundManager) Start(ctx context.Context) {
+    ticker := time.NewTicker(m.checkInterval) // 30 minutes
+    for {
+        select {
+        case <-ticker.C:
+            m.checkAndDownloadModels(ctx)  // Existing
+            m.checkAndUpdateGPUs(ctx)       // New
+        case <-ctx.Done():
+            return
+        }
+    }
+}
+```
+
+**Flow:**
+```
+checkAndUpdateGPUs()
+  ├─> For each node:
+  │   ├─> GET /api/v1/gpu/devices
+  │   ├─> transformGPUDevicesToHardware()
+  │   ├─> Update node.Hardware
+  │   └─> Send UpdateNodeHardwareCommand to broker
+  └─> configManager.SetNodes() (batch persist)
+
+Broker receives UpdateNodeHardwareCommand
+  └─> Updates b.nodes[id].Hardware
+       └─> Next syncNodes() → Chain
+```
+
+### Implementation
+
+#### 1. UpdateNodeHardwareCommand
+
+**File:** `decentralized-api/broker/node_admin_commands.go`
+
+Simple command updates Hardware field:
+
+```go
+type UpdateNodeHardwareCommand struct {
+    NodeId   string
+    Hardware []apiconfig.Hardware
+    Response chan error
+}
+
+func (c UpdateNodeHardwareCommand) Execute(b *Broker) {
+    b.mu.Lock()
+    defer b.mu.Unlock()
+    
+    node, exists := b.nodes[c.NodeId]
+    if !exists {
+        c.Response <- fmt.Errorf("node not found: %s", c.NodeId)
+        return
+    }
+    
+    node.Node.Hardware = c.Hardware
+    c.Response <- nil
+}
+```
+
+Registered in `broker.go`:
+- `executeCommand()` switch case
+- Low-priority command (default queue) - not time-critical
+
+#### 2. Extend Manager
+
+**File:** `mlnode_background_manager.go` (renamed from `model_manager.go`)
+
+Add broker interface and field:
+```go
+type BrokerInterface interface {
+    QueueMessage(command broker.Command) error
+}
+
+type MLNodeBackgroundManager struct {  // Renamed
+    configManager       ConfigManagerInterface
+    phaseTracker        PhaseTrackerInterface
+    broker              BrokerInterface  // Added
+    mlNodeClientFactory mlnodeclient.ClientFactory
+    checkInterval       time.Duration
+}
+```
+
+Update `Start()` to call both methods:
+```go
+func (m *MLNodeBackgroundManager) Start(ctx context.Context) {
+    ticker := time.NewTicker(m.checkInterval)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ticker.C:
+            m.checkAndDownloadModels(ctx)  // Existing
+            m.checkAndUpdateGPUs(ctx)       // New
+        case <-ctx.Done():
+            return
+        }
+    }
+}
+```
+
+Add GPU methods:
+```go
+func (m *MLNodeBackgroundManager) checkAndUpdateGPUs(ctx context.Context) {
+    nodes := m.configManager.GetNodes()
+    updatedNodes := make([]apiconfig.InferenceNodeConfig, len(nodes))
+    copy(updatedNodes, nodes)
+    
+    for i := range updatedNodes {
+        node := &updatedNodes[i]
+        hardware, err := m.fetchNodeGPUHardware(ctx, node)
+        
+        if err != nil {
+            // Handle ErrAPINotImplemented gracefully
+            continue
+        }
+        
+        if len(hardware) == 0 {
+            continue
+        }
+        
+        // Update config
+        node.Hardware = hardware
+        
+        // Update broker
+        cmd := broker.UpdateNodeHardwareCommand{
+            NodeId: node.Id, Hardware: hardware, Response: make(chan error, 1),
+        }
+        m.broker.QueueMessage(cmd)
+        <-cmd.Response
+    }
+    
+    m.configManager.SetNodes(updatedNodes)
+}
+
+func transformGPUDevicesToHardware(devices []mlnodeclient.GPUDevice) []apiconfig.Hardware {
+    groupCounts := make(map[string]uint32)
+    for _, device := range devices {
+        if !device.IsAvailable || device.ErrorMessage != nil || device.TotalMemoryMB == nil {
+            continue
+        }
+        memoryGB := *device.TotalMemoryMB / 1024
+        key := fmt.Sprintf("%s | %dGB", device.Name, memoryGB)
+        groupCounts[key]++
+    }
+    
+    hardware := make([]apiconfig.Hardware, 0, len(groupCounts))
+    for gpuType, count := range groupCounts {
+        hardware = append(hardware, apiconfig.Hardware{Type: gpuType, Count: count})
+    }
+    sort.Slice(hardware, func(i, j int) bool { return hardware[i].Type < hardware[j].Type })
+    return hardware
+}
+```
+
+#### 3. Update Tests
+
+**File rename:** `model_manager_test.go` → `mlnode_background_manager_test.go`
+
+Add test cases:
+- GPU transformation with identical GPUs (count aggregation)
+- Mixed GPU types
+- Skip unavailable/errored GPUs
+- ErrAPINotImplemented handling
+- Network error handling
+- Empty GPU list
+- Broker update success/failure
+
+#### 4. Integration
+
+**File:** `decentralized-api/main.go`
+
+Updated initialization:
+
+```go
+mlnodeBackgroundManager := modelmanager.NewMLNodeBackgroundManager(
+    config,
+    chainPhaseTracker,
+    nodeBroker,  // Added broker
+    &mlnodeclient.HttpClientFactory{},
+    30*time.Minute,
+)
+go mlnodeBackgroundManager.Start(ctx)
+```
+
+### Error Handling
+
+Graceful, non-blocking error handling:
+
+**Endpoint not available:**
+- Log INFO: "GPU endpoint not available for node X"
+- Continue to next node
+
+**Network errors:**
+- Log WARN: "Failed to fetch GPU info for node X: {error}"
+- Continue to next node, retry next cycle (30 min)
+
+**Broker failures:**
+- Log WARN: "Failed to update broker hardware for node X: {error}"
+- Config still persisted, continues to next node
+
+**Config save failure:**
+- Log ERROR: "Failed to persist GPU hardware to config: {error}"
+- Broker already updated, continues operation
+
+### Summary
+
+**Simple extension approach:**
+- Renamed `ModelWeightManager` → `MLNodeBackgroundManager`
+- Added broker parameter and GPU methods (~100 lines)
+- Single ticker, both operations every 30 minutes
+- Dual update: broker (immediate) + config (persistence)
+- GPU format: `"GPU Name | XXG B"` with pipe separator
+- Comprehensive tests with full error coverage
+- All existing tests pass, no breaking changes

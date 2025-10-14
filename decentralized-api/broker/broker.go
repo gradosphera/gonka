@@ -405,6 +405,8 @@ func (b *Broker) executeCommand(command Command) {
 		command.Execute(b)
 	case SetNodeAdminStateCommand:
 		command.Execute(b)
+	case UpdateNodeHardwareCommand:
+		command.Execute(b)
 	case InferenceUpAllCommand:
 		command.Execute(b)
 	case StartPocCommand:

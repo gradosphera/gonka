@@ -3,6 +3,7 @@ package modelmanager
 import (
 	"context"
 	"decentralized-api/apiconfig"
+	"decentralized-api/broker"
 	"decentralized-api/chainphase"
 	"decentralized-api/mlnodeclient"
 	"errors"
@@ -12,16 +13,11 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 )
 
-// configManagerInterface defines the minimal interface needed by ModelWeightManager
-type configManagerInterface interface {
-	GetNodes() []apiconfig.InferenceNodeConfig
-	GetCurrentNodeVersion() string
-}
-
 // Mock ConfigManager
 type mockConfigManager struct {
 	nodes              []apiconfig.InferenceNodeConfig
 	currentNodeVersion string
+	setNodesError      error
 }
 
 func (m *mockConfigManager) GetNodes() []apiconfig.InferenceNodeConfig {
@@ -30,6 +26,38 @@ func (m *mockConfigManager) GetNodes() []apiconfig.InferenceNodeConfig {
 
 func (m *mockConfigManager) GetCurrentNodeVersion() string {
 	return m.currentNodeVersion
+}
+
+func (m *mockConfigManager) SetNodes(nodes []apiconfig.InferenceNodeConfig) error {
+	if m.setNodesError != nil {
+		return m.setNodesError
+	}
+	m.nodes = nodes
+	return nil
+}
+
+// Mock Broker
+type mockBroker struct {
+	queuedCommands []broker.Command
+	queueError     error
+	executeError   error
+}
+
+func (m *mockBroker) QueueMessage(cmd broker.Command) error {
+	if m.queueError != nil {
+		return m.queueError
+	}
+	m.queuedCommands = append(m.queuedCommands, cmd)
+
+	// Execute command immediately for testing
+	if updateCmd, ok := cmd.(broker.UpdateNodeHardwareCommand); ok {
+		if m.executeError != nil {
+			updateCmd.Response <- m.executeError
+		} else {
+			updateCmd.Response <- nil
+		}
+	}
+	return nil
 }
 
 // Mock PhaseTracker
@@ -66,7 +94,7 @@ func (c *customMockClient) CheckModelStatus(ctx context.Context, model mlnodecli
 
 // Test isInDownloadWindow
 func TestIsInDownloadWindow(t *testing.T) {
-	manager := &ModelWeightManager{}
+	manager := &MLNodeBackgroundManager{}
 
 	t.Run("nil epoch state", func(t *testing.T) {
 		if manager.isInDownloadWindow(nil) {
@@ -221,9 +249,10 @@ func TestCheckNodeModels(t *testing.T) {
 
 		factory := &mockClientFactory{client: mockClient}
 
-		manager := NewModelWeightManager(
+		manager := NewMLNodeBackgroundManager(
 			configMgr,
 			nil,
+			&mockBroker{},
 			factory,
 			30*time.Minute,
 		)
@@ -268,9 +297,10 @@ func TestCheckNodeModels(t *testing.T) {
 
 		factory := &mockClientFactory{client: mockClient}
 
-		manager := NewModelWeightManager(
+		manager := NewMLNodeBackgroundManager(
 			configMgr,
 			nil,
+			&mockBroker{},
 			factory,
 			30*time.Minute,
 		)
@@ -309,9 +339,10 @@ func TestCheckNodeModels(t *testing.T) {
 
 		factory := &mockClientFactory{client: mockClient}
 
-		manager := NewModelWeightManager(
+		manager := NewMLNodeBackgroundManager(
 			configMgr,
 			nil,
+			&mockBroker{},
 			factory,
 			30*time.Minute,
 		)
@@ -356,9 +387,10 @@ func TestCheckNodeModels(t *testing.T) {
 
 		factory := &mockClientFactory{client: mockClient}
 
-		manager := NewModelWeightManager(
+		manager := NewMLNodeBackgroundManager(
 			configMgr,
 			nil,
+			&mockBroker{},
 			factory,
 			30*time.Minute,
 		)
@@ -401,9 +433,10 @@ func TestCheckNodeModels(t *testing.T) {
 
 		factory := &mockClientFactory{client: mockClient}
 
-		manager := NewModelWeightManager(
+		manager := NewMLNodeBackgroundManager(
 			configMgr,
 			nil,
+			&mockBroker{},
 			factory,
 			30*time.Minute,
 		)
@@ -447,9 +480,10 @@ func TestCheckNodeModels(t *testing.T) {
 
 		factory := &mockClientFactory{client: mockClient}
 
-		manager := NewModelWeightManager(
+		manager := NewMLNodeBackgroundManager(
 			configMgr,
 			nil,
+			&mockBroker{},
 			factory,
 			30*time.Minute,
 		)
@@ -496,9 +530,10 @@ func TestCheckNodeModels(t *testing.T) {
 
 		factory := &mockClientFactory{client: mockClient}
 
-		manager := NewModelWeightManager(
+		manager := NewMLNodeBackgroundManager(
 			configMgr,
 			nil,
+			&mockBroker{},
 			factory,
 			30*time.Minute,
 		)
@@ -571,6 +606,359 @@ func TestURLFormatting(t *testing.T) {
 		expected := "http://localhost:8080/api/v1"
 		if url != expected {
 			t.Errorf("expected %s, got %s", expected, url)
+		}
+	})
+}
+
+// Test GPU transformation
+func TestTransformGPUDevicesToHardware(t *testing.T) {
+	t.Run("identical GPUs grouped", func(t *testing.T) {
+		totalMem := int(24576) // 24GB in MB
+		devices := []mlnodeclient.GPUDevice{
+			{
+				Index:         0,
+				Name:          "NVIDIA RTX 3090",
+				TotalMemoryMB: &totalMem,
+				IsAvailable:   true,
+				ErrorMessage:  nil,
+			},
+			{
+				Index:         1,
+				Name:          "NVIDIA RTX 3090",
+				TotalMemoryMB: &totalMem,
+				IsAvailable:   true,
+				ErrorMessage:  nil,
+			},
+		}
+
+		hardware := transformGPUDevicesToHardware(devices)
+
+		if len(hardware) != 1 {
+			t.Errorf("expected 1 hardware entry, got %d", len(hardware))
+		}
+
+		if hardware[0].Type != "NVIDIA RTX 3090 | 24GB" {
+			t.Errorf("expected 'NVIDIA RTX 3090 | 24GB', got %s", hardware[0].Type)
+		}
+
+		if hardware[0].Count != 2 {
+			t.Errorf("expected count 2, got %d", hardware[0].Count)
+		}
+	})
+
+	t.Run("mixed GPU types", func(t *testing.T) {
+		mem3090 := int(24576)
+		mem4090 := int(24576)
+		devices := []mlnodeclient.GPUDevice{
+			{Name: "NVIDIA RTX 3090", TotalMemoryMB: &mem3090, IsAvailable: true},
+			{Name: "NVIDIA RTX 3090", TotalMemoryMB: &mem3090, IsAvailable: true},
+			{Name: "NVIDIA RTX 4090", TotalMemoryMB: &mem4090, IsAvailable: true},
+		}
+
+		hardware := transformGPUDevicesToHardware(devices)
+
+		if len(hardware) != 2 {
+			t.Errorf("expected 2 hardware entries, got %d", len(hardware))
+		}
+
+		// Check sorting
+		if hardware[0].Type != "NVIDIA RTX 3090 | 24GB" {
+			t.Errorf("expected first entry to be RTX 3090, got %s", hardware[0].Type)
+		}
+		if hardware[1].Type != "NVIDIA RTX 4090 | 24GB" {
+			t.Errorf("expected second entry to be RTX 4090, got %s", hardware[1].Type)
+		}
+	})
+
+	t.Run("skip unavailable GPUs", func(t *testing.T) {
+		mem := int(24576)
+		devices := []mlnodeclient.GPUDevice{
+			{Name: "NVIDIA RTX 3090", TotalMemoryMB: &mem, IsAvailable: false},
+			{Name: "NVIDIA RTX 4090", TotalMemoryMB: &mem, IsAvailable: true},
+		}
+
+		hardware := transformGPUDevicesToHardware(devices)
+
+		if len(hardware) != 1 {
+			t.Errorf("expected 1 hardware entry, got %d", len(hardware))
+		}
+
+		if hardware[0].Type != "NVIDIA RTX 4090 | 24GB" {
+			t.Errorf("expected RTX 4090, got %s", hardware[0].Type)
+		}
+	})
+
+	t.Run("skip GPUs with error", func(t *testing.T) {
+		mem := int(24576)
+		errMsg := "NVML error"
+		devices := []mlnodeclient.GPUDevice{
+			{Name: "NVIDIA RTX 3090", TotalMemoryMB: &mem, IsAvailable: true, ErrorMessage: &errMsg},
+			{Name: "NVIDIA RTX 4090", TotalMemoryMB: &mem, IsAvailable: true, ErrorMessage: nil},
+		}
+
+		hardware := transformGPUDevicesToHardware(devices)
+
+		if len(hardware) != 1 {
+			t.Errorf("expected 1 hardware entry, got %d", len(hardware))
+		}
+
+		if hardware[0].Type != "NVIDIA RTX 4090 | 24GB" {
+			t.Errorf("expected RTX 4090, got %s", hardware[0].Type)
+		}
+	})
+
+	t.Run("skip GPUs without memory info", func(t *testing.T) {
+		mem := int(24576)
+		devices := []mlnodeclient.GPUDevice{
+			{Name: "NVIDIA RTX 3090", TotalMemoryMB: nil, IsAvailable: true},
+			{Name: "NVIDIA RTX 4090", TotalMemoryMB: &mem, IsAvailable: true},
+		}
+
+		hardware := transformGPUDevicesToHardware(devices)
+
+		if len(hardware) != 1 {
+			t.Errorf("expected 1 hardware entry, got %d", len(hardware))
+		}
+	})
+
+	t.Run("memory conversion MB to GB", func(t *testing.T) {
+		mem := int(16384) // 16GB in MB
+		devices := []mlnodeclient.GPUDevice{
+			{Name: "NVIDIA RTX 3080", TotalMemoryMB: &mem, IsAvailable: true},
+		}
+
+		hardware := transformGPUDevicesToHardware(devices)
+
+		if hardware[0].Type != "NVIDIA RTX 3080 | 16GB" {
+			t.Errorf("expected 'NVIDIA RTX 3080 | 16GB', got %s", hardware[0].Type)
+		}
+	})
+
+	t.Run("empty device list", func(t *testing.T) {
+		hardware := transformGPUDevicesToHardware([]mlnodeclient.GPUDevice{})
+
+		if len(hardware) != 0 {
+			t.Errorf("expected empty hardware list, got %d", len(hardware))
+		}
+	})
+}
+
+// Test GPU check and update
+func TestCheckAndUpdateGPUs(t *testing.T) {
+	t.Run("successful GPU fetch and update", func(t *testing.T) {
+		mem := int(24576)
+		mockClient := &mlnodeclient.MockClient{
+			GPUDevices: []mlnodeclient.GPUDevice{
+				{Name: "NVIDIA RTX 3090", TotalMemoryMB: &mem, IsAvailable: true},
+			},
+		}
+
+		configMgr := &mockConfigManager{
+			nodes: []apiconfig.InferenceNodeConfig{
+				{
+					Id:               "node1",
+					Host:             "localhost",
+					PoCPort:          8080,
+					PoCSegment:       "/api",
+					InferencePort:    8081,
+					InferenceSegment: "/inference",
+				},
+			},
+		}
+
+		broker := &mockBroker{}
+		factory := &mockClientFactory{client: mockClient}
+
+		manager := NewMLNodeBackgroundManager(
+			configMgr,
+			nil,
+			broker,
+			factory,
+			30*time.Minute,
+		)
+
+		ctx := context.Background()
+		manager.checkAndUpdateGPUs(ctx)
+
+		// Verify broker was called
+		if len(broker.queuedCommands) != 1 {
+			t.Errorf("expected 1 broker command, got %d", len(broker.queuedCommands))
+		}
+
+		// Verify config was updated
+		if len(configMgr.nodes[0].Hardware) != 1 {
+			t.Errorf("expected 1 hardware entry, got %d", len(configMgr.nodes[0].Hardware))
+		}
+
+		if configMgr.nodes[0].Hardware[0].Type != "NVIDIA RTX 3090 | 24GB" {
+			t.Errorf("unexpected hardware type: %s", configMgr.nodes[0].Hardware[0].Type)
+		}
+	})
+
+	t.Run("ErrAPINotImplemented handling", func(t *testing.T) {
+		mockClient := &mlnodeclient.MockClient{
+			GetGPUDevicesError: &mlnodeclient.ErrAPINotImplemented{Endpoint: "/api/v1/gpu/devices"},
+		}
+
+		configMgr := &mockConfigManager{
+			nodes: []apiconfig.InferenceNodeConfig{
+				{Id: "node1", Host: "localhost", PoCPort: 8080, PoCSegment: "/api"},
+			},
+		}
+
+		broker := &mockBroker{}
+		factory := &mockClientFactory{client: mockClient}
+
+		manager := NewMLNodeBackgroundManager(
+			configMgr,
+			nil,
+			broker,
+			factory,
+			30*time.Minute,
+		)
+
+		ctx := context.Background()
+		manager.checkAndUpdateGPUs(ctx)
+
+		// Should not call broker
+		if len(broker.queuedCommands) != 0 {
+			t.Errorf("expected 0 broker commands, got %d", len(broker.queuedCommands))
+		}
+
+		// Should not update config
+		if len(configMgr.nodes[0].Hardware) != 0 {
+			t.Errorf("expected 0 hardware entries, got %d", len(configMgr.nodes[0].Hardware))
+		}
+	})
+
+	t.Run("network error handling", func(t *testing.T) {
+		mockClient := &mlnodeclient.MockClient{
+			GetGPUDevicesError: errors.New("network error"),
+		}
+
+		configMgr := &mockConfigManager{
+			nodes: []apiconfig.InferenceNodeConfig{
+				{Id: "node1", Host: "localhost", PoCPort: 8080, PoCSegment: "/api"},
+			},
+		}
+
+		broker := &mockBroker{}
+		factory := &mockClientFactory{client: mockClient}
+
+		manager := NewMLNodeBackgroundManager(
+			configMgr,
+			nil,
+			broker,
+			factory,
+			30*time.Minute,
+		)
+
+		ctx := context.Background()
+		manager.checkAndUpdateGPUs(ctx)
+
+		// Should not call broker
+		if len(broker.queuedCommands) != 0 {
+			t.Errorf("expected 0 broker commands, got %d", len(broker.queuedCommands))
+		}
+	})
+
+	t.Run("broker queue failure", func(t *testing.T) {
+		mem := int(24576)
+		mockClient := &mlnodeclient.MockClient{
+			GPUDevices: []mlnodeclient.GPUDevice{
+				{Name: "NVIDIA RTX 3090", TotalMemoryMB: &mem, IsAvailable: true},
+			},
+		}
+
+		configMgr := &mockConfigManager{
+			nodes: []apiconfig.InferenceNodeConfig{
+				{Id: "node1", Host: "localhost", PoCPort: 8080, PoCSegment: "/api"},
+			},
+		}
+
+		broker := &mockBroker{queueError: errors.New("queue full")}
+		factory := &mockClientFactory{client: mockClient}
+
+		manager := NewMLNodeBackgroundManager(
+			configMgr,
+			nil,
+			broker,
+			factory,
+			30*time.Minute,
+		)
+
+		ctx := context.Background()
+		manager.checkAndUpdateGPUs(ctx)
+
+		// Config should still be updated
+		if len(configMgr.nodes[0].Hardware) != 1 {
+			t.Errorf("expected 1 hardware entry, got %d", len(configMgr.nodes[0].Hardware))
+		}
+	})
+
+	t.Run("config save failure", func(t *testing.T) {
+		mem := int(24576)
+		mockClient := &mlnodeclient.MockClient{
+			GPUDevices: []mlnodeclient.GPUDevice{
+				{Name: "NVIDIA RTX 3090", TotalMemoryMB: &mem, IsAvailable: true},
+			},
+		}
+
+		configMgr := &mockConfigManager{
+			nodes: []apiconfig.InferenceNodeConfig{
+				{Id: "node1", Host: "localhost", PoCPort: 8080, PoCSegment: "/api"},
+			},
+			setNodesError: errors.New("disk full"),
+		}
+
+		broker := &mockBroker{}
+		factory := &mockClientFactory{client: mockClient}
+
+		manager := NewMLNodeBackgroundManager(
+			configMgr,
+			nil,
+			broker,
+			factory,
+			30*time.Minute,
+		)
+
+		ctx := context.Background()
+		manager.checkAndUpdateGPUs(ctx)
+
+		// Broker should still be called
+		if len(broker.queuedCommands) != 1 {
+			t.Errorf("expected 1 broker command, got %d", len(broker.queuedCommands))
+		}
+	})
+
+	t.Run("empty GPU list", func(t *testing.T) {
+		mockClient := &mlnodeclient.MockClient{
+			GPUDevices: []mlnodeclient.GPUDevice{},
+		}
+
+		configMgr := &mockConfigManager{
+			nodes: []apiconfig.InferenceNodeConfig{
+				{Id: "node1", Host: "localhost", PoCPort: 8080, PoCSegment: "/api"},
+			},
+		}
+
+		broker := &mockBroker{}
+		factory := &mockClientFactory{client: mockClient}
+
+		manager := NewMLNodeBackgroundManager(
+			configMgr,
+			nil,
+			broker,
+			factory,
+			30*time.Minute,
+		)
+
+		ctx := context.Background()
+		manager.checkAndUpdateGPUs(ctx)
+
+		// Should not call broker for empty GPU list
+		if len(broker.queuedCommands) != 0 {
+			t.Errorf("expected 0 broker commands, got %d", len(broker.queuedCommands))
 		}
 	})
 }
