@@ -488,8 +488,9 @@ func (m *manager) broadcastMessage(id string, rawTx sdk.Msg) (*sdk.TxResponse, t
 	}
 	if resp.Code != 0 {
 		logging.Error("Broadcast failed immediately", types.Messages, "code", resp.Code, "rawLog", resp.RawLog, "tx_id", id, "originalMsgType", originalMsgType)
+	} else {
+		logging.Debug("Broadcast successful", types.Messages, "tx_id", id, "originalMsgType", originalMsgType, "resp", resp)
 	}
-	logging.Debug("Broadcast successful", types.Messages, "tx_id", id, "originalMsgType", originalMsgType, "resp", resp)
 	return resp, timestamp, nil
 }
 
@@ -540,6 +541,7 @@ func (m *manager) getSignedBytes(id string, unsignedTx client.TxBuilder, factory
 		if err != nil {
 			return nil, time.Time{}, err
 		}
+		blockTs = m.blockTimeTracker.latestBlockTime.Load().(time.Time)
 	}
 
 	timestamp := getTimestamp(blockTs.UnixNano(), m.defaultTimeout)
