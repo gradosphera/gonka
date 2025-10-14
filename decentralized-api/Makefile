@@ -103,6 +103,8 @@ build-for-upgrade:
 	@mkdir -p ../public-html/v2/dapi
 	@echo "--> copying built decentralized-api binary and dependencies to ../public-html/v2/dapi/"
 	@cp ./output/build_output/* ../public-html/v2/dapi/
+	@echo "--> cleaning up intermediate build output"
+	@rm -rf ./output
 	@echo "--> zipping decentralized-api binary with dependencies"
 	# We set the timestamp to a const and strip metadata in zip so we have a reproduceable checksum
 	@TZ=UTC find ../public-html/v2/dapi -type f -exec touch -t 200001010000 {} \;
