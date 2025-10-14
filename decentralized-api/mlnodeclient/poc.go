@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
-	"os"
+
+	"github.com/productscience/inference/testenv"
 )
 
 const (
@@ -35,7 +36,7 @@ type InitDto struct {
 }
 
 func getNetworkParams() *Params {
-	if os.Getenv("IS_TEST_NET") == "true" {
+	if testenv.IsTestNet() {
 		return &TestNetParams
 	}
 	return &MainNetParams

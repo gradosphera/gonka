@@ -68,7 +68,7 @@ type ValidatorSet interface {
 }
 
 type StakingKeeper interface {
-	SetComputeValidators(ctx context.Context, computeResults []keeper.ComputeResult) ([]types.Validator, error)
+	SetComputeValidators(ctx context.Context, computeResults []keeper.ComputeResult, isTestnet bool) ([]types.Validator, error)
 	GetAllValidators(ctx context.Context) (validators []types.Validator, err error)
 }
 

@@ -617,18 +617,18 @@ func (mr *MockStakingKeeperMockRecorder) GetAllValidators(ctx any) *gomock.Call 
 }
 
 // SetComputeValidators mocks base method.
-func (m *MockStakingKeeper) SetComputeValidators(ctx context.Context, computeResults []keeper.ComputeResult) ([]types1.Validator, error) {
+func (m *MockStakingKeeper) SetComputeValidators(ctx context.Context, computeResults []keeper.ComputeResult, isTestnet bool) ([]types1.Validator, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetComputeValidators", ctx, computeResults)
+	ret := m.ctrl.Call(m, "SetComputeValidators", ctx, computeResults, isTestnet)
 	ret0, _ := ret[0].([]types1.Validator)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SetComputeValidators indicates an expected call of SetComputeValidators.
-func (mr *MockStakingKeeperMockRecorder) SetComputeValidators(ctx, computeResults any) *gomock.Call {
+func (mr *MockStakingKeeperMockRecorder) SetComputeValidators(ctx, computeResults, isTestnet any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetComputeValidators", reflect.TypeOf((*MockStakingKeeper)(nil).SetComputeValidators), ctx, computeResults)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetComputeValidators", reflect.TypeOf((*MockStakingKeeper)(nil).SetComputeValidators), ctx, computeResults, isTestnet)
 }
 
 // MockCollateralKeeper is a mock of CollateralKeeper interface.
