@@ -15,7 +15,8 @@ class Node:
         deploy_dir: str,
         key_name: str = None,
         hf_home: str = None,
-        custom_base_dir: str = None
+        custom_base_dir: str = None,
+        private_ip: str = None
     ):
         self.domain = domain
         self.ssh_port = ssh_port
@@ -26,6 +27,7 @@ class Node:
         self.ssh_key_path = ssh_key_path
         self.deploy_dir = deploy_dir
         self.custom_base_dir = custom_base_dir
+        self.private_ip = private_ip
         self.key_name = key_name or f"join-{self.ssh_port}"
 
     # based on example from join-1.sh
@@ -36,8 +38,15 @@ class Node:
             f'export PUBLIC_URL="http://{self.domain}:{self.api_port}"',
             f'export P2P_EXTERNAL_ADDRESS="tcp://{self.domain}:{self.p2p_port}"',
             f'export SYNC_WITH_SNAPSHOTS="{sync_with_snapshots}"',
-            f'export HF_HOME="{self.hf_home}"',
         ]
+        
+        # Set callback URL based on private_ip if available
+        if self.private_ip:
+            script_lines.append(f'export DAPI_API__POC_CALLBACK_URL="http://{self.private_ip}:9100"')
+        else:
+            script_lines.append(f'export DAPI_API__POC_CALLBACK_URL="http://api:9100"')
+        
+        script_lines.append(f'export HF_HOME="{self.hf_home}"')
         
         if self.custom_base_dir:
             script_lines.append(f'export TESTNET_BASE_DIR="{self.custom_base_dir}"')
@@ -112,10 +121,11 @@ if __name__ == "__main__":
                 deploy_dir=OUTPUT_DIR,
                 key_name=f"join-{row['ssh_port']}",
                 hf_home=row['hf_home'].strip(),
-                custom_base_dir=row['deploy_dir'].strip()
+                custom_base_dir=row['deploy_dir'].strip(),
+                private_ip=row['private_ip'].strip() if 'private_ip' in row and row['private_ip'].strip() else None
             )
             nodes.append(node)
-            print(f"Created node: {node.domain}:{node.ssh_port} (deploy_dir={node.custom_base_dir}, hf_home={node.hf_home})")
+            print(f"Created node: {node.domain}:{node.ssh_port} (deploy_dir={node.custom_base_dir}, hf_home={node.hf_home}, private_ip={node.private_ip})")
     
     # 2. Generate join scripts for each node
     for node in nodes:
