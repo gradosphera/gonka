@@ -57,6 +57,16 @@ func OpenSQLite(cfg SqliteConfig) (*sql.DB, error) {
 	// Reasonable pool defaults for sqlite
 	db.SetMaxOpenConns(1) // SQLite is single-writer
 	db.SetConnMaxLifetime(0)
+	db.SetMaxIdleConns(1)
+
+	// Improve durability and reduce lock errors in long-running process
+	// Enable WAL; if it fails, return error (not optional for our usage)
+	if _, err := db.ExecContext(context.Background(), "PRAGMA journal_mode=WAL;"); err != nil {
+		return nil, err
+	}
+	// Reasonable defaults; ignore failure as they are optional
+	_, _ = db.ExecContext(context.Background(), "PRAGMA synchronous=NORMAL;")
+	_, _ = db.ExecContext(context.Background(), "PRAGMA busy_timeout=5000;")
 	return db, nil
 }
 

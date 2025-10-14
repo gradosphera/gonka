@@ -31,6 +31,7 @@ type ConfigManager struct {
 	sqlDb          SqlDatabase
 	mutex          sync.Mutex
 	configDumpPath string
+	sqlitePath     string
 }
 
 type WriteCloserProvider interface {
@@ -61,6 +62,7 @@ func LoadConfigManagerWithPaths(configPath, sqlitePath, nodeConfigPath string) (
 		sqlDb:          db,
 		mutex:          sync.Mutex{},
 		configDumpPath: filepath.Join(filepath.Dir(sqlitePath), "config-dump.json"),
+		sqlitePath:     sqlitePath,
 	}
 	err := manager.Load()
 	if err != nil {
@@ -709,8 +711,10 @@ func (cm *ConfigManager) StartAutoFlush(ctx context.Context, interval time.Durat
 		defer t.Stop()
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case <-t.C:
-				_ = cm.flushToDB(context.Background())
+				_ = cm.flushToDB(ctx)
 			}
 		}
 	}()
@@ -723,10 +727,10 @@ func (cm *ConfigManager) FlushNow(ctx context.Context) error {
 }
 
 // flushToDB writes all dynamic fields if there were any changes since last flush.
-func (cm *ConfigManager) flushToDB(_ context.Context) error {
+func (cm *ConfigManager) flushToDB(ctx context.Context) error {
 	logging.Info("Executing flushToDB", types.Config)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := cm.ensureDbReady(ctx); err != nil {
 		return err
@@ -814,9 +818,17 @@ func (cm *ConfigManager) ensureDbReady(ctx context.Context) error {
 		}
 	}
 	// Reopen
-	newDb := NewSQLiteDb(SqliteConfig{Path: getSqlitePath()})
+	reopenPath := cm.sqlitePath
+	if strings.TrimSpace(reopenPath) == "" {
+		reopenPath = getSqlitePath()
+	}
+	newDb := NewSQLiteDb(SqliteConfig{Path: reopenPath})
 	if err := newDb.BootstrapLocal(ctx); err != nil {
 		return err
+	}
+	// Close old handle to avoid leaks
+	if cm.sqlDb != nil && cm.sqlDb.GetDb() != nil {
+		_ = cm.sqlDb.GetDb().Close()
 	}
 	cm.sqlDb = newDb
 	return nil

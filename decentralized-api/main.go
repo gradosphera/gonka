@@ -191,6 +191,11 @@ func main() {
 	logging.Info("Flushing config to the DB on app exit", types.Config)
 	_ = config.FlushNow(ctxFlush)
 
+	// Close DB gracefully
+	if db := config.SqlDb().GetDb(); db != nil {
+		_ = db.Close()
+	}
+
 	os.Exit(1) // Exit with an error for cosmovisor to restart the process
 }
 
