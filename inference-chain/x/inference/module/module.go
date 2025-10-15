@@ -836,7 +836,7 @@ func (am AppModule) InitiateBLSKeyGeneration(ctx context.Context, epochID uint64
 	// Convert ActiveParticipants to ParticipantWithWeightAndKey format expected by BLS module
 	finalizedParticipants := make([]blstypes.ParticipantWithWeightAndKey, 0, len(activeParticipants))
 
-	// Calculate total weight to convert to percentages
+	// Calculate total weight
 	totalWeight := int64(0)
 	for _, p := range activeParticipants {
 		totalWeight += p.Weight
@@ -846,6 +846,9 @@ func (am AppModule) InitiateBLSKeyGeneration(ctx context.Context, epochID uint64
 		am.LogError("Total weight is zero, cannot initiate BLS key generation", types.EpochGroup, "epochID", epochID)
 		return
 	}
+
+	// Compute optional guardian slot reservation adjustment (idempotent)
+	adjustedPercentages := ApplyBLSGuardianSlotReservation(ctx, am.keeper, activeParticipants)
 
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	for _, ap := range activeParticipants {
@@ -878,12 +881,21 @@ func (am AppModule) InitiateBLSKeyGeneration(ctx context.Context, epochID uint64
 			continue
 		}
 
-		// Use ap.Weight (from ActiveParticipant) as it's the computed weight for this epoch's DKG.
-		weightPercentage := math.LegacyNewDec(ap.Weight).Quo(math.LegacyNewDec(totalWeight)).Mul(math.LegacyNewDec(100))
+		var percentage math.LegacyDec
+		if adjustedPercentages != nil {
+			if p, ok := adjustedPercentages[ap.Index]; ok {
+				percentage = p
+			} else {
+				// Participant not present in adjusted map, compute from raw weight
+				percentage = math.LegacyNewDec(ap.Weight).Quo(math.LegacyNewDec(totalWeight)).Mul(math.LegacyNewDec(100))
+			}
+		} else {
+			percentage = math.LegacyNewDec(ap.Weight).Quo(math.LegacyNewDec(totalWeight)).Mul(math.LegacyNewDec(100))
+		}
 
 		blsParticipant := blstypes.ParticipantWithWeightAndKey{
 			Address:            ap.Index,
-			PercentageWeight:   weightPercentage,
+			PercentageWeight:   percentage,
 			Secp256k1PublicKey: pubKeyBytes,
 		}
 		finalizedParticipants = append(finalizedParticipants, blsParticipant)
@@ -891,7 +903,7 @@ func (am AppModule) InitiateBLSKeyGeneration(ctx context.Context, epochID uint64
 		am.LogInfo("Prepared participant for BLS key generation using AccountKeeper PubKey", types.EpochGroup,
 			"participant", ap.Index,
 			"weight", ap.Weight,
-			"percentage", weightPercentage.String(),
+			"percentage", percentage.String(),
 			"epochID", epochID,
 			"keyLength", len(pubKeyBytes))
 	}

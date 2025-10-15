@@ -61,8 +61,15 @@ func (ms msgServer) SubmitGroupKeyValidationSignature(goCtx context.Context, msg
 	// Get the previous epoch's BLS data for slot validation and signature verification
 	previousEpochBLSData, found := ms.GetEpochBLSData(ctx, previousEpochId)
 	if !found {
-		ms.Keeper.LogError("Previous epoch not found", "previous_epoch_index", previousEpochId)
-		return nil, fmt.Errorf("previous epoch %d not found", previousEpochId)
+		// Emit a searchable event and continue using current epoch data as fallback
+		ms.Keeper.LogWarn("Previous epoch not found - using current epoch for validation", "previous_epoch_index", previousEpochId, "new_epoch_index", msg.NewEpochIndex)
+		ctx.EventManager().EmitTypedEvent(&types.EventGroupKeyValidationFailed{
+			NewEpochIndex: msg.NewEpochIndex,
+			Reason:        fmt.Sprintf("previous_epoch_missing_fallback:%d", previousEpochId),
+		})
+
+		previousEpochBLSData = newEpochBLSData
+		previousEpochId = msg.NewEpochIndex
 	}
 
 	// Find the participant in the previous epoch

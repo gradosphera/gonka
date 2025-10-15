@@ -117,7 +117,13 @@ func (k Keeper) AssignSlots(participants []types.ParticipantWithWeightAndKey, to
 		}
 
 		if participantSlots <= 0 {
-			return nil, fmt.Errorf("participant %s has zero or negative slots", participant.Address)
+			k.Logger().Debug(
+				"Skipping participant due to zero or negative slots",
+				"address", participant.Address,
+				"weight", participant.PercentageWeight.String(),
+				"slot_count", participantSlots,
+			)
+			continue
 		}
 
 		startIndex := currentSlot
