@@ -18,6 +18,8 @@ from zeroband.service.routes import router as train_router
 from pow.service.manager import PowManager
 from pow.service.routes import router as pow_router
 
+from api.health import router as health_router
+
 from api.service_management import (
     ServiceState,
     check_service_conflicts,
@@ -77,6 +79,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+app.include_router(health_router)
 
 app.add_middleware(ProxyMiddleware)
 
