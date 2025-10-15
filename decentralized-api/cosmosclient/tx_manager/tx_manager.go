@@ -190,6 +190,10 @@ func (m *manager) SendTransactionAsyncWithRetry(rawTx sdk.Msg) (*sdk.TxResponse,
 func (m *manager) SendTransactionAsyncNoRetry(rawTx sdk.Msg) (*sdk.TxResponse, error) {
 	id := uuid.New().String()
 	logging.Debug("SendTransactionAsyncNoRetry: sending tx", types.Messages, "tx_id", id, "originalMsgType", sdk.MsgTypeURL(rawTx))
+	_, err := m.updateChainHalt()
+	if err != nil {
+		return nil, err
+	}
 	resp, _, broadcastErr := m.broadcastMessage(id, rawTx)
 	return resp, broadcastErr
 }
@@ -197,6 +201,10 @@ func (m *manager) SendTransactionAsyncNoRetry(rawTx sdk.Msg) (*sdk.TxResponse, e
 func (m *manager) SendTransactionSyncNoRetry(msg proto.Message) (*ctypes.ResultTx, error) {
 	id := uuid.New().String()
 	logging.Debug("SendTransactionSyncNoRetry: sending tx", types.Messages, "tx_id", id)
+	_, err := m.updateChainHalt()
+	if err != nil {
+		return nil, err
+	}
 	resp, _, err := m.broadcastMessage(id, msg)
 	if err != nil {
 		return nil, err

@@ -290,7 +290,7 @@ func (cm *ConfigManager) SetLastUsedVersion(version string) error {
 func (cm *ConfigManager) ShouldRefreshClients() bool {
 	currentVersion := cm.GetCurrentNodeVersion()
 	lastUsedVersion := cm.GetLastUsedVersion()
-	return currentVersion != lastUsedVersion && lastUsedVersion != ""
+	return currentVersion != lastUsedVersion
 }
 
 func (cm *ConfigManager) SetPreviousSeed(seed SeedInfo) error {
