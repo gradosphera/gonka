@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, AsyncMock
 
 from api.app import app
 from api.service_management import ServiceState
@@ -13,6 +13,8 @@ def client():
 def setup_app_state():
     pow_manager_mock = Mock()
     inference_manager_mock = Mock()
+    # Mock _async_stop as async function for inference manager
+    inference_manager_mock._async_stop = AsyncMock()
     train_manager_mock = Mock()
     
     app.state.pow_manager = pow_manager_mock
@@ -37,7 +39,7 @@ def test_stop_endpoint_with_no_services_running(client, setup_app_state):
     assert response.json() == {"status": "OK"}
     
     setup_app_state['pow_manager'].stop.assert_not_called()
-    setup_app_state['inference_manager'].stop.assert_not_called()
+    setup_app_state['inference_manager']._async_stop.assert_not_called()
     setup_app_state['train_manager'].stop.assert_not_called()
 
 def test_stop_endpoint_with_pow_running(client, setup_app_state):
@@ -52,7 +54,7 @@ def test_stop_endpoint_with_pow_running(client, setup_app_state):
     assert response.json() == {"status": "OK"}
     
     setup_app_state['pow_manager'].stop.assert_called_once()
-    setup_app_state['inference_manager'].stop.assert_not_called()
+    setup_app_state['inference_manager']._async_stop.assert_not_called()
     setup_app_state['train_manager'].stop.assert_not_called()
 
 def test_stop_endpoint_with_multiple_services_running(client, setup_app_state):
@@ -67,5 +69,5 @@ def test_stop_endpoint_with_multiple_services_running(client, setup_app_state):
     assert response.json() == {"status": "OK"}
     
     setup_app_state['pow_manager'].stop.assert_called_once()
-    setup_app_state['inference_manager'].stop.assert_called_once()
+    setup_app_state['inference_manager']._async_stop.assert_called_once()
     setup_app_state['train_manager'].stop.assert_called_once()

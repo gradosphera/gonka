@@ -8,6 +8,7 @@ import (
 	"decentralized-api/cosmosclient"
 	"decentralized-api/internal/bls"
 	"decentralized-api/internal/event_listener"
+	"decentralized-api/internal/modelmanager"
 	"decentralized-api/internal/nats/server"
 	"decentralized-api/internal/poc"
 	adminserver "decentralized-api/internal/server/admin"
@@ -141,6 +142,15 @@ func main() {
 	listener := event_listener.NewEventListener(config, nodePocOrchestrator, nodeBroker, validator, *recorder, trainingExecutor, chainPhaseTracker, cancel, blsManager)
 	// TODO: propagate trainingExecutor
 	go listener.Start(ctx)
+
+	mlnodeBackgroundManager := modelmanager.NewMLNodeBackgroundManager(
+		config,
+		chainPhaseTracker,
+		nodeBroker,
+		&mlnodeclient.HttpClientFactory{},
+		30*time.Minute,
+	)
+	go mlnodeBackgroundManager.Start(ctx)
 
 	addr := fmt.Sprintf(":%v", config.GetApiConfig().PublicServerPort)
 	logging.Info("start public server on addr", types.Server, "addr", addr)

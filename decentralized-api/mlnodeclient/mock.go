@@ -18,27 +18,50 @@ type MockClient struct {
 	PowStatus          PowState
 	InferenceIsHealthy bool
 
+	// GPU state
+	GPUDevices []GPUDevice
+	DriverInfo *DriverInfo
+
+	// Model management state
+	CachedModels      map[string]ModelListItem // key: hf_repo:hf_commit
+	DownloadingModels map[string]*DownloadProgress
+	DiskSpace         *DiskSpaceInfo
+
 	// Error injection
-	StopError            error
-	NodeStateError       error
-	GetPowStatusError    error
-	InitGenerateError    error
-	InitValidateError    error
-	ValiateBatchError    error
-	InferenceHealthError error
-	InferenceUpError     error
-	StartTrainingError   error
+	StopError             error
+	NodeStateError        error
+	GetPowStatusError     error
+	InitGenerateError     error
+	InitValidateError     error
+	ValiateBatchError     error
+	InferenceHealthError  error
+	InferenceUpError      error
+	StartTrainingError    error
+	GetGPUDevicesError    error
+	GetGPUDriverError     error
+	CheckModelStatusError error
+	DownloadModelError    error
+	DeleteModelError      error
+	ListModelsError       error
+	GetDiskSpaceError     error
 
 	// Call tracking
-	StopCalled            int
-	NodeStateCalled       int
-	GetPowStatusCalled    int
-	InitGenerateCalled    int
-	InitValidateCalled    int
-	ValidateBatchCalled   int
-	InferenceHealthCalled int
-	InferenceUpCalled     int
-	StartTrainingCalled   int
+	StopCalled             int
+	NodeStateCalled        int
+	GetPowStatusCalled     int
+	InitGenerateCalled     int
+	InitValidateCalled     int
+	ValidateBatchCalled    int
+	InferenceHealthCalled  int
+	InferenceUpCalled      int
+	StartTrainingCalled    int
+	GetGPUDevicesCalled    int
+	GetGPUDriverCalled     int
+	CheckModelStatusCalled int
+	DownloadModelCalled    int
+	DeleteModelCalled      int
+	ListModelsCalled       int
+	GetDiskSpaceCalled     int
 
 	// Capture parameters
 	LastInitDto         *InitDto
@@ -54,6 +77,9 @@ type MockClient struct {
 		Rank           int
 		WorldSize      int
 	}
+	LastModelStatusCheck *Model
+	LastModelDownload    *Model
+	LastModelDelete      *Model
 }
 
 // NewMockClient creates a new mock client with default values
@@ -62,6 +88,9 @@ func NewMockClient() *MockClient {
 		CurrentState:       MlNodeState_STOPPED,
 		PowStatus:          POW_STOPPED,
 		InferenceIsHealthy: false,
+		GPUDevices:         []GPUDevice{},
+		CachedModels:       make(map[string]ModelListItem),
+		DownloadingModels:  make(map[string]*DownloadProgress),
 	}
 }
 
@@ -217,6 +246,171 @@ func (m *MockClient) GetTrainingStatus(ctx context.Context) error {
 	defer m.Mu.Unlock()
 	// Not implemented for now
 	return nil
+}
+
+// GPU operations
+
+func (m *MockClient) GetGPUDevices(ctx context.Context) (*GPUDevicesResponse, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	m.GetGPUDevicesCalled++
+	if m.GetGPUDevicesError != nil {
+		return nil, m.GetGPUDevicesError
+	}
+	return &GPUDevicesResponse{
+		Devices: m.GPUDevices,
+		Count:   len(m.GPUDevices),
+	}, nil
+}
+
+func (m *MockClient) GetGPUDriver(ctx context.Context) (*DriverInfo, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	m.GetGPUDriverCalled++
+	if m.GetGPUDriverError != nil {
+		return nil, m.GetGPUDriverError
+	}
+	if m.DriverInfo == nil {
+		return &DriverInfo{
+			DriverVersion:     "535.104.05",
+			CudaDriverVersion: "12.2",
+			NvmlVersion:       "12.535.104",
+		}, nil
+	}
+	return m.DriverInfo, nil
+}
+
+// Model management operations
+
+func (m *MockClient) CheckModelStatus(ctx context.Context, model Model) (*ModelStatusResponse, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	m.CheckModelStatusCalled++
+	m.LastModelStatusCheck = &model
+	if m.CheckModelStatusError != nil {
+		return nil, m.CheckModelStatusError
+	}
+
+	key := getModelKey(model)
+
+	// Check if downloading
+	if progress, ok := m.DownloadingModels[key]; ok {
+		return &ModelStatusResponse{
+			Model:    model,
+			Status:   ModelStatusDownloading,
+			Progress: progress,
+		}, nil
+	}
+
+	// Check if cached
+	if item, ok := m.CachedModels[key]; ok {
+		return &ModelStatusResponse{
+			Model:  model,
+			Status: item.Status,
+		}, nil
+	}
+
+	// Not found
+	return &ModelStatusResponse{
+		Model:  model,
+		Status: ModelStatusNotFound,
+	}, nil
+}
+
+func (m *MockClient) DownloadModel(ctx context.Context, model Model) (*DownloadStartResponse, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	m.DownloadModelCalled++
+	m.LastModelDownload = &model
+	if m.DownloadModelError != nil {
+		return nil, m.DownloadModelError
+	}
+
+	key := getModelKey(model)
+
+	// Start download
+	m.DownloadingModels[key] = &DownloadProgress{
+		StartTime:      float64(1728565234),
+		ElapsedSeconds: 0,
+	}
+
+	return &DownloadStartResponse{
+		TaskId: key,
+		Status: ModelStatusDownloading,
+		Model:  model,
+	}, nil
+}
+
+func (m *MockClient) DeleteModel(ctx context.Context, model Model) (*DeleteResponse, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	m.DeleteModelCalled++
+	m.LastModelDelete = &model
+	if m.DeleteModelError != nil {
+		return nil, m.DeleteModelError
+	}
+
+	key := getModelKey(model)
+	status := "deleted"
+
+	// Check if downloading and cancel
+	if _, ok := m.DownloadingModels[key]; ok {
+		delete(m.DownloadingModels, key)
+		status = "cancelled"
+	}
+
+	// Remove from cache
+	delete(m.CachedModels, key)
+
+	return &DeleteResponse{
+		Status: status,
+		Model:  model,
+	}, nil
+}
+
+func (m *MockClient) ListModels(ctx context.Context) (*ModelListResponse, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	m.ListModelsCalled++
+	if m.ListModelsError != nil {
+		return nil, m.ListModelsError
+	}
+
+	models := make([]ModelListItem, 0, len(m.CachedModels))
+	for _, item := range m.CachedModels {
+		models = append(models, item)
+	}
+
+	return &ModelListResponse{
+		Models: models,
+	}, nil
+}
+
+func (m *MockClient) GetDiskSpace(ctx context.Context) (*DiskSpaceInfo, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	m.GetDiskSpaceCalled++
+	if m.GetDiskSpaceError != nil {
+		return nil, m.GetDiskSpaceError
+	}
+
+	if m.DiskSpace == nil {
+		return &DiskSpaceInfo{
+			CacheSizeGB: 13.0,
+			AvailableGB: 465.66,
+			CachePath:   "/root/.cache/hub",
+		}, nil
+	}
+
+	return m.DiskSpace, nil
+}
+
+// Helper function to generate model key
+func getModelKey(model Model) string {
+	if model.HfCommit != nil && *model.HfCommit != "" {
+		return model.HfRepo + ":" + *model.HfCommit
+	}
+	return model.HfRepo + ":latest"
 }
 
 // Ensure MockClient implements MLNodeClient

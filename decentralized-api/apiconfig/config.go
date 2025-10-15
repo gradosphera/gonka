@@ -79,6 +79,29 @@ type InferenceNodeConfig struct {
 	Hardware         []Hardware             `koanf:"hardware" json:"hardware"`
 }
 
+func (n InferenceNodeConfig) DeepCopy() InferenceNodeConfig {
+	result := n
+
+	if n.Models != nil {
+		result.Models = make(map[string]ModelConfig, len(n.Models))
+		for k, v := range n.Models {
+			modelCopy := v
+			if v.Args != nil {
+				modelCopy.Args = make([]string, len(v.Args))
+				copy(modelCopy.Args, v.Args)
+			}
+			result.Models[k] = modelCopy
+		}
+	}
+
+	if n.Hardware != nil {
+		result.Hardware = make([]Hardware, len(n.Hardware))
+		copy(result.Hardware, n.Hardware)
+	}
+
+	return result
+}
+
 type ModelConfig struct {
 	Args []string `json:"args"`
 }

@@ -16,9 +16,9 @@ toml = ">=0.10.2"
 torch = ">=2.4.1"
 numpy = "*"
 setuptools = "*"
-transformers = ">=4.44.2"
-datasets = ">=3.0.0"
-pydantic_config = { git = "https://github.com/samsja/pydantic_config.git", rev = "e529c9c" }
+transformers = ">=4.44.2,<=4.55.2"
+datasets = ">=4.0.0"
+pydantic_config = { git = "https://github.com/samsja/pydantic_config.git", rev = "e529c9c", extras = ["toml"] }
 einops = "*"
 torchdata = ">=0.8.0"
 fsspec = { version = ">=2024.3.1", extras = ["gcs"] }

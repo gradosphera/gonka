@@ -21,6 +21,17 @@ type MLNodeClient interface {
 	// Inference operations
 	InferenceHealth(ctx context.Context) (bool, error)
 	InferenceUp(ctx context.Context, model string, args []string) error
+
+	// GPU operations
+	GetGPUDevices(ctx context.Context) (*GPUDevicesResponse, error)
+	GetGPUDriver(ctx context.Context) (*DriverInfo, error)
+
+	// Model management operations
+	CheckModelStatus(ctx context.Context, model Model) (*ModelStatusResponse, error)
+	DownloadModel(ctx context.Context, model Model) (*DownloadStartResponse, error)
+	DeleteModel(ctx context.Context, model Model) (*DeleteResponse, error)
+	ListModels(ctx context.Context) (*ModelListResponse, error)
+	GetDiskSpace(ctx context.Context) (*DiskSpaceInfo, error)
 }
 
 // Ensure Client implements MLNodeClient

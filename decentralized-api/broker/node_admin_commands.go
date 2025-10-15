@@ -255,3 +255,29 @@ func (c SetNodeAdminStateCommand) Execute(b *Broker) {
 
 	c.Response <- nil
 }
+
+// UpdateNodeHardwareCommand updates the Hardware field for a specific node
+type UpdateNodeHardwareCommand struct {
+	NodeId   string
+	Hardware []apiconfig.Hardware
+	Response chan error
+}
+
+func (c UpdateNodeHardwareCommand) GetResponseChannelCapacity() int {
+	return cap(c.Response)
+}
+
+func (c UpdateNodeHardwareCommand) Execute(b *Broker) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	node, exists := b.nodes[c.NodeId]
+	if !exists {
+		c.Response <- fmt.Errorf("node not found: %s", c.NodeId)
+		return
+	}
+
+	node.Node.Hardware = c.Hardware
+	logging.Info("Updated node hardware", types.Nodes, "node_id", c.NodeId, "hardware_count", len(c.Hardware))
+	c.Response <- nil
+}
