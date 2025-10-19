@@ -20,6 +20,7 @@ class CacheDB:
                     height INTEGER NOT NULL,
                     participant_index TEXT NOT NULL,
                     stats_json TEXT NOT NULL,
+                    seed_signature TEXT,
                     cached_at TEXT NOT NULL,
                     PRIMARY KEY (epoch_id, height, participant_index)
                 )
@@ -68,6 +69,22 @@ class CacheDB:
                 )
             """)
             
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS participant_rewards (
+                    epoch_id INTEGER NOT NULL,
+                    participant_id TEXT NOT NULL,
+                    rewarded_coins TEXT NOT NULL,
+                    claimed INTEGER NOT NULL,
+                    last_updated TEXT NOT NULL,
+                    PRIMARY KEY (epoch_id, participant_id)
+                )
+            """)
+            
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_participant_rewards
+                ON participant_rewards(participant_id)
+            """)
+            
             await db.commit()
             logger.info(f"Database initialized at {self.db_path}")
     
@@ -76,7 +93,8 @@ class CacheDB:
         epoch_id: int,
         height: int,
         participant_index: str,
-        stats: Dict[str, Any]
+        stats: Dict[str, Any],
+        seed_signature: Optional[str] = None
     ):
         cached_at = datetime.utcnow().isoformat()
         stats_json = json.dumps(stats)
@@ -84,9 +102,9 @@ class CacheDB:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 INSERT OR REPLACE INTO inference_stats 
-                (epoch_id, height, participant_index, stats_json, cached_at)
-                VALUES (?, ?, ?, ?, ?)
-            """, (epoch_id, height, participant_index, stats_json, cached_at))
+                (epoch_id, height, participant_index, stats_json, seed_signature, cached_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (epoch_id, height, participant_index, stats_json, seed_signature, cached_at))
             await db.commit()
     
     async def save_stats_batch(
@@ -100,13 +118,14 @@ class CacheDB:
         async with aiosqlite.connect(self.db_path) as db:
             for stats in participants_stats:
                 participant_index = stats.get("index")
+                seed_signature = stats.get("seed_signature")
                 stats_json = json.dumps(stats)
                 
                 await db.execute("""
                     INSERT OR REPLACE INTO inference_stats 
-                    (epoch_id, height, participant_index, stats_json, cached_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (epoch_id, height, participant_index, stats_json, cached_at))
+                    (epoch_id, height, participant_index, stats_json, seed_signature, cached_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (epoch_id, height, participant_index, stats_json, seed_signature, cached_at))
             
             await db.commit()
             logger.info(f"Saved {len(participants_stats)} stats for epoch {epoch_id} at height {height}")
@@ -117,14 +136,14 @@ class CacheDB:
             
             if height is not None:
                 query = """
-                    SELECT participant_index, stats_json, height, cached_at
+                    SELECT participant_index, stats_json, seed_signature, height, cached_at
                     FROM inference_stats
                     WHERE epoch_id = ? AND height = ?
                 """
                 params = (epoch_id, height)
             else:
                 query = """
-                    SELECT participant_index, stats_json, height, cached_at
+                    SELECT participant_index, stats_json, seed_signature, height, cached_at
                     FROM inference_stats
                     WHERE epoch_id = ?
                 """
@@ -141,6 +160,7 @@ class CacheDB:
                     stats = json.loads(row["stats_json"])
                     stats["_cached_at"] = row["cached_at"]
                     stats["_height"] = row["height"]
+                    stats["_seed_signature"] = row["seed_signature"]
                     results.append(stats)
                 
                 return results
@@ -305,6 +325,84 @@ class CacheDB:
                         "last_check": row["last_check"],
                         "error_message": row["error_message"],
                         "response_time_ms": row["response_time_ms"]
+                    })
+                
+                return results
+    
+    async def save_reward_batch(
+        self,
+        rewards: List[Dict[str, Any]]
+    ):
+        last_updated = datetime.utcnow().isoformat()
+        
+        async with aiosqlite.connect(self.db_path) as db:
+            for reward in rewards:
+                await db.execute("""
+                    INSERT OR REPLACE INTO participant_rewards 
+                    (epoch_id, participant_id, rewarded_coins, claimed, last_updated)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    reward.get("epoch_id"),
+                    reward.get("participant_id"),
+                    reward.get("rewarded_coins", "0"),
+                    1 if reward.get("claimed") else 0,
+                    last_updated
+                ))
+            
+            await db.commit()
+            logger.info(f"Saved {len(rewards)} rewards")
+    
+    async def get_reward(self, epoch_id: int, participant_id: str) -> Optional[Dict[str, Any]]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            
+            async with db.execute("""
+                SELECT * FROM participant_rewards
+                WHERE epoch_id = ? AND participant_id = ?
+            """, (epoch_id, participant_id)) as cursor:
+                row = await cursor.fetchone()
+                
+                if not row:
+                    return None
+                
+                return {
+                    "epoch_id": row["epoch_id"],
+                    "participant_id": row["participant_id"],
+                    "rewarded_coins": row["rewarded_coins"],
+                    "claimed": bool(row["claimed"]),
+                    "last_updated": row["last_updated"]
+                }
+    
+    async def get_rewards_for_participant(
+        self,
+        participant_id: str,
+        epoch_ids: List[int]
+    ) -> List[Dict[str, Any]]:
+        if not epoch_ids:
+            return []
+        
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            
+            placeholders = ",".join("?" * len(epoch_ids))
+            query = f"""
+                SELECT * FROM participant_rewards
+                WHERE participant_id = ? AND epoch_id IN ({placeholders})
+                ORDER BY epoch_id DESC
+            """
+            params = [participant_id] + epoch_ids
+            
+            async with db.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+                
+                results = []
+                for row in rows:
+                    results.append({
+                        "epoch_id": row["epoch_id"],
+                        "participant_id": row["participant_id"],
+                        "rewarded_coins": row["rewarded_coins"],
+                        "claimed": bool(row["claimed"]),
+                        "last_updated": row["last_updated"]
                     })
                 
                 return results

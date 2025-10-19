@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, Any
-from backend.models import InferenceResponse
+from backend.models import InferenceResponse, ParticipantDetailsResponse
 
 router = APIRouter(prefix="/v1")
 
@@ -45,4 +45,45 @@ async def get_epoch_inference_stats(epoch_id: int, height: Optional[int] = None)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch epoch {epoch_id} stats: {str(e)}")
+
+
+@router.get("/participants/{participant_id}", response_model=ParticipantDetailsResponse)
+async def get_participant_details(
+    participant_id: str,
+    epoch_id: int = Query(..., description="Epoch ID (required)"),
+    height: Optional[int] = Query(None, description="Block height (optional)")
+):
+    if inference_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    
+    if epoch_id < 1:
+        raise HTTPException(status_code=400, detail="Invalid epoch ID")
+    
+    if height is not None and height < 1:
+        raise HTTPException(status_code=400, detail="Invalid height")
+    
+    try:
+        details = await inference_service.get_participant_details(
+            participant_id=participant_id,
+            epoch_id=epoch_id,
+            height=height
+        )
+        
+        if details is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Participant {participant_id} not found in epoch {epoch_id}"
+            )
+        
+        return details
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch participant details: {str(e)}"
+        )
 

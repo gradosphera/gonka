@@ -293,3 +293,122 @@ async def test_get_node_health_for_participant(db):
     assert result[0]["is_healthy"] is True
     assert result[0]["response_time_ms"] == 200
 
+
+@pytest.mark.asyncio
+async def test_save_stats_with_seed_signature(db):
+    stats = {
+        "index": "participant_1",
+        "address": "gonka1abc...",
+        "inference_count": "10",
+        "missed_requests": "2"
+    }
+    seed_sig = "ed2e44480f2c280c39a4241bc4750480"
+    
+    await db.save_stats(
+        epoch_id=1, 
+        height=1000, 
+        participant_index="participant_1", 
+        stats=stats,
+        seed_signature=seed_sig
+    )
+    
+    result = await db.get_stats(epoch_id=1)
+    assert result is not None
+    assert len(result) == 1
+    assert result[0]["_seed_signature"] == seed_sig
+
+
+@pytest.mark.asyncio
+async def test_save_stats_batch_with_seed(db):
+    stats_list = [
+        {
+            "index": "participant_1",
+            "address": "gonka1abc",
+            "inference_count": "10",
+            "seed_signature": "seed_sig_1"
+        },
+        {
+            "index": "participant_2",
+            "address": "gonka2def",
+            "inference_count": "5",
+            "seed_signature": "seed_sig_2"
+        }
+    ]
+    
+    await db.save_stats_batch(epoch_id=1, height=1000, participants_stats=stats_list)
+    
+    result = await db.get_stats(epoch_id=1)
+    assert result is not None
+    assert len(result) == 2
+    assert result[0]["_seed_signature"] == "seed_sig_1"
+    assert result[1]["_seed_signature"] == "seed_sig_2"
+
+
+@pytest.mark.asyncio
+async def test_save_and_get_reward(db):
+    rewards = [
+        {
+            "epoch_id": 56,
+            "participant_id": "gonka1abc",
+            "rewarded_coins": "38627452617213",
+            "claimed": True
+        }
+    ]
+    
+    await db.save_reward_batch(rewards)
+    
+    result = await db.get_reward(epoch_id=56, participant_id="gonka1abc")
+    assert result is not None
+    assert result["epoch_id"] == 56
+    assert result["participant_id"] == "gonka1abc"
+    assert result["rewarded_coins"] == "38627452617213"
+    assert result["claimed"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_rewards_for_participant(db):
+    rewards = [
+        {
+            "epoch_id": 54,
+            "participant_id": "gonka1abc",
+            "rewarded_coins": "50842445416245",
+            "claimed": True
+        },
+        {
+            "epoch_id": 55,
+            "participant_id": "gonka1abc",
+            "rewarded_coins": "0",
+            "claimed": False
+        },
+        {
+            "epoch_id": 56,
+            "participant_id": "gonka1abc",
+            "rewarded_coins": "38627452617213",
+            "claimed": True
+        }
+    ]
+    
+    await db.save_reward_batch(rewards)
+    
+    result = await db.get_rewards_for_participant(
+        participant_id="gonka1abc",
+        epoch_ids=[54, 55, 56]
+    )
+    assert result is not None
+    assert len(result) == 3
+    assert result[0]["epoch_id"] == 56
+    assert result[1]["epoch_id"] == 55
+    assert result[2]["epoch_id"] == 54
+
+
+@pytest.mark.asyncio
+async def test_get_rewards_empty(db):
+    result = await db.get_reward(epoch_id=99, participant_id="nonexistent")
+    assert result is None
+    
+    result = await db.get_rewards_for_participant(
+        participant_id="nonexistent",
+        epoch_ids=[54, 55, 56]
+    )
+    assert result == []
+

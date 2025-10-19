@@ -208,4 +208,21 @@ class GonkaClient:
                 "error_message": str(e),
                 "response_time_ms": None
             }
+    
+    async def get_epoch_performance_summary(
+        self,
+        epoch_id: int,
+        participant_id: str,
+        height: Optional[int] = None
+    ) -> Dict[str, Any]:
+        path = f"/chain-api/productscience/inference/inference/epoch_performance_summary/{epoch_id}/{participant_id}"
+        headers = {}
+        
+        if height is not None:
+            headers["X-Cosmos-Block-Height"] = str(height)
+        
+        return await self._make_request(path, headers=headers)
+    
+    async def get_latest_epoch(self) -> Dict[str, Any]:
+        return await self._make_request("/v1/epochs/latest")
 

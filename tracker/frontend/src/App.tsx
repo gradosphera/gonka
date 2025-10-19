@@ -9,6 +9,7 @@ function App() {
   const [error, setError] = useState<string>('')
   const [selectedEpochId, setSelectedEpochId] = useState<number | null>(null)
   const [currentEpochId, setCurrentEpochId] = useState<number | null>(null)
+  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null)
   const [autoRefreshCountdown, setAutoRefreshCountdown] = useState(30)
 
   const apiUrl = import.meta.env.VITE_API_URL || '/api'
@@ -37,6 +38,15 @@ function App() {
         setCurrentEpochId(result.epoch_id)
       }
       
+      if (result.participants && result.participants.length > 0) {
+        setTimeout(() => {
+          result.participants.forEach((participant: any) => {
+            fetch(`${apiUrl}/v1/participants/${participant.index}?epoch_id=${result.epoch_id}`)
+              .catch(err => console.debug('Pre-fetch error (expected):', err))
+          })
+        }, 100)
+      }
+      
       setAutoRefreshCountdown(30)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data')
@@ -48,13 +58,23 @@ function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const epochParam = params.get('epoch')
+    const participantParam = params.get('participant')
+    
     if (epochParam) {
       const epochId = parseInt(epochParam)
       if (!isNaN(epochId)) {
         setSelectedEpochId(epochId)
+        if (participantParam) {
+          setSelectedParticipantId(participantParam)
+        }
         return
       }
     }
+    
+    if (participantParam) {
+      setSelectedParticipantId(participantParam)
+    }
+    
     fetchData(null)
   }, [])
 
@@ -96,6 +116,20 @@ function App() {
 
   const handleEpochSelect = (epochId: number | null) => {
     setSelectedEpochId(epochId)
+  }
+  
+  const handleParticipantSelect = (participantId: string | null) => {
+    setSelectedParticipantId(participantId)
+    
+    const params = new URLSearchParams(window.location.search)
+    if (participantId) {
+      params.set('participant', participantId)
+    } else {
+      params.delete('participant')
+    }
+    
+    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
+    window.history.replaceState({}, '', newUrl)
   }
 
   if (loading && !data) {
@@ -208,7 +242,12 @@ function App() {
                   Rows with red background indicate missed rate or invalidation rate exceeding 10%
                 </p>
               </div>
-              <ParticipantTable participants={data.participants} />
+              <ParticipantTable 
+                participants={data.participants} 
+                epochId={data.epoch_id}
+                selectedParticipantId={selectedParticipantId}
+                onParticipantSelect={handleParticipantSelect}
+              />
             </div>
           </>
         )}

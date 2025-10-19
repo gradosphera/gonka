@@ -1,12 +1,16 @@
-import { useEffect } from 'react'
-import { Participant } from '../types/inference'
+import { useEffect, useState } from 'react'
+import { Participant, ParticipantDetailsResponse } from '../types/inference'
 
 interface ParticipantModalProps {
   participant: Participant | null
+  epochId: number
   onClose: () => void
 }
 
-export function ParticipantModal({ participant, onClose }: ParticipantModalProps) {
+export function ParticipantModal({ participant, epochId, onClose }: ParticipantModalProps) {
+  const [details, setDetails] = useState<ParticipantDetailsResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -14,14 +18,34 @@ export function ParticipantModal({ participant, onClose }: ParticipantModalProps
       }
     }
 
-    if (participant) {
-      document.addEventListener('keydown', handleEscape)
-    }
-
+    document.addEventListener('keydown', handleEscape)
     return () => {
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [participant, onClose])
+  }, [onClose])
+  
+  useEffect(() => {
+    if (!participant) {
+      return
+    }
+    
+    setLoading(true)
+    fetch(`/api/v1/participants/${participant.index}?epoch_id=${epochId}`)
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`)
+        }
+        return res.json()
+      })
+      .then(data => {
+        setDetails(data)
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error('Failed to fetch participant details:', err)
+        setLoading(false)
+      })
+  }, [participant?.index, epochId])
 
   if (!participant) {
     return null
@@ -185,6 +209,64 @@ export function ParticipantModal({ participant, onClose }: ParticipantModalProps
                 </div>
               </div>
             </div>
+          </div>
+
+          <div className="border-t border-gray-200 pt-6">
+            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">Rewards</h3>
+            
+            <div className="mb-4">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Seed</label>
+              <div className="mt-1 text-xs font-mono text-gray-700 break-all bg-gray-50 p-2 rounded">
+                {loading ? (
+                  <span className="text-gray-400">Loading...</span>
+                ) : details?.seed ? (
+                  details.seed.signature
+                ) : (
+                  <span className="text-gray-400">-</span>
+                )}
+              </div>
+            </div>
+            
+            {loading ? (
+              <div className="text-gray-400 text-sm">Loading rewards...</div>
+            ) : details && details.rewards && details.rewards.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Epoch</th>
+                      <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Assigned Reward</th>
+                      <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Claimed</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {details.rewards.map((reward) => (
+                      <tr key={reward.epoch_id}>
+                        <td className="px-4 py-2 text-sm text-gray-900">{reward.epoch_id}</td>
+                        <td className="px-4 py-2 text-sm text-gray-900">
+                          {reward.assigned_reward_gnk > 0 ? `${reward.assigned_reward_gnk} GNK` : '-'}
+                        </td>
+                        <td className="px-4 py-2 text-sm">
+                          {reward.claimed ? (
+                            <span className="inline-block px-2 py-0.5 text-xs font-semibold bg-green-100 text-green-700 border border-green-300 rounded">
+                              YES
+                            </span>
+                          ) : (
+                            <span className="inline-block px-2 py-0.5 text-xs font-semibold bg-red-100 text-red-700 border border-red-300 rounded">
+                              NO
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-gray-600 text-sm bg-gray-50 p-4 rounded border border-gray-200">
+                Rewards not available for current epoch. Check back after epoch ends.
+              </div>
+            )}
           </div>
         </div>
       </div>

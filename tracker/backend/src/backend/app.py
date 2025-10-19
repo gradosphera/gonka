@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 background_task = None
 jail_polling_task = None
 health_polling_task = None
+rewards_polling_task = None
 inference_service_instance = None
 
 
@@ -30,7 +31,7 @@ async def poll_current_epoch():
         except Exception as e:
             logger.error(f"Background polling error: {e}")
         
-        await asyncio.sleep(30)
+        await asyncio.sleep(300)
 
 
 async def poll_jail_status():
@@ -71,9 +72,22 @@ async def poll_node_health():
         await asyncio.sleep(30)
 
 
+async def poll_rewards():
+    await asyncio.sleep(15)
+    
+    while True:
+        try:
+            if inference_service_instance:
+                await inference_service_instance.poll_participant_rewards()
+        except Exception as e:
+            logger.error(f"Rewards polling error: {e}")
+        
+        await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global background_task, jail_polling_task, health_polling_task, inference_service_instance
+    global background_task, jail_polling_task, health_polling_task, rewards_polling_task, inference_service_instance
     
     inference_urls = os.getenv("INFERENCE_URLS", "http://node2.gonka.ai:8000").split(",")
     inference_urls = [url.strip() for url in inference_urls]
@@ -94,7 +108,8 @@ async def lifespan(app: FastAPI):
     background_task = asyncio.create_task(poll_current_epoch())
     jail_polling_task = asyncio.create_task(poll_jail_status())
     health_polling_task = asyncio.create_task(poll_node_health())
-    logger.info("Background polling tasks started (epoch: 30s, jail: 120s, health: 30s)")
+    rewards_polling_task = asyncio.create_task(poll_rewards())
+    logger.info("Background polling tasks started (epoch: 5min, jail: 120s, health: 30s, rewards: 60s)")
     
     yield
     
@@ -118,6 +133,13 @@ async def lifespan(app: FastAPI):
             await health_polling_task
         except asyncio.CancelledError:
             logger.info("Health polling task cancelled")
+    
+    if rewards_polling_task:
+        rewards_polling_task.cancel()
+        try:
+            await rewards_polling_task
+        except asyncio.CancelledError:
+            logger.info("Rewards polling task cancelled")
 
 
 app = FastAPI(lifespan=lifespan)

@@ -5,7 +5,10 @@ from backend.models import (
     ParticipantStats,
     CurrentEpochStats,
     InferenceResponse,
-    EpochInfo
+    EpochInfo,
+    RewardInfo,
+    SeedInfo,
+    ParticipantDetailsResponse
 )
 
 
@@ -252,4 +255,94 @@ def test_model_from_real_data():
     assert participant.index
     assert participant.address
     assert participant.missed_rate >= 0.0
+
+
+def test_reward_info():
+    reward = RewardInfo(
+        epoch_id=56,
+        assigned_reward_gnk=38,
+        claimed=True
+    )
+    
+    assert reward.epoch_id == 56
+    assert reward.assigned_reward_gnk == 38
+    assert reward.claimed is True
+
+
+def test_seed_info():
+    seed = SeedInfo(
+        participant="gonka14cu38xpsd8pz5zdkkzwf0jwtpc0vv309ake364",
+        epoch_index=56,
+        signature="ed2e44480f2c280c39a4241bc4750480"
+    )
+    
+    assert seed.participant == "gonka14cu38xpsd8pz5zdkkzwf0jwtpc0vv309ake364"
+    assert seed.epoch_index == 56
+    assert seed.signature == "ed2e44480f2c280c39a4241bc4750480"
+
+
+def test_participant_details_response():
+    participant = ParticipantStats(
+        index="gonka1abc",
+        address="gonka1abc",
+        weight=100,
+        current_epoch_stats=CurrentEpochStats(
+            inference_count="10",
+            missed_requests="1",
+            earned_coins="0",
+            rewarded_coins="0",
+            burned_coins="0",
+            validated_inferences="9",
+            invalidated_inferences="1"
+        )
+    )
+    
+    rewards = [
+        RewardInfo(epoch_id=56, assigned_reward_gnk=38, claimed=True),
+        RewardInfo(epoch_id=55, assigned_reward_gnk=0, claimed=False)
+    ]
+    
+    seed = SeedInfo(
+        participant="gonka1abc",
+        epoch_index=56,
+        signature="test_signature"
+    )
+    
+    response = ParticipantDetailsResponse(
+        participant=participant,
+        rewards=rewards,
+        seed=seed
+    )
+    
+    assert response.participant.index == "gonka1abc"
+    assert len(response.rewards) == 2
+    assert response.seed is not None
+    assert response.seed.signature == "test_signature"
+
+
+def test_participant_details_response_no_seed():
+    participant = ParticipantStats(
+        index="gonka1abc",
+        address="gonka1abc",
+        weight=100,
+        current_epoch_stats=CurrentEpochStats(
+            inference_count="10",
+            missed_requests="1",
+            earned_coins="0",
+            rewarded_coins="0",
+            burned_coins="0",
+            validated_inferences="9",
+            invalidated_inferences="1"
+        )
+    )
+    
+    response = ParticipantDetailsResponse(
+        participant=participant,
+        rewards=[],
+        seed=None
+    )
+    
+    assert response.participant.index == "gonka1abc"
+    assert len(response.rewards) == 0
+    assert response.seed is None
 

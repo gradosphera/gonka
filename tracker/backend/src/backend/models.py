@@ -75,3 +75,27 @@ class EpochInfo(BaseModel):
     created_at_block_height: int
     participants: List[EpochParticipant]
 
+
+class RewardInfo(BaseModel):
+    epoch_id: int
+    assigned_reward_gnk: int
+    claimed: bool
+
+
+class SeedInfo(BaseModel):
+    participant: str
+    epoch_index: int
+    signature: str
+
+
+class ParticipantDetailsResponse(BaseModel):
+    participant: ParticipantStats
+    rewards: List[RewardInfo]
+    seed: Optional[SeedInfo]
+
+
+class LatestEpochInfo(BaseModel):
+    block_height: int
+    latest_epoch: dict
+    phase: str
+

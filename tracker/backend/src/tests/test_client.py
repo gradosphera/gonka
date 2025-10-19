@@ -144,3 +144,22 @@ async def test_check_node_health_invalid_url():
     assert result["error_message"] is not None
     assert result["response_time_ms"] is None
 
+
+@pytest.fixture
+def performance_summary_data(test_data_dir):
+    files = list(test_data_dir.glob("epoch_performance_summary_*.json"))
+    if not files:
+        pytest.skip("No epoch_performance_summary data file found")
+    with open(files[0]) as f:
+        return json.load(f)
+
+
+def test_performance_summary_structure(performance_summary_data):
+    assert "epochPerformanceSummary" in performance_summary_data
+    summary = performance_summary_data["epochPerformanceSummary"]
+    
+    assert "epoch_index" in summary
+    assert "participant_id" in summary
+    assert "rewarded_coins" in summary
+    assert "claimed" in summary
+

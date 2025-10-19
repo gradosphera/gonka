@@ -1,13 +1,14 @@
-import { useState } from 'react'
 import { Participant } from '../types/inference'
 import { ParticipantModal } from './ParticipantModal'
 
 interface ParticipantTableProps {
   participants: Participant[]
+  epochId: number
+  selectedParticipantId?: string | null
+  onParticipantSelect: (participantId: string | null) => void
 }
 
-export function ParticipantTable({ participants }: ParticipantTableProps) {
-  const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null)
+export function ParticipantTable({ participants, epochId, selectedParticipantId, onParticipantSelect }: ParticipantTableProps) {
   const sortedParticipants = [...participants].sort((a, b) => b.weight - a.weight)
 
   const shouldHighlightRed = (participant: Participant) => {
@@ -15,12 +16,16 @@ export function ParticipantTable({ participants }: ParticipantTableProps) {
   }
 
   const handleRowClick = (participant: Participant) => {
-    setSelectedParticipant(participant)
+    onParticipantSelect(participant.index)
   }
 
   const handleCloseModal = () => {
-    setSelectedParticipant(null)
+    onParticipantSelect(null)
   }
+  
+  const selectedParticipant = selectedParticipantId 
+    ? participants.find(p => p.index === selectedParticipantId) || null
+    : null
 
   return (
     <div className="overflow-x-auto border border-gray-200 rounded-md">
@@ -156,7 +161,8 @@ export function ParticipantTable({ participants }: ParticipantTableProps) {
       </table>
 
       <ParticipantModal 
-        participant={selectedParticipant} 
+        participant={selectedParticipant}
+        epochId={epochId}
         onClose={handleCloseModal} 
       />
     </div>

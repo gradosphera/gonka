@@ -34,3 +34,21 @@ export interface InferenceResponse {
   is_current: boolean;
 }
 
+export interface RewardInfo {
+  epoch_id: number;
+  assigned_reward_gnk: number;
+  claimed: boolean;
+}
+
+export interface SeedInfo {
+  participant: string;
+  epoch_index: number;
+  signature: string;
+}
+
+export interface ParticipantDetailsResponse {
+  participant: Participant;
+  rewards: RewardInfo[];
+  seed: SeedInfo | null;
+}
+

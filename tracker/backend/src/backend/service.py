@@ -6,7 +6,10 @@ from backend.database import CacheDB
 from backend.models import (
     ParticipantStats,
     CurrentEpochStats,
-    InferenceResponse
+    InferenceResponse,
+    RewardInfo,
+    SeedInfo,
+    ParticipantDetailsResponse
 )
 
 logger = logging.getLogger(__name__)
@@ -21,12 +24,22 @@ class InferenceService:
         self.last_fetch_time: Optional[float] = None
     
     async def get_canonical_height(self, epoch_id: int, requested_height: Optional[int] = None) -> int:
+        latest_info = await self.client.get_latest_epoch()
+        current_epoch_id = latest_info["latest_epoch"]["index"]
+        
+        if epoch_id == current_epoch_id:
+            current_height = await self.client.get_latest_height()
+            return requested_height if requested_height else current_height
+        
         epoch_data = await self.client.get_epoch_participants(epoch_id)
         effective_height = epoch_data["active_participants"]["effective_block_height"]
         
-        next_epoch_data = await self.client.get_epoch_participants(epoch_id + 1)
-        next_effective_height = next_epoch_data["active_participants"]["effective_block_height"]
-        canonical_height = next_effective_height - 10
+        try:
+            next_epoch_data = await self.client.get_epoch_participants(epoch_id + 1)
+            next_effective_height = next_epoch_data["active_participants"]["effective_block_height"]
+            canonical_height = next_effective_height - 10
+        except Exception:
+            canonical_height = latest_info["epoch_stages"]["next_poc_start"] - 10
         
         if requested_height is None:
             return canonical_height
@@ -37,8 +50,8 @@ class InferenceService:
                 f"No data exists for this epoch at this height."
             )
         
-        if requested_height >= next_effective_height:
-            logger.info(f"Height {requested_height} is after epoch {epoch_id} end (next epoch starts at {next_effective_height}). "
+        if requested_height >= canonical_height:
+            logger.info(f"Height {requested_height} is after epoch {epoch_id} end. "
                       f"Clamping to canonical height {canonical_height}")
             return canonical_height
         
@@ -50,7 +63,7 @@ class InferenceService:
         current_time = time.time()
         cache_age = (current_time - self.last_fetch_time) if self.last_fetch_time else None
         
-        if not reload and self.current_epoch_data and cache_age and cache_age < 30:
+        if not reload and self.current_epoch_data and cache_age and cache_age < 300:
             logger.info(f"Returning cached current epoch data (age: {cache_age:.1f}s)")
             return self.current_epoch_data
         
@@ -74,7 +87,8 @@ class InferenceService:
                 p["index"]: {
                     "weight": p.get("weight", 0),
                     "models": p.get("models", []),
-                    "validator_key": p.get("validator_key")
+                    "validator_key": p.get("validator_key"),
+                    "seed_signature": p.get("seed", {}).get("signature")
                 }
                 for p in epoch_data["active_participants"]["participants"]
             }
@@ -84,9 +98,11 @@ class InferenceService:
             ]
             
             participants_stats = []
+            stats_for_saving = []
             for p in active_participants:
                 try:
                     epoch_data_for_participant = epoch_participant_data.get(p["index"], {})
+                    
                     participant = ParticipantStats(
                         index=p["index"],
                         address=p["address"],
@@ -98,6 +114,10 @@ class InferenceService:
                         current_epoch_stats=CurrentEpochStats(**p["current_epoch_stats"])
                     )
                     participants_stats.append(participant)
+                    
+                    stats_dict = p.copy()
+                    stats_dict["seed_signature"] = epoch_data_for_participant.get("seed_signature")
+                    stats_for_saving.append(stats_dict)
                 except Exception as e:
                     logger.warning(f"Failed to parse participant {p.get('index', 'unknown')}: {e}")
             
@@ -115,7 +135,7 @@ class InferenceService:
             await self.cache_db.save_stats_batch(
                 epoch_id=epoch_id,
                 height=height,
-                participants_stats=[p.model_dump() for p in participants_stats]
+                participants_stats=stats_for_saving
             )
             
             self.current_epoch_id = epoch_id
@@ -185,7 +205,8 @@ class InferenceService:
                 p["index"]: {
                     "weight": p.get("weight", 0),
                     "models": p.get("models", []),
-                    "validator_key": p.get("validator_key")
+                    "validator_key": p.get("validator_key"),
+                    "seed_signature": p.get("seed", {}).get("signature")
                 }
                 for p in epoch_data["active_participants"]["participants"]
             }
@@ -195,9 +216,11 @@ class InferenceService:
             ]
             
             participants_stats = []
+            stats_for_saving = []
             for p in active_participants:
                 try:
                     epoch_data_for_participant = epoch_participant_data.get(p["index"], {})
+                    
                     participant = ParticipantStats(
                         index=p["index"],
                         address=p["address"],
@@ -209,13 +232,17 @@ class InferenceService:
                         current_epoch_stats=CurrentEpochStats(**p["current_epoch_stats"])
                     )
                     participants_stats.append(participant)
+                    
+                    stats_dict = p.copy()
+                    stats_dict["seed_signature"] = epoch_data_for_participant.get("seed_signature")
+                    stats_for_saving.append(stats_dict)
                 except Exception as e:
                     logger.warning(f"Failed to parse participant {p.get('index', 'unknown')}: {e}")
             
             await self.cache_db.save_stats_batch(
                 epoch_id=epoch_id,
                 height=target_height,
-                participants_stats=[p.model_dump() for p in participants_stats]
+                participants_stats=stats_for_saving
             )
             
             if height is None and not is_finished:
@@ -388,4 +415,156 @@ class InferenceService:
         except Exception as e:
             logger.error(f"Failed to merge jail and health data: {e}")
             return participants
+    
+    async def get_participant_details(
+        self,
+        participant_id: str,
+        epoch_id: int,
+        height: Optional[int] = None
+    ) -> Optional[ParticipantDetailsResponse]:
+        try:
+            latest_info = await self.client.get_latest_epoch()
+            current_epoch_id = latest_info["latest_epoch"]["index"]
+            is_current = (epoch_id == current_epoch_id)
+            
+            if is_current:
+                stats = await self.get_current_epoch_stats()
+            else:
+                stats = await self.get_historical_epoch_stats(epoch_id, height)
+            
+            participant = None
+            for p in stats.participants:
+                if p.index == participant_id:
+                    participant = p
+                    break
+            
+            if not participant:
+                return None
+            
+            if epoch_id == current_epoch_id:
+                epoch_ids = [current_epoch_id - i for i in range(1, 6) if current_epoch_id - i > 0]
+            elif epoch_id < current_epoch_id:
+                epoch_ids = [epoch_id - i for i in range(5, -1, -1) if epoch_id - i > 0]
+            else:
+                epoch_ids = []
+            
+            rewards = []
+            if epoch_ids:
+                rewards_data = await self.cache_db.get_rewards_for_participant(participant_id, epoch_ids)
+                cached_epoch_ids = {r["epoch_id"] for r in rewards_data}
+                
+                missing_epoch_ids = [eid for eid in epoch_ids if eid not in cached_epoch_ids]
+                
+                if missing_epoch_ids:
+                    logger.info(f"Fetching missing rewards inline for epochs {missing_epoch_ids}")
+                    newly_fetched = []
+                    for missing_epoch in missing_epoch_ids:
+                        try:
+                            summary = await self.client.get_epoch_performance_summary(
+                                missing_epoch,
+                                participant_id
+                            )
+                            perf = summary.get("epochPerformanceSummary", {})
+                            reward_data = {
+                                "epoch_id": missing_epoch,
+                                "participant_id": participant_id,
+                                "rewarded_coins": perf.get("rewarded_coins", "0"),
+                                "claimed": perf.get("claimed", False)
+                            }
+                            rewards_data.append(reward_data)
+                            newly_fetched.append(reward_data)
+                        except Exception as e:
+                            logger.debug(f"Could not fetch reward for epoch {missing_epoch}: {e}")
+                    
+                    if newly_fetched:
+                        await self.cache_db.save_reward_batch(newly_fetched)
+                        logger.info(f"Cached {len(newly_fetched)} inline-fetched rewards")
+                
+                for reward_data in rewards_data:
+                    rewarded_coins = reward_data.get("rewarded_coins", "0")
+                    gnk = int(rewarded_coins) // 1_000_000_000 if rewarded_coins != "0" else 0
+                    
+                    rewards.append(RewardInfo(
+                        epoch_id=reward_data["epoch_id"],
+                        assigned_reward_gnk=gnk,
+                        claimed=reward_data["claimed"]
+                    ))
+                
+                rewards.sort(key=lambda r: r.epoch_id, reverse=True)
+            
+            seed = None
+            cached_stats = await self.cache_db.get_stats(epoch_id, height)
+            if cached_stats:
+                for s in cached_stats:
+                    if s.get("index") == participant_id:
+                        seed_sig = s.get("_seed_signature")
+                        if seed_sig:
+                            seed = SeedInfo(
+                                participant=participant_id,
+                                epoch_index=epoch_id,
+                                signature=seed_sig
+                            )
+                        break
+            
+            return ParticipantDetailsResponse(
+                participant=participant,
+                rewards=rewards,
+                seed=seed
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to get participant details: {e}")
+            return None
+    
+    async def poll_participant_rewards(self):
+        try:
+            logger.info("Polling participant rewards")
+            
+            height = await self.client.get_latest_height()
+            epoch_data = await self.client.get_current_epoch_participants()
+            current_epoch = epoch_data["active_participants"]["epoch_group_id"]
+            participants = epoch_data["active_participants"]["participants"]
+            
+            rewards_to_save = []
+            
+            for participant in participants:
+                participant_id = participant["index"]
+                
+                for epoch_offset in range(1, 7):
+                    check_epoch = current_epoch - epoch_offset
+                    if check_epoch <= 0:
+                        continue
+                    
+                    cached_reward = await self.cache_db.get_reward(check_epoch, participant_id)
+                    if cached_reward and cached_reward["claimed"]:
+                        continue
+                    
+                    try:
+                        summary = await self.client.get_epoch_performance_summary(
+                            check_epoch,
+                            participant_id,
+                            height=height
+                        )
+                        
+                        perf = summary.get("epochPerformanceSummary", {})
+                        rewarded_coins = perf.get("rewarded_coins", "0")
+                        claimed = perf.get("claimed", False)
+                        
+                        rewards_to_save.append({
+                            "epoch_id": check_epoch,
+                            "participant_id": participant_id,
+                            "rewarded_coins": rewarded_coins,
+                            "claimed": claimed
+                        })
+                        
+                    except Exception as e:
+                        logger.debug(f"Failed to fetch reward for {participant_id} epoch {check_epoch}: {e}")
+                        continue
+            
+            if rewards_to_save:
+                await self.cache_db.save_reward_batch(rewards_to_save)
+                logger.info(f"Saved {len(rewards_to_save)} reward records")
+            
+        except Exception as e:
+            logger.error(f"Error polling participant rewards: {e}")
 
