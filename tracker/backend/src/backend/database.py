@@ -39,6 +39,35 @@ class CacheDB:
                 )
             """)
             
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS jail_status (
+                    epoch_id INTEGER NOT NULL,
+                    participant_index TEXT NOT NULL,
+                    is_jailed BOOLEAN NOT NULL,
+                    jailed_until TEXT,
+                    ready_to_unjail BOOLEAN,
+                    valcons_address TEXT,
+                    recorded_at TEXT NOT NULL,
+                    PRIMARY KEY (epoch_id, participant_index)
+                )
+            """)
+            
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_participant_jail 
+                ON jail_status(participant_index)
+            """)
+            
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS node_health (
+                    participant_index TEXT NOT NULL,
+                    is_healthy BOOLEAN NOT NULL,
+                    last_check TEXT NOT NULL,
+                    error_message TEXT,
+                    response_time_ms INTEGER,
+                    PRIMARY KEY (participant_index)
+                )
+            """)
+            
             await db.commit()
             logger.info(f"Database initialized at {self.db_path}")
     
@@ -164,4 +193,119 @@ class CacheDB:
             await db.execute("DELETE FROM inference_stats WHERE epoch_id = ?", (epoch_id,))
             await db.execute("DELETE FROM epoch_status WHERE epoch_id = ?", (epoch_id,))
             await db.commit()
+    
+    async def save_jail_status_batch(
+        self,
+        epoch_id: int,
+        jail_statuses: List[Dict[str, Any]]
+    ):
+        recorded_at = datetime.utcnow().isoformat()
+        
+        async with aiosqlite.connect(self.db_path) as db:
+            for status in jail_statuses:
+                await db.execute("""
+                    INSERT OR REPLACE INTO jail_status 
+                    (epoch_id, participant_index, is_jailed, jailed_until, ready_to_unjail, valcons_address, recorded_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    epoch_id,
+                    status.get("participant_index"),
+                    status.get("is_jailed", False),
+                    status.get("jailed_until"),
+                    status.get("ready_to_unjail", False),
+                    status.get("valcons_address"),
+                    recorded_at
+                ))
+            
+            await db.commit()
+            logger.info(f"Saved {len(jail_statuses)} jail statuses for epoch {epoch_id}")
+    
+    async def get_jail_status(self, epoch_id: int, participant_index: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            
+            if participant_index:
+                query = """
+                    SELECT * FROM jail_status
+                    WHERE epoch_id = ? AND participant_index = ?
+                """
+                params = (epoch_id, participant_index)
+            else:
+                query = """
+                    SELECT * FROM jail_status
+                    WHERE epoch_id = ?
+                """
+                params = (epoch_id,)
+            
+            async with db.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+                
+                if not rows:
+                    return None
+                
+                results = []
+                for row in rows:
+                    results.append({
+                        "epoch_id": row["epoch_id"],
+                        "participant_index": row["participant_index"],
+                        "is_jailed": bool(row["is_jailed"]),
+                        "jailed_until": row["jailed_until"],
+                        "ready_to_unjail": bool(row["ready_to_unjail"]) if row["ready_to_unjail"] is not None else None,
+                        "valcons_address": row["valcons_address"],
+                        "recorded_at": row["recorded_at"]
+                    })
+                
+                return results
+    
+    async def save_node_health_batch(
+        self,
+        health_statuses: List[Dict[str, Any]]
+    ):
+        last_check = datetime.utcnow().isoformat()
+        
+        async with aiosqlite.connect(self.db_path) as db:
+            for status in health_statuses:
+                await db.execute("""
+                    INSERT OR REPLACE INTO node_health 
+                    (participant_index, is_healthy, last_check, error_message, response_time_ms)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    status.get("participant_index"),
+                    status.get("is_healthy", False),
+                    last_check,
+                    status.get("error_message"),
+                    status.get("response_time_ms")
+                ))
+            
+            await db.commit()
+            logger.info(f"Saved {len(health_statuses)} node health statuses")
+    
+    async def get_node_health(self, participant_index: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            
+            if participant_index:
+                query = "SELECT * FROM node_health WHERE participant_index = ?"
+                params = (participant_index,)
+            else:
+                query = "SELECT * FROM node_health"
+                params = ()
+            
+            async with db.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+                
+                if not rows:
+                    return None
+                
+                results = []
+                for row in rows:
+                    results.append({
+                        "participant_index": row["participant_index"],
+                        "is_healthy": bool(row["is_healthy"]),
+                        "last_check": row["last_check"],
+                        "error_message": row["error_message"],
+                        "response_time_ms": row["response_time_ms"]
+                    })
+                
+                return results
 

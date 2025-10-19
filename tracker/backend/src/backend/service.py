@@ -1,6 +1,6 @@
 import logging
-from typing import Optional
-from datetime import datetime
+from typing import Optional, List, Dict, Any
+from datetime import datetime, timezone
 from backend.client import GonkaClient
 from backend.database import CacheDB
 from backend.models import (
@@ -99,6 +99,9 @@ class InferenceService:
                 except Exception as e:
                     logger.warning(f"Failed to parse participant {p.get('index', 'unknown')}: {e}")
             
+            active_participants_list = epoch_data["active_participants"]["participants"]
+            participants_stats = await self.merge_jail_and_health_data(epoch_id, participants_stats, height, active_participants_list)
+            
             response = InferenceResponse(
                 epoch_id=epoch_id,
                 height=height,
@@ -152,6 +155,10 @@ class InferenceService:
                     participants_stats.append(participant)
                 except Exception as e:
                     logger.warning(f"Failed to parse cached participant: {e}")
+            
+            epoch_data = await self.client.get_epoch_participants(epoch_id)
+            active_participants_list = epoch_data["active_participants"]["participants"]
+            participants_stats = await self.merge_jail_and_health_data(epoch_id, participants_stats, target_height, active_participants_list)
             
             return InferenceResponse(
                 epoch_id=epoch_id,
@@ -210,6 +217,8 @@ class InferenceService:
             if height is None and not is_finished:
                 await self.cache_db.mark_epoch_finished(epoch_id, target_height)
             
+            participants_stats = await self.merge_jail_and_health_data(epoch_id, participants_stats, target_height, epoch_data["active_participants"]["participants"])
+            
             response = InferenceResponse(
                 epoch_id=epoch_id,
                 height=target_height,
@@ -242,4 +251,137 @@ class InferenceService:
                     logger.info(f"Marked epoch {old_epoch_id} as finished and cached final stats")
                 except Exception as e:
                     logger.error(f"Failed to mark epoch {old_epoch_id} as finished: {e}")
+    
+    async def fetch_and_cache_jail_statuses(self, epoch_id: int, height: int, active_participants: List[Dict[str, Any]]):
+        try:
+            validators = await self.client.get_all_validators(height=height)
+            validators_with_tokens = [v for v in validators if v.get("tokens") and int(v.get("tokens")) > 0]
+            
+            active_indices = {p["index"] for p in active_participants}
+            
+            participant_pubkey_map = {p["index"]: p.get("validator_key") for p in active_participants}
+            
+            jail_statuses = []
+            now_utc = datetime.now(timezone.utc)
+            
+            for validator in validators_with_tokens:
+                operator_address = validator.get("operator_address", "")
+                
+                consensus_pub = (
+                    (validator.get("consensus_pubkey") or {}).get("key")
+                    or (validator.get("consensus_pubkey") or {}).get("value")
+                    or ""
+                )
+                
+                if not consensus_pub:
+                    continue
+                
+                participant_index = None
+                for index, pubkey in participant_pubkey_map.items():
+                    if pubkey == consensus_pub:
+                        participant_index = index
+                        break
+                
+                if not participant_index or participant_index not in active_indices:
+                    continue
+                
+                is_jailed = bool(validator.get("jailed"))
+                valcons_addr = self.client.pubkey_to_valcons(consensus_pub)
+                
+                jailed_until = None
+                ready_to_unjail = False
+                
+                if is_jailed:
+                    signing_info = await self.client.get_signing_info(valcons_addr, height=height)
+                    if signing_info:
+                        jailed_until_str = signing_info.get("jailed_until")
+                        if jailed_until_str and "1970-01-01" not in jailed_until_str:
+                            jailed_until = jailed_until_str
+                            try:
+                                jailed_until_dt = datetime.fromisoformat(jailed_until_str.replace("Z", "")).replace(tzinfo=timezone.utc)
+                                ready_to_unjail = now_utc > jailed_until_dt
+                            except Exception:
+                                pass
+                
+                jail_statuses.append({
+                    "participant_index": participant_index,
+                    "is_jailed": is_jailed,
+                    "jailed_until": jailed_until,
+                    "ready_to_unjail": ready_to_unjail,
+                    "valcons_address": valcons_addr
+                })
+            
+            await self.cache_db.save_jail_status_batch(epoch_id, jail_statuses)
+            logger.info(f"Cached jail statuses for {len(jail_statuses)} participants in epoch {epoch_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch and cache jail statuses: {e}")
+    
+    async def fetch_and_cache_node_health(self, active_participants: List[Dict[str, Any]]):
+        try:
+            health_statuses = []
+            
+            for participant in active_participants:
+                participant_index = participant.get("index")
+                inference_url = participant.get("inference_url")
+                
+                if not participant_index:
+                    continue
+                
+                health_result = await self.client.check_node_health(inference_url)
+                
+                health_statuses.append({
+                    "participant_index": participant_index,
+                    "is_healthy": health_result["is_healthy"],
+                    "error_message": health_result["error_message"],
+                    "response_time_ms": health_result["response_time_ms"]
+                })
+            
+            await self.cache_db.save_node_health_batch(health_statuses)
+            logger.info(f"Cached health statuses for {len(health_statuses)} participants")
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch and cache node health: {e}")
+    
+    async def merge_jail_and_health_data(self, epoch_id: int, participants: List[ParticipantStats], height: int, active_participants: List[Dict[str, Any]]) -> List[ParticipantStats]:
+        try:
+            jail_statuses_list = await self.cache_db.get_jail_status(epoch_id)
+            jail_map = {}
+            if jail_statuses_list:
+                jail_map = {j["participant_index"]: j for j in jail_statuses_list}
+            else:
+                logger.info(f"No cached jail statuses for epoch {epoch_id}, fetching inline")
+                await self.fetch_and_cache_jail_statuses(epoch_id, height, active_participants)
+                jail_statuses_list = await self.cache_db.get_jail_status(epoch_id)
+                if jail_statuses_list:
+                    jail_map = {j["participant_index"]: j for j in jail_statuses_list}
+            
+            health_statuses_list = await self.cache_db.get_node_health()
+            health_map = {}
+            if health_statuses_list:
+                health_map = {h["participant_index"]: h for h in health_statuses_list}
+            else:
+                logger.info("No cached health statuses, fetching inline")
+                await self.fetch_and_cache_node_health(active_participants)
+                health_statuses_list = await self.cache_db.get_node_health()
+                if health_statuses_list:
+                    health_map = {h["participant_index"]: h for h in health_statuses_list}
+            
+            for participant in participants:
+                jail_info = jail_map.get(participant.index)
+                if jail_info:
+                    participant.is_jailed = jail_info["is_jailed"]
+                    participant.jailed_until = jail_info["jailed_until"]
+                    participant.ready_to_unjail = jail_info["ready_to_unjail"]
+                
+                health_info = health_map.get(participant.index)
+                if health_info:
+                    participant.node_healthy = health_info["is_healthy"]
+                    participant.node_health_checked_at = health_info["last_check"]
+            
+            return participants
+            
+        except Exception as e:
+            logger.error(f"Failed to merge jail and health data: {e}")
+            return participants
 

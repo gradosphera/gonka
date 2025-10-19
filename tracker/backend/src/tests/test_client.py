@@ -105,3 +105,42 @@ async def test_client_all_participants():
     assert "participant" in data
     assert len(data["participant"]) > 0
 
+
+def test_pubkey_to_valcons():
+    test_pubkey = "YrQI3q3zBpHDLEMZvgqEkNwjc/BmZ5HkEMYgQwYp+8E="
+    
+    valcons = GonkaClient.pubkey_to_valcons(test_pubkey)
+    
+    assert valcons.startswith("gonkavalcons1")
+    assert len(valcons) > 20
+
+
+def test_pubkey_to_valcons_custom_hrp():
+    test_pubkey = "YrQI3q3zBpHDLEMZvgqEkNwjc/BmZ5HkEMYgQwYp+8E="
+    
+    valcons = GonkaClient.pubkey_to_valcons(test_pubkey, hrp="cosmosvalcons")
+    
+    assert valcons.startswith("cosmosvalcons1")
+
+
+@pytest.mark.asyncio
+async def test_check_node_health_no_url():
+    client = GonkaClient(base_urls=["http://node2.gonka.ai:8000"])
+    
+    result = await client.check_node_health("")
+    
+    assert result["is_healthy"] is False
+    assert result["error_message"] == "No inference URL"
+    assert result["response_time_ms"] is None
+
+
+@pytest.mark.asyncio
+async def test_check_node_health_invalid_url():
+    client = GonkaClient(base_urls=["http://node2.gonka.ai:8000"])
+    
+    result = await client.check_node_health("http://invalid.url.that.does.not.exist:99999")
+    
+    assert result["is_healthy"] is False
+    assert result["error_message"] is not None
+    assert result["response_time_ms"] is None
+

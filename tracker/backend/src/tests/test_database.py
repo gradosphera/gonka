@@ -192,3 +192,104 @@ async def test_save_stats_with_empty_models(db):
     assert result is not None
     assert result[0]["models"] == []
 
+
+@pytest.mark.asyncio
+async def test_save_and_get_jail_status(db):
+    jail_statuses = [
+        {
+            "participant_index": "gonka1abc",
+            "is_jailed": True,
+            "jailed_until": "2025-10-20T00:00:00Z",
+            "ready_to_unjail": False,
+            "valcons_address": "gonkavalcons1abc"
+        },
+        {
+            "participant_index": "gonka1def",
+            "is_jailed": False,
+            "jailed_until": None,
+            "ready_to_unjail": False,
+            "valcons_address": "gonkavalcons1def"
+        }
+    ]
+    
+    await db.save_jail_status_batch(epoch_id=56, jail_statuses=jail_statuses)
+    
+    result = await db.get_jail_status(epoch_id=56)
+    assert result is not None
+    assert len(result) == 2
+    assert result[0]["participant_index"] in ["gonka1abc", "gonka1def"]
+    assert result[0]["is_jailed"] in [True, False]
+
+
+@pytest.mark.asyncio
+async def test_get_jail_status_for_participant(db):
+    jail_statuses = [
+        {
+            "participant_index": "gonka1abc",
+            "is_jailed": True,
+            "jailed_until": "2025-10-20T00:00:00Z",
+            "ready_to_unjail": True,
+            "valcons_address": "gonkavalcons1abc"
+        }
+    ]
+    
+    await db.save_jail_status_batch(epoch_id=56, jail_statuses=jail_statuses)
+    
+    result = await db.get_jail_status(epoch_id=56, participant_index="gonka1abc")
+    assert result is not None
+    assert len(result) == 1
+    assert result[0]["is_jailed"] is True
+    assert result[0]["ready_to_unjail"] is True
+
+
+@pytest.mark.asyncio
+async def test_save_and_get_node_health(db):
+    health_statuses = [
+        {
+            "participant_index": "gonka1abc",
+            "is_healthy": True,
+            "error_message": None,
+            "response_time_ms": 150
+        },
+        {
+            "participant_index": "gonka1def",
+            "is_healthy": False,
+            "error_message": "Connection timeout",
+            "response_time_ms": None
+        }
+    ]
+    
+    await db.save_node_health_batch(health_statuses=health_statuses)
+    
+    result = await db.get_node_health()
+    assert result is not None
+    assert len(result) == 2
+    
+    healthy_node = next(r for r in result if r["participant_index"] == "gonka1abc")
+    assert healthy_node["is_healthy"] is True
+    assert healthy_node["response_time_ms"] == 150
+    
+    unhealthy_node = next(r for r in result if r["participant_index"] == "gonka1def")
+    assert unhealthy_node["is_healthy"] is False
+    assert unhealthy_node["error_message"] == "Connection timeout"
+
+
+@pytest.mark.asyncio
+async def test_get_node_health_for_participant(db):
+    health_statuses = [
+        {
+            "participant_index": "gonka1abc",
+            "is_healthy": True,
+            "error_message": None,
+            "response_time_ms": 200
+        }
+    ]
+    
+    await db.save_node_health_batch(health_statuses=health_statuses)
+    
+    result = await db.get_node_health(participant_index="gonka1abc")
+    assert result is not None
+    assert len(result) == 1
+    assert result[0]["is_healthy"] is True
+    assert result[0]["response_time_ms"] == 200
+

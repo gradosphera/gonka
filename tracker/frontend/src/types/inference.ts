@@ -18,6 +18,11 @@ export interface Participant {
   current_epoch_stats: CurrentEpochStats;
   missed_rate: number;
   invalidation_rate: number;
+  is_jailed?: boolean;
+  jailed_until?: string;
+  ready_to_unjail?: boolean;
+  node_healthy?: boolean;
+  node_health_checked_at?: string;
 }
 
 export interface InferenceResponse {

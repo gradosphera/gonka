@@ -21,6 +21,11 @@ class ParticipantStats(BaseModel):
     status: Optional[str] = None
     models: List[str] = []
     current_epoch_stats: CurrentEpochStats
+    is_jailed: Optional[bool] = None
+    jailed_until: Optional[str] = None
+    ready_to_unjail: Optional[bool] = None
+    node_healthy: Optional[bool] = None
+    node_health_checked_at: Optional[str] = None
     
     @computed_field
     @property

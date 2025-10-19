@@ -9,7 +9,6 @@ function App() {
   const [error, setError] = useState<string>('')
   const [selectedEpochId, setSelectedEpochId] = useState<number | null>(null)
   const [currentEpochId, setCurrentEpochId] = useState<number | null>(null)
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [autoRefreshCountdown, setAutoRefreshCountdown] = useState(30)
 
   const apiUrl = import.meta.env.VITE_API_URL || '/api'
@@ -38,7 +37,6 @@ function App() {
         setCurrentEpochId(result.epoch_id)
       }
       
-      setLastUpdated(new Date())
       setAutoRefreshCountdown(30)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data')
@@ -98,15 +96,6 @@ function App() {
 
   const handleEpochSelect = (epochId: number | null) => {
     setSelectedEpochId(epochId)
-  }
-
-  const formatTimestamp = (date: Date) => {
-    const now = new Date()
-    const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
-    
-    if (diffSeconds < 60) return `${diffSeconds} seconds ago`
-    if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)} minutes ago`
-    return date.toLocaleTimeString()
   }
 
   if (loading && !data) {
@@ -203,18 +192,11 @@ function App() {
                 </div>
               </div>
 
-              <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between text-xs text-gray-500">
-                <div>
-                  {lastUpdated && (
-                    <span>Last updated {formatTimestamp(lastUpdated)}</span>
-                  )}
+              {selectedEpochId === null && (
+                <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-end text-xs text-gray-500">
+                  <span>Auto-refresh in {autoRefreshCountdown}s</span>
                 </div>
-                <div>
-                  {selectedEpochId === null && (
-                    <span>Auto-refresh in {autoRefreshCountdown}s</span>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
 
             <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">

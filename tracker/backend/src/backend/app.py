@@ -9,9 +9,15 @@ from backend.client import GonkaClient
 from backend.database import CacheDB
 from backend.service import InferenceService
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:     %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 background_task = None
+jail_polling_task = None
+health_polling_task = None
 inference_service_instance = None
 
 
@@ -27,9 +33,47 @@ async def poll_current_epoch():
         await asyncio.sleep(30)
 
 
+async def poll_jail_status():
+    await asyncio.sleep(10)
+    
+    while True:
+        try:
+            if inference_service_instance:
+                epoch_data = await inference_service_instance.client.get_current_epoch_participants()
+                epoch_id = epoch_data["active_participants"]["epoch_group_id"]
+                height = await inference_service_instance.client.get_latest_height()
+                active_participants = epoch_data["active_participants"]["participants"]
+                
+                await inference_service_instance.fetch_and_cache_jail_statuses(
+                    epoch_id, height, active_participants
+                )
+                logger.info("Background polling: fetched jail statuses")
+        except Exception as e:
+            logger.error(f"Jail polling error: {e}")
+        
+        await asyncio.sleep(120)
+
+
+async def poll_node_health():
+    await asyncio.sleep(5)
+    
+    while True:
+        try:
+            if inference_service_instance:
+                epoch_data = await inference_service_instance.client.get_current_epoch_participants()
+                active_participants = epoch_data["active_participants"]["participants"]
+                
+                await inference_service_instance.fetch_and_cache_node_health(active_participants)
+                logger.info("Background polling: fetched node health")
+        except Exception as e:
+            logger.error(f"Node health polling error: {e}")
+        
+        await asyncio.sleep(30)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global background_task, inference_service_instance
+    global background_task, jail_polling_task, health_polling_task, inference_service_instance
     
     inference_urls = os.getenv("INFERENCE_URLS", "http://node2.gonka.ai:8000").split(",")
     inference_urls = [url.strip() for url in inference_urls]
@@ -48,7 +92,9 @@ async def lifespan(app: FastAPI):
     set_inference_service(inference_service_instance)
     
     background_task = asyncio.create_task(poll_current_epoch())
-    logger.info("Background polling task started")
+    jail_polling_task = asyncio.create_task(poll_jail_status())
+    health_polling_task = asyncio.create_task(poll_node_health())
+    logger.info("Background polling tasks started (epoch: 30s, jail: 120s, health: 30s)")
     
     yield
     
@@ -58,6 +104,20 @@ async def lifespan(app: FastAPI):
             await background_task
         except asyncio.CancelledError:
             logger.info("Background polling task cancelled")
+    
+    if jail_polling_task:
+        jail_polling_task.cancel()
+        try:
+            await jail_polling_task
+        except asyncio.CancelledError:
+            logger.info("Jail polling task cancelled")
+    
+    if health_polling_task:
+        health_polling_task.cancel()
+        try:
+            await health_polling_task
+        except asyncio.CancelledError:
+            logger.info("Health polling task cancelled")
 
 
 app = FastAPI(lifespan=lifespan)
