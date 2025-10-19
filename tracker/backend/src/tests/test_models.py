@@ -81,6 +81,84 @@ def test_participant_stats_high_missed_rate():
     assert stats.missed_rate == 0.95
 
 
+def test_participant_stats_with_models():
+    stats = ParticipantStats(
+        index="participant_4",
+        address="gonka1xyz...",
+        weight=150,
+        models=["Llama-3.1-8B", "Qwen2.5-7B"],
+        current_epoch_stats=CurrentEpochStats(
+            inference_count="10",
+            missed_requests="0",
+            earned_coins="0",
+            rewarded_coins="0",
+            burned_coins="0",
+            validated_inferences="10",
+            invalidated_inferences="0"
+        )
+    )
+    
+    assert stats.models == ["Llama-3.1-8B", "Qwen2.5-7B"]
+    assert stats.missed_rate == 0.0
+
+
+def test_participant_stats_invalidation_rate():
+    stats = ParticipantStats(
+        index="participant_5",
+        address="gonka1inv...",
+        weight=100,
+        current_epoch_stats=CurrentEpochStats(
+            inference_count="10",
+            missed_requests="0",
+            earned_coins="0",
+            rewarded_coins="0",
+            burned_coins="0",
+            validated_inferences="8",
+            invalidated_inferences="2"
+        )
+    )
+    
+    assert stats.invalidation_rate == 0.2
+
+
+def test_participant_stats_high_invalidation_rate():
+    stats = ParticipantStats(
+        index="participant_6",
+        address="gonka1bad...",
+        weight=50,
+        current_epoch_stats=CurrentEpochStats(
+            inference_count="10",
+            missed_requests="1",
+            earned_coins="0",
+            rewarded_coins="0",
+            burned_coins="0",
+            validated_inferences="5",
+            invalidated_inferences="5"
+        )
+    )
+    
+    assert stats.invalidation_rate == 0.5
+
+
+def test_participant_stats_zero_inferences_invalidation_rate():
+    stats = ParticipantStats(
+        index="participant_7",
+        address="gonka1zero...",
+        weight=75,
+        current_epoch_stats=CurrentEpochStats(
+            inference_count="0",
+            missed_requests="0",
+            earned_coins="0",
+            rewarded_coins="0",
+            burned_coins="0",
+            validated_inferences="0",
+            invalidated_inferences="0"
+        )
+    )
+    
+    assert stats.invalidation_rate == 0.0
+
+
 def test_inference_response():
     participants = [
         ParticipantStats(
@@ -118,14 +196,15 @@ def test_inference_response_serialization():
             index="participant_1",
             address="gonka1abc...",
             weight=100,
+            models=["Model-A"],
             current_epoch_stats=CurrentEpochStats(
                 inference_count="10",
                 missed_requests="1",
                 earned_coins="0",
                 rewarded_coins="0",
                 burned_coins="0",
-                validated_inferences="10",
-                invalidated_inferences="0"
+                validated_inferences="9",
+                invalidated_inferences="1"
             )
         )
     ]
@@ -141,6 +220,8 @@ def test_inference_response_serialization():
     assert "epoch_id" in json_data
     assert "participants" in json_data
     assert "missed_rate" in json_data
+    assert "invalidation_rate" in json_data
+    assert "models" in json_data
 
 
 def test_model_from_real_data():

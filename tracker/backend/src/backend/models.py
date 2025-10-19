@@ -19,6 +19,7 @@ class ParticipantStats(BaseModel):
     weight: int
     inference_url: Optional[str] = None
     status: Optional[str] = None
+    models: List[str] = []
     current_epoch_stats: CurrentEpochStats
     
     @computed_field
@@ -32,6 +33,17 @@ class ParticipantStats(BaseModel):
             return 0.0
         
         return round(missed / total, 4)
+    
+    @computed_field
+    @property
+    def invalidation_rate(self) -> float:
+        invalidated = int(self.current_epoch_stats.invalidated_inferences)
+        inferences = int(self.current_epoch_stats.inference_count)
+        
+        if inferences == 0:
+            return 0.0
+        
+        return round(invalidated / inferences, 4)
 
 
 class InferenceResponse(BaseModel):

@@ -157,3 +157,38 @@ async def test_multiple_participants_same_epoch(db):
     assert "participant_1" in indices
     assert "participant_10" in indices
 
+
+@pytest.mark.asyncio
+async def test_save_and_retrieve_models(db):
+    stats = {
+        "index": "participant_1",
+        "address": "gonka1abc...",
+        "models": ["Llama-3.1-8B", "Qwen2.5-7B"],
+        "inference_count": "10",
+        "missed_requests": "2"
+    }
+    
+    await db.save_stats(epoch_id=8, height=8000, participant_index="participant_1", stats=stats)
+    
+    result = await db.get_stats(epoch_id=8)
+    assert result is not None
+    assert len(result) == 1
+    assert result[0]["index"] == "participant_1"
+    assert result[0]["models"] == ["Llama-3.1-8B", "Qwen2.5-7B"]
+
+
+@pytest.mark.asyncio
+async def test_save_stats_with_empty_models(db):
+    stats = {
+        "index": "participant_2",
+        "address": "gonka1def...",
+        "models": [],
+        "inference_count": "5"
+    }
+    
+    await db.save_stats(epoch_id=9, height=9000, participant_index="participant_2", stats=stats)
+    
+    result = await db.get_stats(epoch_id=9)
+    assert result is not None
+    assert result[0]["models"] == []
+

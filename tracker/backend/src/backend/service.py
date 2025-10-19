@@ -70,6 +70,11 @@ class InferenceService:
                 p["index"] for p in epoch_data["active_participants"]["participants"]
             }
             
+            models_by_index = {
+                p["index"]: p.get("models", [])
+                for p in epoch_data["active_participants"]["participants"]
+            }
+            
             active_participants = [
                 p for p in participants_list if p["index"] in active_indices
             ]
@@ -83,6 +88,7 @@ class InferenceService:
                         weight=p["weight"],
                         inference_url=p.get("inference_url"),
                         status=p.get("status"),
+                        models=models_by_index.get(p["index"], []),
                         current_epoch_stats=CurrentEpochStats(**p["current_epoch_stats"])
                     )
                     participants_stats.append(participant)
@@ -162,6 +168,11 @@ class InferenceService:
                 p["index"] for p in epoch_data["active_participants"]["participants"]
             }
             
+            models_by_index = {
+                p["index"]: p.get("models", [])
+                for p in epoch_data["active_participants"]["participants"]
+            }
+            
             active_participants = [
                 p for p in participants_list if p["index"] in active_indices
             ]
@@ -175,6 +186,7 @@ class InferenceService:
                         weight=p["weight"],
                         inference_url=p.get("inference_url"),
                         status=p.get("status"),
+                        models=models_by_index.get(p["index"], []),
                         current_epoch_stats=CurrentEpochStats(**p["current_epoch_stats"])
                     )
                     participants_stats.append(participant)
