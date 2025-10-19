@@ -17,6 +17,8 @@ build/
 config.env
 *.sqlite
 *.db
+cache/
 node_modules/
 *.local
+test_data/
 

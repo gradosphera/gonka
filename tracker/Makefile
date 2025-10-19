@@ -20,6 +20,8 @@ test-backend:
 test-integration:
 	@echo "Testing backend API..."
 	@curl -sf http://localhost/api/v1/hello | grep -q "hello" && echo "✓ Backend API working" || (echo "✗ Backend API failed" && exit 1)
+	@echo "Testing inference API..."
+	@curl -sf http://localhost/api/v1/inference/current | grep -q "epoch_id" && echo "✓ Inference API working" || (echo "✗ Inference API failed" && exit 1)
 	@echo "Testing frontend..."
 	@curl -sf http://localhost/ | grep -q "<!doctype html>" && echo "✓ Frontend working" || (echo "✗ Frontend failed" && exit 1)
 	@echo "\nAll integration tests passed"
