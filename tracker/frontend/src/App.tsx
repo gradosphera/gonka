@@ -48,7 +48,32 @@ function App() {
   }
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const epochParam = params.get('epoch')
+    if (epochParam) {
+      const epochId = parseInt(epochParam)
+      if (!isNaN(epochId)) {
+        setSelectedEpochId(epochId)
+        return
+      }
+    }
+    fetchData(null)
+  }, [])
+
+  useEffect(() => {
     fetchData(selectedEpochId)
+    
+    const params = new URLSearchParams(window.location.search)
+    if (selectedEpochId === null) {
+      params.delete('epoch')
+    } else {
+      params.set('epoch', selectedEpochId.toString())
+    }
+    
+    const newUrl = params.toString() 
+      ? `${window.location.pathname}?${params.toString()}`
+      : window.location.pathname
+    window.history.replaceState({}, '', newUrl)
   }, [selectedEpochId])
 
   useEffect(() => {
@@ -115,13 +140,16 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8 max-w-[1600px]">
-        <header className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            Gonka Chain Inference Tracker
-          </h1>
-          <p className="text-base text-gray-600">
-            Real-time monitoring of participant performance and model availability
-          </p>
+        <header className="mb-8 flex items-center gap-4">
+          <img src="/gonka.svg" alt="Gonka" className="h-12 w-auto" />
+          <div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-1">
+              Gonka Chain Inference Tracker
+            </h1>
+            <p className="text-base text-gray-600">
+              Real-time monitoring of participant performance and model availability
+            </p>
+          </div>
         </header>
 
         {data && (
