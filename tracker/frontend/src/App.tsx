@@ -38,15 +38,6 @@ function App() {
         setCurrentEpochId(result.epoch_id)
       }
       
-      if (result.participants && result.participants.length > 0) {
-        setTimeout(() => {
-          result.participants.forEach((participant: any) => {
-            fetch(`${apiUrl}/v1/participants/${participant.index}?epoch_id=${result.epoch_id}`)
-              .catch(err => console.debug('Pre-fetch error (expected):', err))
-          })
-        }, 100)
-      }
-      
       setAutoRefreshCountdown(30)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data')
@@ -205,6 +196,16 @@ function App() {
                     <div className="text-sm font-medium text-gray-500 mb-1">Total Participants</div>
                     <div className="text-2xl font-bold text-gray-900">
                       {data.participants.length}
+                    </div>
+                  </div>
+
+                  <div className="border-l border-gray-200 pl-8">
+                    <div className="text-sm font-medium text-gray-500 mb-1">Total Assigned Rewards</div>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {data.total_assigned_rewards_gnk !== undefined && data.total_assigned_rewards_gnk !== null 
+                        ? `${data.total_assigned_rewards_gnk.toLocaleString()} GNK`
+                        : <span className="text-gray-400 italic">Calculating...</span>
+                      }
                     </div>
                   </div>
                 </div>

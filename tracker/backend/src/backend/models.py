@@ -58,6 +58,7 @@ class InferenceResponse(BaseModel):
     participants: List[ParticipantStats]
     cached_at: Optional[str] = None
     is_current: bool = False
+    total_assigned_rewards_gnk: Optional[int] = None
 
 
 class EpochParticipant(BaseModel):

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
@@ -119,6 +120,9 @@ class InferenceService:
                     participants_stats.append(participant)
                     
                     stats_dict = p.copy()
+                    stats_dict["weight"] = epoch_data_for_participant.get("weight", 0)
+                    stats_dict["models"] = epoch_data_for_participant.get("models", [])
+                    stats_dict["validator_key"] = epoch_data_for_participant.get("validator_key")
                     stats_dict["seed_signature"] = epoch_data_for_participant.get("seed_signature")
                     stats_for_saving.append(stats_dict)
                 except Exception as e:
@@ -144,6 +148,8 @@ class InferenceService:
             self.current_epoch_id = epoch_id
             self.current_epoch_data = response
             self.last_fetch_time = current_time
+            
+            asyncio.create_task(self._ensure_participant_caches(epoch_id, participants_stats))
             
             logger.info(f"Fetched current epoch {epoch_id} stats at height {height}: {len(participants_stats)} participants")
             
@@ -185,12 +191,19 @@ class InferenceService:
             active_participants_list = epoch_data["active_participants"]["participants"]
             participants_stats = await self.merge_jail_and_health_data(epoch_id, participants_stats, target_height, active_participants_list)
             
+            total_rewards_gnk = await self.cache_db.get_epoch_total_rewards(epoch_id)
+            if total_rewards_gnk is None:
+                asyncio.create_task(self._calculate_and_cache_total_rewards(epoch_id))
+            
+            asyncio.create_task(self._ensure_participant_caches(epoch_id, participants_stats))
+            
             return InferenceResponse(
                 epoch_id=epoch_id,
                 height=target_height,
                 participants=participants_stats,
                 cached_at=cached_stats[0].get("_cached_at"),
-                is_current=False
+                is_current=False,
+                total_assigned_rewards_gnk=total_rewards_gnk
             )
         
         try:
@@ -237,6 +250,9 @@ class InferenceService:
                     participants_stats.append(participant)
                     
                     stats_dict = p.copy()
+                    stats_dict["weight"] = epoch_data_for_participant.get("weight", 0)
+                    stats_dict["models"] = epoch_data_for_participant.get("models", [])
+                    stats_dict["validator_key"] = epoch_data_for_participant.get("validator_key")
                     stats_dict["seed_signature"] = epoch_data_for_participant.get("seed_signature")
                     stats_for_saving.append(stats_dict)
                 except Exception as e:
@@ -253,13 +269,20 @@ class InferenceService:
             
             participants_stats = await self.merge_jail_and_health_data(epoch_id, participants_stats, target_height, epoch_data["active_participants"]["participants"])
             
+            total_rewards_gnk = await self.cache_db.get_epoch_total_rewards(epoch_id)
+            if total_rewards_gnk is None:
+                asyncio.create_task(self._calculate_and_cache_total_rewards(epoch_id))
+            
             response = InferenceResponse(
                 epoch_id=epoch_id,
                 height=target_height,
                 participants=participants_stats,
                 cached_at=datetime.utcnow().isoformat(),
-                is_current=False
+                is_current=False,
+                total_assigned_rewards_gnk=total_rewards_gnk
             )
+            
+            asyncio.create_task(self._ensure_participant_caches(epoch_id, participants_stats))
             
             logger.info(f"Fetched and cached historical epoch {epoch_id} at height {target_height}: {len(participants_stats)} participants")
             
@@ -673,4 +696,120 @@ class InferenceService:
             
         except Exception as e:
             logger.error(f"Error polling hardware nodes: {e}")
+    
+    async def _calculate_and_cache_total_rewards(self, epoch_id: int):
+        try:
+            logger.info(f"Calculating total assigned rewards for epoch {epoch_id}")
+            
+            epoch_data = await self.client.get_epoch_participants(epoch_id)
+            participants = epoch_data["active_participants"]["participants"]
+            
+            total_ugnk = 0
+            fetched_count = 0
+            rewards_batch = []
+            
+            for participant in participants:
+                participant_id = participant["index"]
+                
+                try:
+                    summary = await self.client.get_epoch_performance_summary(
+                        epoch_id,
+                        participant_id
+                    )
+                    perf = summary.get("epochPerformanceSummary", {})
+                    rewarded_coins = perf.get("rewarded_coins", "0")
+                    total_ugnk += int(rewarded_coins)
+                    fetched_count += 1
+                    
+                    rewards_batch.append({
+                        "epoch_id": epoch_id,
+                        "participant_id": participant_id,
+                        "rewarded_coins": rewarded_coins,
+                        "claimed": perf.get("claimed", False)
+                    })
+                except Exception as e:
+                    logger.debug(f"Could not fetch reward for {participant_id} in epoch {epoch_id}: {e}")
+                    continue
+            
+            if rewards_batch:
+                await self.cache_db.save_reward_batch(rewards_batch)
+                logger.debug(f"Cached {len(rewards_batch)} participant rewards during total calculation")
+            
+            total_gnk = total_ugnk // 1_000_000_000
+            
+            await self.cache_db.save_epoch_total_rewards(epoch_id, total_gnk)
+            logger.info(f"Calculated and cached total rewards for epoch {epoch_id}: {total_gnk} GNK from {fetched_count}/{len(participants)} participants")
+            
+        except Exception as e:
+            logger.error(f"Error calculating epoch total rewards for epoch {epoch_id}: {e}")
+    
+    async def poll_epoch_total_rewards(self):
+        try:
+            logger.info("Polling epoch total rewards")
+            
+            latest_info = await self.client.get_latest_epoch()
+            current_epoch_id = latest_info["latest_epoch"]["index"]
+            
+            for offset in range(1, 6):
+                epoch_id = current_epoch_id - offset
+                if epoch_id <= 0:
+                    continue
+                
+                cached_total = await self.cache_db.get_epoch_total_rewards(epoch_id)
+                if cached_total is not None:
+                    logger.debug(f"Epoch {epoch_id} total rewards already cached: {cached_total} GNK")
+                    continue
+                
+                logger.info(f"Calculating total rewards for epoch {epoch_id}")
+                await self._calculate_and_cache_total_rewards(epoch_id)
+            
+            logger.info("Completed epoch total rewards polling")
+            
+        except Exception as e:
+            logger.error(f"Error polling epoch total rewards: {e}")
+    
+    async def _ensure_participant_caches(self, epoch_id: int, participants: List[ParticipantStats]):
+        try:
+            logger.info(f"Ensuring participant caches for epoch {epoch_id} ({len(participants)} participants)")
+            
+            for participant in participants:
+                participant_id = participant.index
+                
+                cached_reward = await self.cache_db.get_reward(epoch_id, participant_id)
+                if cached_reward is None:
+                    try:
+                        summary = await self.client.get_epoch_performance_summary(epoch_id, participant_id)
+                        perf = summary.get("epochPerformanceSummary", {})
+                        await self.cache_db.save_reward_batch([{
+                            "epoch_id": epoch_id,
+                            "participant_id": participant_id,
+                            "rewarded_coins": perf.get("rewarded_coins", "0"),
+                            "claimed": perf.get("claimed", False)
+                        }])
+                        logger.debug(f"Cached reward for {participant_id} in epoch {epoch_id}")
+                    except Exception as e:
+                        logger.debug(f"Failed to cache reward for {participant_id}: {e}")
+                
+                cached_warm_keys = await self.cache_db.get_warm_keys(epoch_id, participant_id)
+                if cached_warm_keys is None:
+                    try:
+                        warm_keys = await self.client.get_authz_grants(participant_id)
+                        await self.cache_db.save_warm_keys_batch(epoch_id, participant_id, warm_keys)
+                        logger.debug(f"Cached {len(warm_keys)} warm keys for {participant_id}")
+                    except Exception as e:
+                        logger.debug(f"Failed to cache warm keys for {participant_id}: {e}")
+                
+                cached_hardware = await self.cache_db.get_hardware_nodes(epoch_id, participant_id)
+                if cached_hardware is None:
+                    try:
+                        hardware_nodes = await self.client.get_hardware_nodes(participant_id)
+                        await self.cache_db.save_hardware_nodes_batch(epoch_id, participant_id, hardware_nodes)
+                        logger.debug(f"Cached {len(hardware_nodes)} hardware nodes for {participant_id}")
+                    except Exception as e:
+                        logger.debug(f"Failed to cache hardware nodes for {participant_id}: {e}")
+            
+            logger.info(f"Completed participant cache population for epoch {epoch_id}")
+            
+        except Exception as e:
+            logger.error(f"Error ensuring participant caches: {e}")
 

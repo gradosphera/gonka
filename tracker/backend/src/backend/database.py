@@ -121,6 +121,14 @@ class CacheDB:
                 ON participant_hardware_nodes(epoch_id, participant_id)
             """)
             
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS epoch_total_rewards (
+                    epoch_id INTEGER PRIMARY KEY,
+                    total_rewards_gnk INTEGER NOT NULL,
+                    calculated_at TEXT NOT NULL
+                )
+            """)
+            
             await db.commit()
             logger.info(f"Database initialized at {self.db_path}")
     
@@ -569,4 +577,39 @@ class CacheDB:
                     })
                 
                 return results
+    
+    async def save_epoch_total_rewards(
+        self,
+        epoch_id: int,
+        total_rewards_gnk: int
+    ):
+        calculated_at = datetime.utcnow().isoformat()
+        
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT OR REPLACE INTO epoch_total_rewards 
+                (epoch_id, total_rewards_gnk, calculated_at)
+                VALUES (?, ?, ?)
+            """, (epoch_id, total_rewards_gnk, calculated_at))
+            await db.commit()
+            logger.info(f"Saved total rewards {total_rewards_gnk} GNK for epoch {epoch_id}")
+    
+    async def get_epoch_total_rewards(
+        self,
+        epoch_id: int
+    ) -> Optional[int]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            
+            async with db.execute("""
+                SELECT total_rewards_gnk
+                FROM epoch_total_rewards
+                WHERE epoch_id = ?
+            """, (epoch_id,)) as cursor:
+                row = await cursor.fetchone()
+                
+                if not row:
+                    return None
+                
+                return row["total_rewards_gnk"]
 

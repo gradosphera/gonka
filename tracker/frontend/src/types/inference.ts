@@ -32,6 +32,7 @@ export interface InferenceResponse {
   participants: Participant[];
   cached_at?: string;
   is_current: boolean;
+  total_assigned_rewards_gnk?: number;
 }
 
 export interface RewardInfo {

@@ -21,6 +21,7 @@ health_polling_task = None
 rewards_polling_task = None
 warm_keys_polling_task = None
 hardware_nodes_polling_task = None
+epoch_total_rewards_polling_task = None
 inference_service_instance = None
 
 
@@ -71,7 +72,7 @@ async def poll_node_health():
         except Exception as e:
             logger.error(f"Node health polling error: {e}")
         
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)
 
 
 async def poll_rewards():
@@ -113,9 +114,22 @@ async def poll_hardware_nodes():
         await asyncio.sleep(600)
 
 
+async def poll_epoch_total_rewards():
+    await asyncio.sleep(30)
+    
+    while True:
+        try:
+            if inference_service_instance:
+                await inference_service_instance.poll_epoch_total_rewards()
+        except Exception as e:
+            logger.error(f"Epoch total rewards polling error: {e}")
+        
+        await asyncio.sleep(600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global background_task, jail_polling_task, health_polling_task, rewards_polling_task, warm_keys_polling_task, hardware_nodes_polling_task, inference_service_instance
+    global background_task, jail_polling_task, health_polling_task, rewards_polling_task, warm_keys_polling_task, hardware_nodes_polling_task, epoch_total_rewards_polling_task, inference_service_instance
     
     inference_urls = os.getenv("INFERENCE_URLS", "http://node2.gonka.ai:8000").split(",")
     inference_urls = [url.strip() for url in inference_urls]
@@ -139,7 +153,8 @@ async def lifespan(app: FastAPI):
     rewards_polling_task = asyncio.create_task(poll_rewards())
     warm_keys_polling_task = asyncio.create_task(poll_warm_keys())
     hardware_nodes_polling_task = asyncio.create_task(poll_hardware_nodes())
-    logger.info("Background polling tasks started (epoch: 5min, jail: 120s, health: 30s, rewards: 60s, warm_keys: 5min, hardware_nodes: 10min)")
+    epoch_total_rewards_polling_task = asyncio.create_task(poll_epoch_total_rewards())
+    logger.info("Background polling tasks started (epoch: 5min, jail: 120s, health: 60s, rewards: 60s, warm_keys: 5min, hardware_nodes: 10min, total_rewards: 10min)")
     
     yield
     
@@ -184,6 +199,13 @@ async def lifespan(app: FastAPI):
             await hardware_nodes_polling_task
         except asyncio.CancelledError:
             logger.info("Hardware nodes polling task cancelled")
+    
+    if epoch_total_rewards_polling_task:
+        epoch_total_rewards_polling_task.cancel()
+        try:
+            await epoch_total_rewards_polling_task
+        except asyncio.CancelledError:
+            logger.info("Epoch total rewards polling task cancelled")
 
 
 app = FastAPI(lifespan=lifespan)
