@@ -8,6 +8,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>('')
   const [selectedEpochId, setSelectedEpochId] = useState<number | null>(null)
+  const [currentEpochId, setCurrentEpochId] = useState<number | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [autoRefreshCountdown, setAutoRefreshCountdown] = useState(30)
 
@@ -32,6 +33,11 @@ function App() {
       
       const result = await response.json()
       setData(result)
+      
+      if (result.is_current) {
+        setCurrentEpochId(result.epoch_id)
+      }
+      
       setLastUpdated(new Date())
       setAutoRefreshCountdown(30)
     } catch (err) {
@@ -107,50 +113,54 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-gray-50">
+      <div className="container mx-auto px-4 py-8 max-w-[1600px]">
         <header className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            Gonka Chain Inference Statistics
+            Gonka Chain Inference Tracker
           </h1>
-          <p className="text-gray-600">
+          <p className="text-base text-gray-600">
             Real-time monitoring of participant performance and model availability
           </p>
         </header>
 
         {data && (
           <>
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-6">
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
+              <div className="flex flex-wrap items-center justify-between gap-6">
+                <div className="flex flex-wrap items-center gap-8">
                   <div>
-                    <span className="text-sm text-gray-600">Epoch ID:</span>
-                    <span className="ml-2 text-lg font-semibold text-gray-900">
-                      {data.epoch_id}
-                    </span>
-                    {data.is_current && (
-                      <span className="ml-2 px-2 py-1 text-xs bg-green-100 text-green-800 rounded">
-                        CURRENT
+                    <div className="text-sm font-medium text-gray-500 mb-1">Epoch ID</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl font-bold text-gray-900">
+                        {data.epoch_id}
                       </span>
-                    )}
+                      {data.is_current && (
+                        <span className="px-2.5 py-0.5 text-xs font-semibold bg-gray-900 text-white rounded">
+                          CURRENT
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-sm text-gray-600">Height:</span>
-                    <span className="ml-2 text-lg font-semibold text-gray-900">
+
+                  <div className="border-l border-gray-200 pl-8">
+                    <div className="text-sm font-medium text-gray-500 mb-1">Block Height</div>
+                    <div className="text-2xl font-bold text-gray-900">
                       {data.height.toLocaleString()}
-                    </span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-sm text-gray-600">Participants:</span>
-                    <span className="ml-2 text-lg font-semibold text-gray-900">
+
+                  <div className="border-l border-gray-200 pl-8">
+                    <div className="text-sm font-medium text-gray-500 mb-1">Total Participants</div>
+                    <div className="text-2xl font-bold text-gray-900">
                       {data.participants.length}
-                    </span>
+                    </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-4">
                   <EpochSelector
-                    currentEpochId={data.epoch_id}
+                    currentEpochId={currentEpochId || data.epoch_id}
                     selectedEpochId={selectedEpochId}
                     onSelectEpoch={handleEpochSelect}
                     disabled={loading}
@@ -158,17 +168,17 @@ function App() {
                   <button
                     onClick={handleRefresh}
                     disabled={loading}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                    className="px-5 py-2.5 bg-gray-900 text-white font-medium rounded-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                   >
                     {loading ? 'Refreshing...' : 'Refresh'}
                   </button>
                 </div>
               </div>
 
-              <div className="mt-4 flex items-center justify-between text-sm text-gray-500">
+              <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between text-xs text-gray-500">
                 <div>
                   {lastUpdated && (
-                    <span>Last updated: {formatTimestamp(lastUpdated)}</span>
+                    <span>Last updated {formatTimestamp(lastUpdated)}</span>
                   )}
                 </div>
                 <div>
@@ -179,13 +189,15 @@ function App() {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                Participant Statistics
-              </h2>
-              <p className="text-sm text-gray-600 mb-4">
-                Participants highlighted in red have missed rate or invalidation rate exceeding 10%
-              </p>
+            <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+              <div className="mb-4">
+                <h2 className="text-xl font-bold text-gray-900 mb-1">
+                  Participant Statistics
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Rows with red background indicate missed rate or invalidation rate exceeding 10%
+                </p>
+              </div>
               <ParticipantTable participants={data.participants} />
             </div>
           </>

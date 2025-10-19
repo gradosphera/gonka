@@ -18,23 +18,23 @@ export function EpochSelector({
 
   return (
     <div className="flex items-center gap-2">
-      <label htmlFor="epoch-select" className="text-sm font-medium text-gray-700">
+      <label htmlFor="epoch-select" className="text-sm font-medium text-gray-700 whitespace-nowrap">
         Epoch:
       </label>
       <select
         id="epoch-select"
-        value={selectedEpochId || ''}
+        value={selectedEpochId || currentEpochId}
         onChange={(e) => {
           const value = e.target.value
-          onSelectEpoch(value === '' ? null : parseInt(value))
+          const epochId = parseInt(value)
+          onSelectEpoch(epochId === currentEpochId ? null : epochId)
         }}
         disabled={disabled}
-        className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+        className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-gray-500 disabled:bg-gray-100 disabled:cursor-not-allowed text-gray-900 bg-white"
       >
-        <option value="">Current Epoch ({currentEpochId})</option>
         {epochOptions.reverse().map((epoch) => (
           <option key={epoch} value={epoch}>
-            Epoch {epoch}
+            Epoch {epoch}{epoch === currentEpochId ? ' (Current)' : ''}
           </option>
         ))}
       </select>

@@ -70,8 +70,11 @@ class InferenceService:
                 p["index"] for p in epoch_data["active_participants"]["participants"]
             }
             
-            models_by_index = {
-                p["index"]: p.get("models", [])
+            epoch_participant_data = {
+                p["index"]: {
+                    "weight": p.get("weight", 0),
+                    "models": p.get("models", [])
+                }
                 for p in epoch_data["active_participants"]["participants"]
             }
             
@@ -82,13 +85,14 @@ class InferenceService:
             participants_stats = []
             for p in active_participants:
                 try:
+                    epoch_data_for_participant = epoch_participant_data.get(p["index"], {})
                     participant = ParticipantStats(
                         index=p["index"],
                         address=p["address"],
-                        weight=p["weight"],
+                        weight=epoch_data_for_participant.get("weight", 0),
                         inference_url=p.get("inference_url"),
                         status=p.get("status"),
-                        models=models_by_index.get(p["index"], []),
+                        models=epoch_data_for_participant.get("models", []),
                         current_epoch_stats=CurrentEpochStats(**p["current_epoch_stats"])
                     )
                     participants_stats.append(participant)
@@ -168,8 +172,11 @@ class InferenceService:
                 p["index"] for p in epoch_data["active_participants"]["participants"]
             }
             
-            models_by_index = {
-                p["index"]: p.get("models", [])
+            epoch_participant_data = {
+                p["index"]: {
+                    "weight": p.get("weight", 0),
+                    "models": p.get("models", [])
+                }
                 for p in epoch_data["active_participants"]["participants"]
             }
             
@@ -180,13 +187,14 @@ class InferenceService:
             participants_stats = []
             for p in active_participants:
                 try:
+                    epoch_data_for_participant = epoch_participant_data.get(p["index"], {})
                     participant = ParticipantStats(
                         index=p["index"],
                         address=p["address"],
-                        weight=p["weight"],
+                        weight=epoch_data_for_participant.get("weight", 0),
                         inference_url=p.get("inference_url"),
                         status=p.get("status"),
-                        models=models_by_index.get(p["index"], []),
+                        models=epoch_data_for_participant.get("models", []),
                         current_epoch_stats=CurrentEpochStats(**p["current_epoch_stats"])
                     )
                     participants_stats.append(participant)

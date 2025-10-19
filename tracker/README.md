@@ -1,15 +1,32 @@
-# Gonka Chain Observer
+# Gonka Chain Inference Tracker
 
-Minimalistic full-stack application for observing Gonka Chain with inference statistics tracking.
+Professional full-stack monitoring application for Gonka Chain inference statistics tracking.
 
 ## Features
 
-- Real-time inference statistics for current epoch
+### Backend
+- Real-time inference statistics for current epoch (auto-refreshes every 30s)
 - Historical epoch statistics with height-wise caching
 - SQLite database for immutable historical data
 - Multi-URL Gonka Chain client with automatic failover
-- Background polling every 30 seconds
-- Interactive dashboard with visual highlighting
+- Background polling task for continuous updates
+- Correct weight extraction from epoch participants
+- Models field support per participant
+- Computed invalidation rate and missed rate metrics
+
+### Frontend
+- Clean, professional dashboard with Gonka.ai inspired design
+- Auto-refresh every 30 seconds with countdown timer
+- Epoch selector for viewing last 10 epochs
+- Comprehensive participant table with:
+  - Full participant indexes (monospace font)
+  - Correct weights from epoch data
+  - Supported models display (gray badges)
+  - Total inferenced (inferences + missed)
+  - Validated/invalidated counts
+  - Missed rate and invalidation rate percentages
+- Red highlighting for participants with >10% missed or invalidation rate
+- Responsive design with horizontal scroll for mobile
 
 ## Structure
 
