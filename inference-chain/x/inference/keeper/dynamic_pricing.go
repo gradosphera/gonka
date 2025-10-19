@@ -63,11 +63,7 @@ func (k *Keeper) UpdateDynamicPricing(ctx context.Context) error {
 		"currentTime", currentTimeMillis, "windowStart", timeWindowStartMillis, "windowDuration", windowDurationMillis)
 
 	// Get utilization stats for all models over the time window (using milliseconds)
-	statsMap, err := k.GetSummaryByModelAndTime(ctx, timeWindowStartMillis, currentTimeMillis)
-	if err != nil {
-		return fmt.Errorf("failed to get model utilization stats: %w", err)
-	}
-
+	statsMap := k.GetSummaryByModelAndTime(ctx, timeWindowStartMillis, currentTimeMillis)
 	totalModelsProcessed := 0
 	totalPriceChanges := 0
 

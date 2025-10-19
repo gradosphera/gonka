@@ -58,7 +58,6 @@ type MlNodeReconciliationConfig struct {
 // OnNewBlockDispatcher orchestrates processing of new block events
 type OnNewBlockDispatcher struct {
 	nodeBroker           *broker.Broker
-	lastVerifiedAppHashHex  string
 	nodePocOrchestrator  poc.NodePoCOrchestrator
 	queryClient          ChainStateClient
 	phaseTracker         *chainphase.ChainPhaseTracker
@@ -68,7 +67,9 @@ type OnNewBlockDispatcher struct {
 	randomSeedManager    poc.RandomSeedManager
 	configManager        *apiconfig.ConfigManager
 	validator            *validation.InferenceValidator
+
 	transactionRecorder     cosmosclient.InferenceCosmosClient
+	lastVerifiedAppHashHex  string
 	isGenesisBlockProcessed bool
 }
 
@@ -112,15 +113,15 @@ func NewOnNewBlockDispatcher(
 		nodeBroker:             nodeBroker,
 		nodePocOrchestrator:    nodePocOrchestrator,
 		queryClient:            queryClient,
-		lastVerifiedAppHashHex: configManager.GetGenesisAppHash(),
 		phaseTracker:           phaseTracker,
 		reconciliationConfig:   reconciliationConfig,
 		getStatusFunc:          getStatusFunc,
 		setHeightFunc:          setHeightFunc,
 		randomSeedManager:      randomSeedManager,
 		configManager:          configManager,
+		validator:              validator,
+		lastVerifiedAppHashHex: configManager.GetGenesisAppHash(),
 		transactionRecorder:    transactionRecorder,
-		validator:            validator,
 	}
 }
 
@@ -165,6 +166,11 @@ func NewOnNewBlockDispatcherFromCosmosClient(
 
 // ProcessNewBlock is the main entry point for processing new block events
 func (d *OnNewBlockDispatcher) ProcessNewBlock(ctx context.Context, blockInfo chainevents.FinalizedBlock, knownHeight int64) error {
+	logging.Debug("Processing new block", types.Stages,
+		"height", blockInfo.Block.Header.Height,
+		"hash", blockInfo.BlockId.Hash)
+
+	// 1. Check if active participants proof for genesis epoch is created
 	if err := d.collectGenesisBlockProof(); err != nil {
 		logging.Error("failed to collect genesis block proof", types.Stages, "height", blockInfo.Block.Header.Height, "err", err)
 		return err
@@ -176,15 +182,10 @@ func (d *OnNewBlockDispatcher) ProcessNewBlock(ctx context.Context, blockInfo ch
 		return err
 	}
 
-	logging.Debug("Processing new block", types.Stages,
-		"height", blockInfo.Block.Header.Height,
-		"hash", blockInfo.BlockId.Hash)
-
-	// 1. Query network for current state (sync status, epoch params)
+	// 2. Query network for current state (sync status, epoch params)
 	networkInfo, err := d.queryNetworkInfo(ctx)
 	if err != nil {
-		logging.Error("Failed to query network info, skipping block processing", types.Stages,
-			"error", err, "height", blockInfo.Block.Header.Height)
+		logging.Error("Failed to query network info, skipping block processing", types.Stages, "error", err, "height", height)
 		return err // Skip processing this block
 	}
 
@@ -252,7 +253,6 @@ func (d *OnNewBlockDispatcher) ProcessNewBlock(ctx context.Context, blockInfo ch
 	// 	comes from a totally different source?
 	// TODO: log block that came from event vs block returned by query
 	// TODO: can we add the state to the block event? As a future optimization?
-
 	d.phaseTracker.Update(chainphase.BlockInfo{Height: height, Hash: blockInfo.BlockId.Hash.String()}, &networkInfo.LatestEpoch, &networkInfo.EpochParams, networkInfo.IsSynced)
 	epochState := d.phaseTracker.GetCurrentEpochState()
 	if epochState == nil {
@@ -286,12 +286,14 @@ func (d *OnNewBlockDispatcher) ProcessNewBlock(ctx context.Context, blockInfo ch
 	return nil
 }
 
-// verifyParticipantsChain verifies participants from current epoch to genesis epoch (or to latest known verified epoch) backwards
-// using proof stored on-chain
+// verifyParticipantsChain verifies participants from current epoch to genesis epoch
+// (or to latest known verified epoch) backwards using proof stored on-chain
 // runs if verification is on AND if blocks coming with gaps (1.. 4... 8.. etc)
+// It panics if verification failed.
 func (d *OnNewBlockDispatcher) verifyParticipantsChain(ctx context.Context, curHeight int64, knownHeight int64) {
 	logging.Debug("verify participants", types.ParticipantsVerification, "known_height", knownHeight, "current_height", curHeight, "last_verified_app_hash", d.lastVerifiedAppHashHex)
 
+	// verification is on AND there is gap between latest processed block and current block
 	if d.lastVerifiedAppHashHex != "" && knownHeight != curHeight-1 {
 		logging.Info("verify participants: start", types.ParticipantsVerification, "lastVerifiedAppHashHex", d.lastVerifiedAppHashHex)
 
@@ -326,6 +328,7 @@ func (d *OnNewBlockDispatcher) verifyParticipantsChain(ctx context.Context, curH
 }
 
 // Creates proof for genesis block. Is called only ones and only on genesis node
+// It is needed, because dapi container starts later, than blockchain container and dapi misses 1-2 first blocks by subscription
 func (el *OnNewBlockDispatcher) collectGenesisBlockProof() error {
 	if !el.configManager.GetChainNodeConfig().IsGenesis || el.isGenesisBlockProcessed {
 		return nil
@@ -336,7 +339,7 @@ func (el *OnNewBlockDispatcher) collectGenesisBlockProof() error {
 		return err
 	}
 
-	// genesis block data is in block header with height=2
+	// genesis block (height=1) validators data is stored in LastCommit section of next block header (height=2)
 	genesisBlockResultsHeight := int64(2)
 	block, err := rpcClient.Block(context.Background(), &genesisBlockResultsHeight)
 	if err != nil {
@@ -357,6 +360,7 @@ func (el *OnNewBlockDispatcher) collectGenesisBlockProof() error {
 	if err := el.transactionRecorder.SubmitActiveParticipantsPendingProof(
 		&types.MsgSubmitParticipantsProof{BlockHeight: uint64(1), ValidatorsProof: proof}); err != nil {
 		logging.Error("Failed to set validators proof", types.ParticipantsVerification, "error", err)
+		return err
 	}
 	el.isGenesisBlockProcessed = true
 	return nil

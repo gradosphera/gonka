@@ -92,10 +92,7 @@ func (k Keeper) InferencesAndTokensStatsByModels(ctx context.Context, req *types
 	}
 
 	stats := make([]*types.ModelStats, 0)
-	statsPerModels, err := k.GetSummaryByModelAndTime(ctx, req.TimeFrom, req.TimeTo)
-	if err != nil {
-		return nil, err
-	}
+	statsPerModels := k.GetSummaryByModelAndTime(ctx, req.TimeFrom, req.TimeTo)
 	for modelName, summary := range statsPerModels {
 		stats = append(stats, &types.ModelStats{
 			Model:      modelName,

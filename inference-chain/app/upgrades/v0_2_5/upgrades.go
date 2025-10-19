@@ -1,4 +1,4 @@
-package v0_2_4
+package v0_2_5
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 )
 
+// TODO REMOVE ME AFTER TESTS!
 var activeParticipantsEpoch0Test = types.ActiveParticipants{
 	Participants: []*types.ActiveParticipant{
 		{
@@ -22,7 +23,20 @@ var activeParticipantsEpoch0Test = types.ActiveParticipants{
 	CreatedAtBlockHeight: 1,
 }
 
-// TODO check me!
+// The list of participants for epoch 0 is required to verify the entire participant chain from the current epoch back to the genesis epoch. To validate participants, we need to know the consensus public keys of the validators who signed the genesis block.
+//
+// This was obtained as follows:
+//
+//  1. We retrieved the list of validator HEX addresses for the genesis block (height = 1) from the LastCommit of the next block (height = 2):
+//     curl http://genesis_node__by_your_choice:rpc_port/block?height=2
+//
+//  2. We retrieved the list of participants from the genesis file:
+//     curl -s http://genesis_node__by_your_choice:rpc_port/genesis
+//
+// 3. Knowing the validator key (consensus key) of each active participant from step 2, we computed its corresponding validator address (HEX) and matched the participants with the validators obtained in step 1.
+//
+// You can reproduce this process by running:
+// python3 inference-chain/scripts/py/match_validators.py <any_genesis_node_rpc> (default is "[http://node2.gonka.ai:26657](http://node2.gonka.ai:26657)")
 var activeParticipantsEpoch0Mainnet = types.ActiveParticipants{
 	Participants: []*types.ActiveParticipant{
 		{
@@ -73,10 +87,11 @@ var activeParticipantsEpoch0Mainnet = types.ActiveParticipants{
 			Weight:       1,
 			InferenceUrl: "http://node2.gonka.ai:8000",
 		},
-		// this participant wasn't included as active participant for epoch 1
-		// so there is no available data except of validator (consensus) key on chain for epoch 0
 		{
+			Index:        "gonka1vhprg9epy683xghp8ddtdlw2y9cycecmm64tje",
 			ValidatorKey: "2ykmApZ4pfSMfoREBUDu/vImEYlOym8ymVWOw2wcMQo=",
+			Weight:       1,
+			InferenceUrl: "http://36.189.234.237:17241",
 		},
 		{
 			Index:        "gonka1d7p03cu2y2yt3vytq9wlfm6tlz0lfhlgv9h82p",

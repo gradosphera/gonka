@@ -27,14 +27,16 @@ func fillValidatorsProof(lastCommit chainevents.LastCommit) (*types.ValidatorsPr
 	}
 
 	for _, sign := range lastCommit.Signatures {
+		encodedSign := base64.StdEncoding.EncodeToString(sign.Signature)
+
 		logging.Info("Preparing signature to send", types.ParticipantsVerification,
-			"sign_ts", sign.Timestamp,
-			"signature", sign.Signature,
+			"signature_ts", sign.Timestamp,
+			"signature", encodedSign,
 			"height", height,
-			"validator_address", sign.ValidatorAddress)
+			"validator_address", sign.ValidatorAddress.String())
 
 		proof.Signatures = append(proof.Signatures, &types.SignatureInfo{
-			SignatureBase64:     base64.StdEncoding.EncodeToString(sign.Signature),
+			SignatureBase64:     encodedSign,
 			ValidatorAddressHex: sign.ValidatorAddress.String(),
 			Timestamp:           sign.Timestamp,
 		})

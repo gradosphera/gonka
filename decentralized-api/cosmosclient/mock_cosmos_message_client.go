@@ -233,7 +233,7 @@ func (m *MockCosmosMessageClient) SubmitActiveParticipantsPendingProof(proof *ty
 	return args.Error(0)
 }
 
-func (m *MockCosmosMessageClient) SubmitMissingProofs(tx *types.MsgSubmitActiveParticipantsProofData) error {
+func (m *MockCosmosMessageClient) SubmitActiveParticipantsMissingProofs(tx *types.MsgSubmitActiveParticipantsProofData) error {
 	args := m.Called(tx)
 	return args.Error(0)
 }

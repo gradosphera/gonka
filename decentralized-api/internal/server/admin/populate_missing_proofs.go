@@ -142,7 +142,7 @@ func fillDataForUpgrade(
 			ProofOpts:                   proofOps,
 		}
 
-		if err := transactionRecorder.SubmitMissingProofs(tx); err != nil {
+		if err := transactionRecorder.SubmitActiveParticipantsMissingProofs(tx); err != nil {
 			logging.Error("FillDataForUpgrade: Failed to submit proof", types.System, "err", err)
 			return err
 		}
