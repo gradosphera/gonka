@@ -16,10 +16,7 @@ import (
 // Called from BeginBlocker to ensure prices are calculated once per block
 func (k *Keeper) UpdateDynamicPricing(ctx context.Context) error {
 	// Get current parameters
-	params, err := k.TryGetParams(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get params: %w", err)
-	}
+	params := k.GetParams(ctx)
 	if params.DynamicPricingParams == nil {
 		return fmt.Errorf("dynamic pricing parameters not found")
 	}
@@ -64,6 +61,7 @@ func (k *Keeper) UpdateDynamicPricing(ctx context.Context) error {
 
 	// Get utilization stats for all models over the time window (using milliseconds)
 	statsMap := k.GetSummaryByModelAndTime(ctx, timeWindowStartMillis, currentTimeMillis)
+
 	totalModelsProcessed := 0
 	totalPriceChanges := 0
 
@@ -87,7 +85,7 @@ func (k *Keeper) UpdateDynamicPricing(ctx context.Context) error {
 		// Calculate utilization (0.0 to 1.0+)
 		// capacity is tokens/second, so scale it to the window duration in seconds
 		utilization := 0.0
-		if capacity > 0 && windowDurationSeconds > 0 {
+		if capacity > 0 {
 			capacityForWindow := float64(capacity) * float64(windowDurationSeconds) // capacity * seconds = total tokens
 			utilization = float64(tokensUsed) / capacityForWindow
 		}
@@ -134,11 +132,7 @@ func (k *Keeper) UpdateDynamicPricing(ctx context.Context) error {
 // Returns the new per-token price for a specific model based on utilization
 func (k *Keeper) CalculateModelDynamicPrice(ctx context.Context, modelId string, utilization float64) (uint64, uint64, error) {
 	// Get current parameters
-	params, err := k.TryGetParams(ctx)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to get params: %w", err)
-	}
-
+	params := k.GetParams(ctx)
 	if params.DynamicPricingParams == nil {
 		return 0, 0, fmt.Errorf("dynamic pricing parameters not found")
 	}
@@ -391,7 +385,11 @@ func (k *Keeper) SetModelCurrentPrice(ctx context.Context, modelId string, price
 
 // GetModelCurrentPrice retrieves the current per-token price for a model
 func (k *Keeper) GetModelCurrentPrice(ctx context.Context, modelId string) (uint64, error) {
-	return k.ModelCurrentPriceMap.Get(ctx, modelId)
+	price, err := k.ModelCurrentPriceMap.Get(ctx, modelId)
+	if err != nil {
+		return 0, fmt.Errorf("current price not found for model: %s", modelId)
+	}
+	return price, nil
 }
 
 // GetAllModelCurrentPrices retrieves current prices for all models using Collections

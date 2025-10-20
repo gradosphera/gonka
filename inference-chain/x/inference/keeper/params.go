@@ -3,7 +3,6 @@ package keeper
 import (
 	"context"
 
-	"cosmossdk.io/collections"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/productscience/inference/x/inference/types"
 )
@@ -16,7 +15,6 @@ func (k Keeper) GetParams(ctx context.Context) (params types.Params) {
 		return params
 	}
 
-	// PANIC: MustUnmarshal panics if params bytes are invalid or incompatible with codec
 	k.cdc.MustUnmarshal(bz, &params)
 	return params
 }

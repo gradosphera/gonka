@@ -30,6 +30,7 @@ import (
 type MockAccountKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockAccountKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockAccountKeeperMockRecorder is the mock recorder for MockAccountKeeper.
@@ -121,6 +122,7 @@ func (mr *MockAccountKeeperMockRecorder) SetAccount(ctx, acc any) *gomock.Call {
 type MockBankKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockBankKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockBankKeeperMockRecorder is the mock recorder for MockBankKeeper.
@@ -187,6 +189,7 @@ func (mr *MockBankKeeperMockRecorder) SpendableCoins(arg0, arg1 any) *gomock.Cal
 type MockGroupMessageKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockGroupMessageKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockGroupMessageKeeperMockRecorder is the mock recorder for MockGroupMessageKeeper.
@@ -345,6 +348,7 @@ func (mr *MockGroupMessageKeeperMockRecorder) Vote(goCtx, msg any) *gomock.Call 
 type MockParamSubspace struct {
 	ctrl     *gomock.Controller
 	recorder *MockParamSubspaceMockRecorder
+	isgomock struct{}
 }
 
 // MockParamSubspaceMockRecorder is the mock recorder for MockParamSubspace.
@@ -392,6 +396,7 @@ func (mr *MockParamSubspaceMockRecorder) Set(arg0, arg1, arg2 any) *gomock.Call 
 type MockStakingHooks struct {
 	ctrl     *gomock.Controller
 	recorder *MockStakingHooksMockRecorder
+	isgomock struct{}
 }
 
 // MockStakingHooksMockRecorder is the mock recorder for MockStakingHooks.
@@ -555,6 +560,7 @@ func (mr *MockStakingHooksMockRecorder) BeforeValidatorSlashed(ctx, valAddr, fra
 type MockValidatorSet struct {
 	ctrl     *gomock.Controller
 	recorder *MockValidatorSetMockRecorder
+	isgomock struct{}
 }
 
 // MockValidatorSetMockRecorder is the mock recorder for MockValidatorSet.
@@ -592,6 +598,7 @@ func (mr *MockValidatorSetMockRecorder) IterateValidators(arg0, arg1 any) *gomoc
 type MockStakingKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockStakingKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockStakingKeeperMockRecorder is the mock recorder for MockStakingKeeper.
@@ -645,6 +652,7 @@ func (mr *MockStakingKeeperMockRecorder) SetComputeValidators(ctx, computeResult
 type MockCollateralKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockCollateralKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockCollateralKeeperMockRecorder is the mock recorder for MockCollateralKeeper.
@@ -710,6 +718,7 @@ func (mr *MockCollateralKeeperMockRecorder) Slash(ctx, participant, slashFractio
 type MockStreamVestingKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockStreamVestingKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockStreamVestingKeeperMockRecorder is the mock recorder for MockStreamVestingKeeper.
@@ -761,6 +770,7 @@ func (mr *MockStreamVestingKeeperMockRecorder) AdvanceEpoch(ctx, completedEpoch 
 type MockParticipantKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockParticipantKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockParticipantKeeperMockRecorder is the mock recorder for MockParticipantKeeper.
@@ -854,6 +864,7 @@ func (mr *MockParticipantKeeperMockRecorder) SetParticipant(ctx, participant any
 type MockHardwareNodeKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockHardwareNodeKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockHardwareNodeKeeperMockRecorder is the mock recorder for MockHardwareNodeKeeper.
@@ -892,6 +903,7 @@ func (mr *MockHardwareNodeKeeperMockRecorder) GetHardwareNodes(ctx, address any)
 type MockEpochGroupDataKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockEpochGroupDataKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockEpochGroupDataKeeperMockRecorder is the mock recorder for MockEpochGroupDataKeeper.
@@ -968,6 +980,7 @@ func (mr *MockEpochGroupDataKeeperMockRecorder) SetEpochGroupData(ctx, epochGrou
 type MockBookkeepingBankKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockBookkeepingBankKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockBookkeepingBankKeeperMockRecorder is the mock recorder for MockBookkeepingBankKeeper.
@@ -1073,6 +1086,7 @@ func (mr *MockBookkeepingBankKeeperMockRecorder) SendCoinsFromModuleToModule(ctx
 type MockModelKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockModelKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockModelKeeperMockRecorder is the mock recorder for MockModelKeeper.
@@ -1126,6 +1140,7 @@ func (mr *MockModelKeeperMockRecorder) GetGovernanceModels(ctx any) *gomock.Call
 type MockAuthzKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockAuthzKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockAuthzKeeperMockRecorder is the mock recorder for MockAuthzKeeper.
@@ -1160,10 +1175,25 @@ func (mr *MockAuthzKeeperMockRecorder) GranterGrants(ctx, req any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GranterGrants", reflect.TypeOf((*MockAuthzKeeper)(nil).GranterGrants), ctx, req)
 }
 
+// SaveGrant mocks base method.
+func (m *MockAuthzKeeper) SaveGrant(ctx context.Context, grantee, granter types.AccAddress, authorization authz.Authorization, expiration *time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveGrant", ctx, grantee, granter, authorization, expiration)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SaveGrant indicates an expected call of SaveGrant.
+func (mr *MockAuthzKeeperMockRecorder) SaveGrant(ctx, grantee, granter, authorization, expiration any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveGrant", reflect.TypeOf((*MockAuthzKeeper)(nil).SaveGrant), ctx, grantee, granter, authorization, expiration)
+}
+
 // MockBlsKeeper is a mock of BlsKeeper interface.
 type MockBlsKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockBlsKeeperMockRecorder
+	isgomock struct{}
 }
 
 // MockBlsKeeperMockRecorder is the mock recorder for MockBlsKeeper.
