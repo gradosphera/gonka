@@ -2,8 +2,12 @@ import { useEffect, useState } from 'react'
 import { InferenceResponse } from './types/inference'
 import { ParticipantTable } from './components/ParticipantTable'
 import { EpochSelector } from './components/EpochSelector'
+import { Timeline } from './components/Timeline'
+
+type Page = 'dashboard' | 'timeline'
 
 function App() {
+  const [currentPage, setCurrentPage] = useState<Page>('dashboard')
   const [data, setData] = useState<InferenceResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>('')
@@ -48,8 +52,14 @@ function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    const pageParam = params.get('page')
     const epochParam = params.get('epoch')
     const participantParam = params.get('participant')
+    
+    if (pageParam === 'timeline') {
+      setCurrentPage('timeline')
+      return
+    }
     
     if (epochParam) {
       const epochId = parseInt(epochParam)
@@ -123,6 +133,23 @@ function App() {
     window.history.replaceState({}, '', newUrl)
   }
 
+  const handlePageChange = (page: Page) => {
+    setCurrentPage(page)
+    
+    const params = new URLSearchParams(window.location.search)
+    if (page === 'timeline') {
+      params.set('page', 'timeline')
+      params.delete('epoch')
+      params.delete('participant')
+    } else {
+      params.delete('page')
+      params.delete('block')
+    }
+    
+    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
+    window.history.replaceState({}, '', newUrl)
+  }
+
   if (loading && !data) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -154,105 +181,134 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8 max-w-[1600px]">
-        <header className="mb-8 flex items-center gap-4">
-          <img src="/gonka.svg" alt="Gonka" className="h-12 w-auto" />
-          <div>
-            <h1 className="text-4xl font-bold text-gray-900 mb-1">
-              Gonka Chain Inference Tracker
-            </h1>
-            <p className="text-base text-gray-600">
-              Real-time monitoring of participant performance and model availability
-            </p>
+        <header className="mb-8">
+          <div className="flex items-center gap-4 mb-6">
+            <img src="/gonka.svg" alt="Gonka" className="h-12 w-auto" />
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900 mb-1">
+                Gonka Chain Inference Tracker
+              </h1>
+              <p className="text-base text-gray-600">
+                Real-time monitoring of participant performance and model availability
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <button
+              onClick={() => handlePageChange('dashboard')}
+              className={`px-4 py-2 font-medium rounded-md transition-colors ${
+                currentPage === 'dashboard'
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              Host Dashboard
+            </button>
+            <button
+              onClick={() => handlePageChange('timeline')}
+              className={`px-4 py-2 font-medium rounded-md transition-colors ${
+                currentPage === 'timeline'
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              Timeline
+            </button>
           </div>
         </header>
 
-        {data && (
-          <>
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
-              <div className="flex flex-wrap items-center justify-between gap-6">
-                <div className="flex flex-wrap items-center gap-8">
-                  <div>
-                    <div className="text-sm font-medium text-gray-500 mb-1">Epoch ID</div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl font-bold text-gray-900">
-                        {data.epoch_id}
-                      </span>
-                      {data.is_current && (
-                        <span className="px-2.5 py-0.5 text-xs font-semibold bg-gray-900 text-white rounded">
-                          CURRENT
+        {currentPage === 'timeline' ? (
+          <Timeline />
+        ) : (
+          data && (
+            <>
+              <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
+                <div className="flex flex-wrap items-center justify-between gap-6">
+                  <div className="flex flex-wrap items-center gap-8">
+                    <div>
+                      <div className="text-sm font-medium text-gray-500 mb-1">Epoch ID</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl font-bold text-gray-900">
+                          {data.epoch_id}
                         </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="border-l border-gray-200 pl-8">
-                    <div className="text-sm font-medium text-gray-500 mb-1">Block Height</div>
-                    <div className="text-2xl font-bold text-gray-900">
-                      {data.height.toLocaleString()}
-                    </div>
-                  </div>
-
-                  <div className="border-l border-gray-200 pl-8">
-                    <div className="text-sm font-medium text-gray-500 mb-1">Total Participants</div>
-                    <div className="text-2xl font-bold text-gray-900">
-                      {data.participants.length}
-                    </div>
-                  </div>
-
-                  <div className="border-l border-gray-200 pl-8">
-                    <div className="text-sm font-medium text-gray-500 mb-1">Total Assigned Rewards</div>
-                    <div className="text-2xl font-bold text-gray-900">
-                      {data.total_assigned_rewards_gnk !== undefined && data.total_assigned_rewards_gnk !== null 
-                        ? `${data.total_assigned_rewards_gnk.toLocaleString()} GNK`
-                        : <span className="text-gray-400 italic">
-                            {loading ? 'Loading...' : data.is_current ? 'Not yet settled' : 'Calculating...'}
+                        {data.is_current && (
+                          <span className="px-2.5 py-0.5 text-xs font-semibold bg-gray-900 text-white rounded">
+                            CURRENT
                           </span>
-                      }
+                        )}
+                      </div>
                     </div>
+
+                    <div className="border-l border-gray-200 pl-8">
+                      <div className="text-sm font-medium text-gray-500 mb-1">Block Height</div>
+                      <div className="text-2xl font-bold text-gray-900">
+                        {data.height.toLocaleString()}
+                      </div>
+                    </div>
+
+                    <div className="border-l border-gray-200 pl-8">
+                      <div className="text-sm font-medium text-gray-500 mb-1">Total Participants</div>
+                      <div className="text-2xl font-bold text-gray-900">
+                        {data.participants.length}
+                      </div>
+                    </div>
+
+                    <div className="border-l border-gray-200 pl-8">
+                      <div className="text-sm font-medium text-gray-500 mb-1">Total Assigned Rewards</div>
+                      <div className="text-2xl font-bold text-gray-900">
+                        {data.total_assigned_rewards_gnk !== undefined && data.total_assigned_rewards_gnk !== null 
+                          ? `${data.total_assigned_rewards_gnk.toLocaleString()} GNK`
+                          : <span className="text-gray-400 italic">
+                              {loading ? 'Loading...' : data.is_current ? 'Not yet settled' : 'Calculating...'}
+                            </span>
+                        }
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <EpochSelector
+                      currentEpochId={currentEpochId || data.epoch_id}
+                      selectedEpochId={selectedEpochId}
+                      onSelectEpoch={handleEpochSelect}
+                      disabled={loading}
+                    />
+                    <button
+                      onClick={handleRefresh}
+                      disabled={loading}
+                      className="px-5 py-2.5 bg-gray-900 text-white font-medium rounded-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {loading ? 'Refreshing...' : 'Refresh'}
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  <EpochSelector
-                    currentEpochId={currentEpochId || data.epoch_id}
-                    selectedEpochId={selectedEpochId}
-                    onSelectEpoch={handleEpochSelect}
-                    disabled={loading}
-                  />
-                  <button
-                    onClick={handleRefresh}
-                    disabled={loading}
-                    className="px-5 py-2.5 bg-gray-900 text-white font-medium rounded-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {loading ? 'Refreshing...' : 'Refresh'}
-                  </button>
-                </div>
+                {selectedEpochId === null && (
+                  <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-end text-xs text-gray-500">
+                    <span>Auto-refresh in {autoRefreshCountdown}s</span>
+                  </div>
+                )}
               </div>
 
-              {selectedEpochId === null && (
-                <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-end text-xs text-gray-500">
-                  <span>Auto-refresh in {autoRefreshCountdown}s</span>
+              <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+                <div className="mb-4">
+                  <h2 className="text-xl font-bold text-gray-900 mb-1">
+                    Participant Statistics
+                  </h2>
+                  <p className="text-sm text-gray-500">
+                    Rows with red background indicate missed rate or invalidation rate exceeding 10%
+                  </p>
                 </div>
-              )}
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-              <div className="mb-4">
-                <h2 className="text-xl font-bold text-gray-900 mb-1">
-                  Participant Statistics
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Rows with red background indicate missed rate or invalidation rate exceeding 10%
-                </p>
+                <ParticipantTable 
+                  participants={data.participants} 
+                  epochId={data.epoch_id}
+                  selectedParticipantId={selectedParticipantId}
+                  onParticipantSelect={handleParticipantSelect}
+                />
               </div>
-              <ParticipantTable 
-                participants={data.participants} 
-                epochId={data.epoch_id}
-                selectedParticipantId={selectedParticipantId}
-                onParticipantSelect={handleParticipantSelect}
-              />
-            </div>
-          </>
+            </>
+          )
         )}
       </div>
     </div>

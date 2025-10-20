@@ -122,3 +122,24 @@ class LatestEpochInfo(BaseModel):
     latest_epoch: dict
     phase: str
 
+
+class BlockInfo(BaseModel):
+    height: int
+    timestamp: str
+
+
+class TimelineEvent(BaseModel):
+    block_height: int
+    description: str
+    occurred: bool
+
+
+class TimelineResponse(BaseModel):
+    current_block: BlockInfo
+    reference_block: BlockInfo
+    avg_block_time: float
+    events: List[TimelineEvent]
+    current_epoch_start: int
+    current_epoch_index: int
+    epoch_length: int
+

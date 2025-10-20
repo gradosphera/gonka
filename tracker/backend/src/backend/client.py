@@ -327,4 +327,10 @@ class GonkaClient:
         except Exception as e:
             logger.warning(f"Failed to fetch hardware nodes for {participant_address}: {e}")
             return []
+    
+    async def get_block(self, height: int) -> Dict[str, Any]:
+        return await self._make_request(f"/chain-rpc/block?height={height}")
+    
+    async def get_restrictions_params(self) -> Dict[str, Any]:
+        return await self._make_request("/chain-api/productscience/inference/restrictions/params")
 

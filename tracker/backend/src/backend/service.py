@@ -13,7 +13,10 @@ from backend.models import (
     ParticipantDetailsResponse,
     WarmKeyInfo,
     HardwareInfo,
-    MLNodeInfo
+    MLNodeInfo,
+    BlockInfo,
+    TimelineEvent,
+    TimelineResponse
 )
 
 logger = logging.getLogger(__name__)
@@ -840,4 +843,46 @@ class InferenceService:
             
         except Exception as e:
             logger.error(f"Error ensuring participant caches: {e}")
+    
+    async def get_timeline(self):
+        current_height = await self.client.get_latest_height()
+        current_block_data = await self.client.get_block(current_height)
+        current_timestamp = current_block_data["result"]["block"]["header"]["time"]
+        
+        reference_height = current_height - 10000
+        reference_block_data = await self.client.get_block(reference_height)
+        reference_timestamp = reference_block_data["result"]["block"]["header"]["time"]
+        
+        current_dt = datetime.fromisoformat(current_timestamp.replace('Z', '+00:00'))
+        reference_dt = datetime.fromisoformat(reference_timestamp.replace('Z', '+00:00'))
+        
+        time_diff_seconds = (current_dt - reference_dt).total_seconds()
+        block_diff = current_height - reference_height
+        avg_block_time = round(time_diff_seconds / block_diff, 2)
+        
+        restrictions_data = await self.client.get_restrictions_params()
+        restrictions_end_block = int(restrictions_data["params"]["restriction_end_block"])
+        
+        latest_epoch_info = await self.client.get_latest_epoch()
+        current_epoch_start = latest_epoch_info["latest_epoch"]["poc_start_block_height"]
+        current_epoch_index = latest_epoch_info["latest_epoch"]["index"]
+        epoch_length = latest_epoch_info["epoch_params"]["epoch_length"]
+        
+        events = [
+            TimelineEvent(
+                block_height=restrictions_end_block,
+                description="Money Transfer Enabled",
+                occurred=current_height >= restrictions_end_block
+            )
+        ]
+        
+        return TimelineResponse(
+            current_block=BlockInfo(height=current_height, timestamp=current_timestamp),
+            reference_block=BlockInfo(height=reference_height, timestamp=reference_timestamp),
+            avg_block_time=avg_block_time,
+            events=events,
+            current_epoch_start=current_epoch_start,
+            current_epoch_index=current_epoch_index,
+            epoch_length=epoch_length
+        )
 

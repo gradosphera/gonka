@@ -75,3 +75,24 @@ export interface ParticipantDetailsResponse {
   ml_nodes: MLNodeInfo[];
 }
 
+export interface BlockInfo {
+  height: number;
+  timestamp: string;
+}
+
+export interface TimelineEvent {
+  block_height: number;
+  description: string;
+  occurred: boolean;
+}
+
+export interface TimelineResponse {
+  current_block: BlockInfo;
+  reference_block: BlockInfo;
+  avg_block_time: number;
+  events: TimelineEvent[];
+  current_epoch_start: number;
+  current_epoch_index: number;
+  epoch_length: number;
+}
+

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, Any
-from backend.models import InferenceResponse, ParticipantDetailsResponse
+from backend.models import InferenceResponse, ParticipantDetailsResponse, TimelineResponse
 
 router = APIRouter(prefix="/v1")
 
@@ -86,4 +86,15 @@ async def get_participant_details(
             status_code=500,
             detail=f"Failed to fetch participant details: {str(e)}"
         )
+
+
+@router.get("/timeline", response_model=TimelineResponse)
+async def get_timeline():
+    if inference_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    
+    try:
+        return await inference_service.get_timeline()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch timeline: {str(e)}")
 
