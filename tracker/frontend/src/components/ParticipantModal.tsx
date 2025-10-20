@@ -300,12 +300,25 @@ export function ParticipantModal({ participant, epochId, onClose }: ParticipantM
                   <div key={idx} className="bg-gray-50 border border-gray-200 rounded p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="font-semibold text-gray-900">{node.local_id}</div>
-                      <span className="inline-block px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-300 rounded">
+                      <span className={`inline-block px-2 py-0.5 text-xs font-semibold rounded ${
+                        node.status === 'FAILED' 
+                          ? 'bg-red-100 text-red-700 border border-red-300' 
+                          : 'bg-blue-100 text-blue-700 border border-blue-300'
+                      }`}>
                         {node.status}
                       </span>
                     </div>
                     
                     <div className="space-y-2">
+                      {node.poc_weight !== undefined && node.poc_weight !== null && (
+                        <div>
+                          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Weight</div>
+                          <div className="mt-1 text-xs text-gray-700">
+                            {node.poc_weight.toLocaleString()}
+                          </div>
+                        </div>
+                      )}
+                      
                       <div>
                         <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Models</div>
                         <div className="mt-1 flex flex-wrap gap-1">

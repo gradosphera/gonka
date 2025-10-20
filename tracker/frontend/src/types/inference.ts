@@ -64,6 +64,7 @@ export interface MLNodeInfo {
   hardware: HardwareInfo[];
   host: string;
   port: string;
+  poc_weight?: number;
 }
 
 export interface ParticipantDetailsResponse {

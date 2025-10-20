@@ -19,6 +19,18 @@ from backend.models import (
 logger = logging.getLogger(__name__)
 
 
+def _extract_ml_nodes_map(ml_nodes_data: List[Dict]) -> Dict[str, int]:
+    result = {}
+    for wrapper in ml_nodes_data:
+        for node in wrapper.get("ml_nodes", []):
+            node_id = node.get("node_id")
+            if node_id:
+                poc_weight = node.get("poc_weight")
+                if poc_weight is not None:
+                    result[node_id] = poc_weight
+    return result
+
+
 class InferenceService:
     def __init__(self, client: GonkaClient, cache_db: CacheDB):
         self.client = client
@@ -92,7 +104,8 @@ class InferenceService:
                     "weight": p.get("weight", 0),
                     "models": p.get("models", []),
                     "validator_key": p.get("validator_key"),
-                    "seed_signature": p.get("seed", {}).get("signature")
+                    "seed_signature": p.get("seed", {}).get("signature"),
+                    "ml_nodes_map": _extract_ml_nodes_map(p.get("ml_nodes", []))
                 }
                 for p in epoch_data["active_participants"]["participants"]
             }
@@ -124,6 +137,7 @@ class InferenceService:
                     stats_dict["models"] = epoch_data_for_participant.get("models", [])
                     stats_dict["validator_key"] = epoch_data_for_participant.get("validator_key")
                     stats_dict["seed_signature"] = epoch_data_for_participant.get("seed_signature")
+                    stats_dict["_ml_nodes_map"] = epoch_data_for_participant.get("ml_nodes_map", {})
                     stats_for_saving.append(stats_dict)
                 except Exception as e:
                     logger.warning(f"Failed to parse participant {p.get('index', 'unknown')}: {e}")
@@ -222,7 +236,8 @@ class InferenceService:
                     "weight": p.get("weight", 0),
                     "models": p.get("models", []),
                     "validator_key": p.get("validator_key"),
-                    "seed_signature": p.get("seed", {}).get("signature")
+                    "seed_signature": p.get("seed", {}).get("signature"),
+                    "ml_nodes_map": _extract_ml_nodes_map(p.get("ml_nodes", []))
                 }
                 for p in epoch_data["active_participants"]["participants"]
             }
@@ -254,6 +269,7 @@ class InferenceService:
                     stats_dict["models"] = epoch_data_for_participant.get("models", [])
                     stats_dict["validator_key"] = epoch_data_for_participant.get("validator_key")
                     stats_dict["seed_signature"] = epoch_data_for_participant.get("seed_signature")
+                    stats_dict["_ml_nodes_map"] = epoch_data_for_participant.get("ml_nodes_map", {})
                     stats_for_saving.append(stats_dict)
                 except Exception as e:
                     logger.warning(f"Failed to parse participant {p.get('index', 'unknown')}: {e}")
@@ -570,19 +586,31 @@ class InferenceService:
                     logger.warning(f"Failed to fetch hardware nodes for {participant_id}: {e}")
                     hardware_nodes_data = []
             
+            ml_nodes_map = {}
+            cached_stats = await self.cache_db.get_stats(epoch_id, height)
+            if cached_stats:
+                for s in cached_stats:
+                    if s.get("index") == participant_id:
+                        ml_nodes_map = s.get("_ml_nodes_map", {})
+                        break
+            
             ml_nodes = []
             for node in (hardware_nodes_data or []):
+                local_id = node.get("local_id", "")
+                poc_weight = ml_nodes_map.get(local_id) or node.get("poc_weight")
+                
                 hardware_list = [
                     HardwareInfo(type=hw["type"], count=hw["count"])
                     for hw in node.get("hardware", [])
                 ]
                 ml_nodes.append(MLNodeInfo(
-                    local_id=node.get("local_id", ""),
+                    local_id=local_id,
                     status=node.get("status", ""),
                     models=node.get("models", []),
                     hardware=hardware_list,
                     host=node.get("host", ""),
-                    port=node.get("port", "")
+                    port=node.get("port", ""),
+                    poc_weight=poc_weight
                 ))
             
             return ParticipantDetailsResponse(

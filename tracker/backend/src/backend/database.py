@@ -111,6 +111,7 @@ class CacheDB:
                     hardware_json TEXT NOT NULL,
                     host TEXT NOT NULL,
                     port TEXT NOT NULL,
+                    poc_weight INTEGER,
                     last_updated TEXT NOT NULL,
                     PRIMARY KEY (epoch_id, participant_id, local_id)
                 )
@@ -529,8 +530,8 @@ class CacheDB:
                 
                 await db.execute("""
                     INSERT INTO participant_hardware_nodes 
-                    (epoch_id, participant_id, local_id, status, models_json, hardware_json, host, port, last_updated)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (epoch_id, participant_id, local_id, status, models_json, hardware_json, host, port, poc_weight, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     epoch_id,
                     participant_id,
@@ -540,6 +541,7 @@ class CacheDB:
                     hardware_json,
                     node.get("host", ""),
                     node.get("port", ""),
+                    node.get("poc_weight"),
                     last_updated
                 ))
             
@@ -555,7 +557,7 @@ class CacheDB:
             db.row_factory = aiosqlite.Row
             
             async with db.execute("""
-                SELECT local_id, status, models_json, hardware_json, host, port
+                SELECT local_id, status, models_json, hardware_json, host, port, poc_weight
                 FROM participant_hardware_nodes
                 WHERE epoch_id = ? AND participant_id = ?
                 ORDER BY local_id ASC
@@ -573,7 +575,8 @@ class CacheDB:
                         "models": json.loads(row["models_json"]),
                         "hardware": json.loads(row["hardware_json"]),
                         "host": row["host"],
-                        "port": row["port"]
+                        "port": row["port"],
+                        "poc_weight": row["poc_weight"]
                     })
                 
                 return results

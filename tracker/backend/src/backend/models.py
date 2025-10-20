@@ -106,6 +106,7 @@ class MLNodeInfo(BaseModel):
     hardware: List[HardwareInfo]
     host: str
     port: str
+    poc_weight: Optional[int] = None
 
 
 class ParticipantDetailsResponse(BaseModel):
