@@ -156,6 +156,8 @@ build-for-upgrade:
 	@mkdir -p ../public-html/v2/inferenced
 	@echo "--> copying built inferenced binary and dependencies to ../public-html/v2/inferenced/"
 	@cp ./output/build_output/* ../public-html/v2/inferenced/
+	@echo "--> cleaning up intermediate build output"
+	@rm -rf ./output
 	@echo "--> zipping inferenced binary with dependencies"
 	# We set the timestamp to a const and strip metadata in zip so we have a reproduceable checksum
 	@TZ=UTC find ../public-html/v2/inferenced -type f -exec touch -t 200001010000 {} \;

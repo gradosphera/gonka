@@ -26,6 +26,7 @@ import (
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/productscience/inference/testenv"
 	"github.com/productscience/inference/x/inference/calculations"
 	"github.com/productscience/inference/x/inference/epochgroup"
 	"github.com/shopspring/decimal"
@@ -315,9 +316,15 @@ func (am AppModule) handleExpiredInference(ctx context.Context, inference types.
 	if err != nil {
 		am.LogError("Error issuing refund", types.Inferences, "error", err)
 	}
-	am.keeper.SetInference(ctx, inference)
+	err = am.keeper.SetInference(ctx, inference)
+	if err != nil {
+		am.LogError("Error updating inference", types.Inferences, "error", err)
+	}
 	executor.CurrentEpochStats.MissedRequests++
-	am.keeper.SetParticipant(ctx, executor)
+	err = am.keeper.SetParticipant(ctx, executor)
+	if err != nil {
+		am.LogError("Error updating participant for expired inference", types.Participants, "error", err)
+	}
 }
 
 // EndBlock contains the logic that is automatically triggered at the end of each block.
@@ -325,13 +332,22 @@ func (am AppModule) EndBlock(ctx context.Context) error {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	blockHeight := sdkCtx.BlockHeight()
 	blockTime := sdkCtx.BlockTime().Unix()
-	epochParams := am.keeper.GetParams(ctx).EpochParams
+	params, err := am.keeper.GetParamsSafe(ctx)
+	if err != nil {
+		am.LogError("Unable to get parameters", types.Settle, "error", err.Error())
+		return err
+	}
+	epochParams := params.EpochParams
 	currentEpoch, found := am.keeper.GetEffectiveEpoch(ctx)
 	if !found || currentEpoch == nil {
 		am.LogError("Unable to get effective epoch", types.EpochGroup, "blockHeight", blockHeight)
 		return nil
 	}
-	epochContext := types.NewEpochContextFromEffectiveEpoch(*currentEpoch, *epochParams, blockHeight)
+	epochContext, err := types.NewEpochContextFromEffectiveEpoch(*currentEpoch, *epochParams, blockHeight)
+	if err != nil {
+		am.LogError("Unable to create epoch context", types.EpochGroup, "error", err.Error())
+		return nil
+	}
 
 	currentEpochGroup, err := am.keeper.GetEpochGroupForEpoch(ctx, *currentEpoch)
 	if err != nil {
@@ -346,6 +362,11 @@ func (am AppModule) EndBlock(ctx context.Context) error {
 	}
 	for _, t := range timeouts {
 		am.keeper.RemoveInferenceTimeout(ctx, t.ExpirationHeight, t.InferenceId)
+	}
+
+	err = am.keeper.Prune(ctx, int64(currentEpoch.Index))
+	if err != nil {
+		am.LogError("Error during pruning", types.Pruning, "error", err.Error())
 	}
 
 	partialUpgrades := am.keeper.GetAllPartialUpgrade(ctx)
@@ -383,7 +404,11 @@ func (am AppModule) EndBlock(ctx context.Context) error {
 
 	if epochContext.IsStartOfPocStage(blockHeight) {
 		upcomingEpoch := createNewEpoch(*currentEpoch, blockHeight)
-		am.keeper.SetEpoch(ctx, upcomingEpoch)
+		err = am.keeper.SetEpoch(ctx, upcomingEpoch)
+		if err != nil {
+			am.LogError("Unable to set upcoming epoch", types.EpochGroup, "error", err.Error())
+			return err
+		}
 
 		am.LogInfo("StartStage:PocStart", types.Stages, "blockHeight", blockHeight)
 		newGroup, err := am.keeper.CreateEpochGroup(ctx, uint64(blockHeight), upcomingEpoch.Index)
@@ -395,28 +420,6 @@ func (am AppModule) EndBlock(ctx context.Context) error {
 		if err != nil {
 			am.LogError("Unable to create epoch group", types.EpochGroup, "error", err.Error())
 			return err
-		}
-
-		// Prune old inferences
-		inferencePruningThreshold := am.keeper.GetParams(ctx).EpochParams.InferencePruningEpochThreshold
-		if inferencePruningThreshold == 0 {
-			am.LogInfo("Inference pruning threshold is 0, using default", types.Inferences, "threshold", defaultInferencePruningThreshold)
-			inferencePruningThreshold = defaultInferencePruningThreshold
-		}
-		pruneErr := am.keeper.PruneInferences(ctx, upcomingEpoch.Index, inferencePruningThreshold)
-		if pruneErr != nil {
-			am.LogError("Error pruning inferences", types.Inferences, "error", pruneErr)
-		}
-
-		// Prune old PoC data
-		pocPruningThreshold := am.keeper.GetParams(ctx).PocParams.PocDataPruningEpochThreshold
-		if pocPruningThreshold == 0 {
-			am.LogInfo("PoC pruning threshold is 0, using default", types.PoC, "threshold", defaultPocPruningThreshold)
-			pocPruningThreshold = defaultPocPruningThreshold
-		}
-		pocErr := am.keeper.PrunePoCData(ctx, upcomingEpoch.Index, pocPruningThreshold)
-		if pocErr != nil {
-			am.LogError("Error pruning PoC data", types.PoC, "error", pocErr)
 		}
 	}
 
@@ -432,7 +435,7 @@ func (am AppModule) EndBlock(ctx context.Context) error {
 		// Apply early network protection if conditions are met
 		finalComputeResult := am.applyEarlyNetworkProtection(ctx, computeResult)
 
-		_, err = am.keeper.Staking.SetComputeValidators(ctx, finalComputeResult)
+		_, err = am.keeper.Staking.SetComputeValidators(ctx, finalComputeResult, testenv.IsTestNet())
 		if err != nil {
 			am.LogError("Unable to update epoch group", types.EpochGroup, "error", err.Error())
 		}
@@ -535,7 +538,7 @@ func (am AppModule) onEndOfPoCValidationStage(ctx context.Context, blockHeight i
 		"PocStartBlockHeight", upcomingEpoch.PocStartBlockHeight,
 		"len(activeParticipants)", len(activeParticipants))
 
-	am.keeper.SetActiveParticipants(ctx, types.ActiveParticipants{
+	err = am.keeper.SetActiveParticipants(ctx, types.ActiveParticipants{
 		Participants:        activeParticipants,
 		EpochGroupId:        upcomingEpoch.Index,
 		EpochId:             upcomingEpoch.Index,
@@ -544,6 +547,10 @@ func (am AppModule) onEndOfPoCValidationStage(ctx context.Context, blockHeight i
 		EffectiveBlockHeight: blockHeight + 2, // FIXME: verify it's +2, I'm not sure
 		CreatedAtBlockHeight: blockHeight,
 	})
+	if err != nil {
+		am.LogError("onEndOfPoCValidationStage: Unable to set active participants", types.EpochGroup, "error", err.Error())
+		return
+	}
 
 	if err := am.keeper.SetPendingProof(ctx, blockHeight, upcomingEpoch.Index); err != nil {
 		am.LogError("errors setting pending proof", types.Stages, "err", err, "blockHeight", blockHeight)
@@ -733,17 +740,24 @@ func (am AppModule) moveUpcomingToEffectiveGroup(ctx context.Context, blockHeigh
 	for i, participant := range activeParticipants.Participants {
 		ids[i] = participant.Index
 	}
-	participants, ok := am.keeper.GetParticipants(ctx, ids)
-	if !ok {
-		am.LogError("Unable to get participants", types.EpochGroup, "ids", ids)
-		return
-	}
+	participants := am.keeper.GetParticipants(ctx, ids)
 
 	am.LogInfo("Setting participants to active", types.EpochGroup, "len(participants)", len(participants))
 	for _, participant := range participants {
 		participant.Status = types.ParticipantStatus_ACTIVE
-		am.keeper.SetParticipant(ctx, participant)
+		err := am.keeper.SetParticipant(ctx, participant)
+		if err != nil {
+			am.LogError("Unable to set participant to active", types.EpochGroup, "participantIndex", participant.Index, "error", err.Error())
+			continue
+		}
 	}
+
+	// At this point, clear all active invalidations in case of any hanging invalidations
+	err := am.keeper.ActiveInvalidations.Clear(ctx, nil)
+	if err != nil {
+		am.LogError("Unable to clear active invalidations", types.EpochGroup, "error", err.Error())
+	}
+
 }
 
 // applyEpochPowerCapping applies universal power capping to activeParticipants after ComputeNewWeights

@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	ctypes "github.com/cometbft/cometbft/rpc/core/types"
@@ -56,6 +58,15 @@ type TxManager interface {
 	BankBalances(ctx context.Context, address string) ([]sdk.Coin, error)
 }
 
+type blockTimeTracker struct {
+	latestBlockTime   atomic.Value
+	latestBlockHeight int64
+	lastUpdatedAt     time.Time
+	maxBlockTimeout   time.Duration
+	chainHalt         bool
+	mtx               sync.Mutex
+}
+
 type manager struct {
 	ctx              context.Context
 	client           *cosmosclient.Client
@@ -66,6 +77,7 @@ type manager struct {
 	defaultTimeout   time.Duration
 	natsConnection   *nats.Conn
 	natsJetStream    nats.JetStreamContext
+	blockTimeTracker *blockTimeTracker
 }
 
 func StartTxManager(
@@ -90,6 +102,9 @@ func StartTxManager(
 	restrictionstypes.RegisterInterfaces(client.Context().InterfaceRegistry)
 	blstypes.RegisterInterfaces(client.Context().InterfaceRegistry)
 
+	ts := atomic.Value{}
+	ts.Store(time.Time{})
+
 	m := &manager{
 		ctx:              ctx,
 		client:           client,
@@ -99,8 +114,11 @@ func StartTxManager(
 		defaultTimeout:   defaultTimeout,
 		natsConnection:   natsConnection,
 		natsJetStream:    js,
+		blockTimeTracker: &blockTimeTracker{
+			latestBlockTime: ts,
+			maxBlockTimeout: 10 * time.Second,
+		},
 	}
-
 	if err := m.sendTxs(); err != nil {
 		return nil, err
 	}
@@ -109,28 +127,23 @@ func StartTxManager(
 		return nil, err
 	}
 
-	return &manager{
-		ctx:              ctx,
-		client:           client,
-		address:          address,
-		apiAccount:       account,
-		accountRetriever: authtypes.AccountRetriever{},
-		defaultTimeout:   defaultTimeout,
-		natsConnection:   natsConnection,
-		natsJetStream:    js,
-	}, nil
+	return m, nil
 }
 
+const maxAttempts = 100
+
 type txToSend struct {
-	TxInfo txInfo
-	Sent   bool
+	TxInfo   txInfo
+	Sent     bool
+	Attempts int
 }
 
 type txInfo struct {
-	Id      string
-	RawTx   []byte
-	TxHash  string
-	Timeout time.Time
+	Id       string
+	RawTx    []byte
+	TxHash   string
+	Timeout  time.Time
+	Attempts int
 }
 
 func (m *manager) GetApiAccount() apiconfig.ApiAccount {
@@ -144,6 +157,17 @@ func (m *manager) Status(ctx context.Context) (*ctypes.ResultStatus, error) {
 func (m *manager) SendTransactionAsyncWithRetry(rawTx sdk.Msg) (*sdk.TxResponse, error) {
 	id := uuid.New().String()
 	logging.Debug("SendTransactionAsyncWithRetry: sending tx", types.Messages, "tx_id", id)
+
+	if halt, err := m.updateChainHalt(); err != nil || halt {
+		logging.Error("chain is slowing down or couldn't fetch actual chain status", types.Messages, "latest_block_timestamp", m.blockTimeTracker.latestBlockTime.Load().(time.Time))
+
+		if err := m.putOnRetry(id, "", time.Time{}, rawTx, 0, false); err != nil {
+			logging.Error("failed to put in queue", types.Messages, "tx_id", id, "resend_err", err)
+			return nil, ErrTxFailedToBroadcastAndPutOnRetry
+		}
+		return &sdk.TxResponse{}, nil
+	}
+
 	resp, timeout, broadcastErr := m.broadcastMessage(id, rawTx)
 	if broadcastErr != nil {
 		if isTxErrorCritical(broadcastErr) {
@@ -151,13 +175,13 @@ func (m *manager) SendTransactionAsyncWithRetry(rawTx sdk.Msg) (*sdk.TxResponse,
 			return nil, broadcastErr
 		}
 
-		err := m.putOnRetry(id, "", timeout, rawTx, false)
+		err := m.putOnRetry(id, "", timeout, rawTx, 1, false)
 		if err != nil {
 			logging.Error("tx failed to broadcast, failed to put in queue", types.Messages, "tx_id", id, "broadcast_err", broadcastErr, "resend_err", err)
 		}
 		return nil, ErrTxFailedToBroadcastAndPutOnRetry
 	}
-	if err := m.putOnRetry(id, resp.TxHash, timeout, rawTx, true); err != nil {
+	if err := m.putOnRetry(id, resp.TxHash, timeout, rawTx, 1, true); err != nil {
 		logging.Error("tx broadcast, but failed to put in queue", types.Messages, "tx_id", id, "err", err)
 	}
 	return resp, nil
@@ -166,6 +190,10 @@ func (m *manager) SendTransactionAsyncWithRetry(rawTx sdk.Msg) (*sdk.TxResponse,
 func (m *manager) SendTransactionAsyncNoRetry(rawTx sdk.Msg) (*sdk.TxResponse, error) {
 	id := uuid.New().String()
 	logging.Debug("SendTransactionAsyncNoRetry: sending tx", types.Messages, "tx_id", id, "originalMsgType", sdk.MsgTypeURL(rawTx))
+	_, err := m.updateChainHalt()
+	if err != nil {
+		return nil, err
+	}
 	resp, _, broadcastErr := m.broadcastMessage(id, rawTx)
 	return resp, broadcastErr
 }
@@ -173,6 +201,10 @@ func (m *manager) SendTransactionAsyncNoRetry(rawTx sdk.Msg) (*sdk.TxResponse, e
 func (m *manager) SendTransactionSyncNoRetry(msg proto.Message) (*ctypes.ResultTx, error) {
 	id := uuid.New().String()
 	logging.Debug("SendTransactionSyncNoRetry: sending tx", types.Messages, "tx_id", id)
+	_, err := m.updateChainHalt()
+	if err != nil {
+		return nil, err
+	}
 	resp, _, err := m.broadcastMessage(id, msg)
 	if err != nil {
 		return nil, err
@@ -196,6 +228,7 @@ func (m *manager) putOnRetry(
 	txHash string,
 	timeout time.Time,
 	rawTx sdk.Msg,
+	attempts int,
 	sent bool) error {
 	logging.Debug("putOnRetry: tx with params", types.Messages,
 		"tx_id", id,
@@ -203,6 +236,11 @@ func (m *manager) putOnRetry(
 		"timeout", timeout.String(),
 		"sent", sent,
 	)
+
+	if attempts >= maxAttempts {
+		logging.Warn("tx reached max attempts", types.Messages, "tx_id", id)
+		return nil
+	}
 
 	bz, err := m.client.Context().Codec.MarshalInterfaceJSON(rawTx)
 	if err != nil {
@@ -219,7 +257,10 @@ func (m *manager) putOnRetry(
 			RawTx:   bz,
 			TxHash:  txHash,
 			Timeout: timeout,
-		}, Sent: sent})
+		},
+		Sent:     sent,
+		Attempts: attempts,
+	})
 	if err != nil {
 		return err
 	}
@@ -227,7 +268,7 @@ func (m *manager) putOnRetry(
 	return err
 }
 
-func (m *manager) putTxToObserve(id string, rawTx sdk.Msg, txHash string, timeout time.Time) error {
+func (m *manager) putTxToObserve(id string, rawTx sdk.Msg, txHash string, timeout time.Time, attempts int) error {
 	logging.Debug(" putTxToObserve: tx with params", types.Messages,
 		"tx_id", id,
 		"tx_hash", txHash,
@@ -240,10 +281,11 @@ func (m *manager) putTxToObserve(id string, rawTx sdk.Msg, txHash string, timeou
 	}
 
 	b, err := json.Marshal(&txInfo{
-		Id:      id,
-		RawTx:   bz,
-		TxHash:  txHash,
-		Timeout: timeout,
+		Id:       id,
+		RawTx:    bz,
+		TxHash:   txHash,
+		Timeout:  timeout,
+		Attempts: attempts,
 	})
 	if err != nil {
 		return err
@@ -256,6 +298,12 @@ func (m *manager) sendTxs() error {
 	logging.Info("Tx manager: sending txs: run in background", types.Messages)
 
 	_, err := m.natsJetStream.Subscribe(server.TxsToSendStream, func(msg *nats.Msg) {
+		if halt, err := m.updateChainHalt(); err != nil || halt {
+			logging.Error("chain is slowing down or couldn't fetch actual chain status", types.Messages, "latest_block_timestamp", m.blockTimeTracker.latestBlockTime.Load().(time.Time))
+			time.Sleep(3 * time.Second)
+			return
+		}
+
 		var tx txToSend
 		if err := json.Unmarshal(msg.Data, &tx); err != nil {
 			logging.Error("error unmarshaling tx_to_send", types.Messages, "err", err)
@@ -291,7 +339,7 @@ func (m *manager) sendTxs() error {
 
 		logging.Debug("tx broadcast, put to observe", types.Messages, "id", tx.TxInfo.Id, "tx_hash", tx.TxInfo.TxHash, "timeout", tx.TxInfo.Timeout.String())
 
-		if err := m.putTxToObserve(tx.TxInfo.Id, rawTx, tx.TxInfo.TxHash, tx.TxInfo.Timeout); err != nil {
+		if err := m.putTxToObserve(tx.TxInfo.Id, rawTx, tx.TxInfo.TxHash, tx.TxInfo.Timeout, tx.Attempts); err != nil {
 			logging.Error("error pushing to observe queue", types.Messages, "id", tx.TxInfo.Id, "err", err)
 			msg.NakWithDelay(defaultSenderNackDelay)
 		} else {
@@ -304,6 +352,10 @@ func (m *manager) sendTxs() error {
 func (m *manager) observeTxs() error {
 	logging.Info("Tx manager: observeTxs txs: run in background", types.Messages)
 	_, err := m.natsJetStream.Subscribe(server.TxsToObserveStream, func(msg *nats.Msg) {
+		if halt, err := m.updateChainHalt(); err != nil || halt {
+			logging.Error("chain is slowing down or couldn't fetch actual chain status", types.Messages, "latest_block_timestamp", m.blockTimeTracker.latestBlockTime.Load().(time.Time))
+		}
+
 		var tx txInfo
 		if err := json.Unmarshal(msg.Data, &tx); err != nil {
 			logging.Error("error unmarshaling tx_to_observe", types.Messages, "err", err)
@@ -319,7 +371,9 @@ func (m *manager) observeTxs() error {
 
 		if tx.TxHash == "" {
 			logging.Warn("tx hash is empty", types.Messages, "tx_id", tx.Id)
-			if err := m.putOnRetry(tx.Id, "", time.Time{}, rawTx, false); err != nil {
+
+			tx.Attempts++
+			if err := m.putOnRetry(tx.Id, "", time.Time{}, rawTx, tx.Attempts, false); err != nil {
 				msg.NakWithDelay(defaultObserverNackDelay)
 				return
 			}
@@ -342,9 +396,10 @@ func (m *manager) observeTxs() error {
 		}
 
 		if errors.Is(err, ErrTxNotFound) {
-			if time.Now().After(tx.Timeout) {
-				logging.Debug("tx expired", types.Messages, "tx_id", tx.Id, "tx_hash", tx.TxHash)
-				if err := m.putOnRetry(tx.Id, "", time.Time{}, rawTx, false); err != nil {
+			if m.blockTimeTracker.latestBlockTime.Load().(time.Time).After(tx.Timeout) {
+				logging.Debug("tx expired", types.Messages, "tx_id", tx.Id, "tx_hash", tx.TxHash, "tx_timestamp", tx.Timeout, "latest_block_timestamp", m.blockTimeTracker.latestBlockTime)
+				tx.Attempts++
+				if err := m.putOnRetry(tx.Id, "", time.Time{}, rawTx, tx.Attempts, false); err != nil {
 					msg.NakWithDelay(defaultObserverNackDelay)
 					return
 				}
@@ -430,7 +485,7 @@ func (m *manager) broadcastMessage(id string, rawTx sdk.Msg) (*sdk.TxResponse, t
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	txBytes, timestamp, err := m.getSignedBytes(m.ctx, id, unsignedTx, factory)
+	txBytes, timestamp, err := m.getSignedBytes(id, unsignedTx, factory)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
@@ -441,8 +496,9 @@ func (m *manager) broadcastMessage(id string, rawTx sdk.Msg) (*sdk.TxResponse, t
 	}
 	if resp.Code != 0 {
 		logging.Error("Broadcast failed immediately", types.Messages, "code", resp.Code, "rawLog", resp.RawLog, "tx_id", id, "originalMsgType", originalMsgType)
+	} else {
+		logging.Debug("Broadcast successful", types.Messages, "tx_id", id, "originalMsgType", originalMsgType, "resp", resp)
 	}
-	logging.Debug("Broadcast successful", types.Messages, "tx_id", id, "originalMsgType", originalMsgType, "resp", resp)
 	return resp, timestamp, nil
 }
 
@@ -486,10 +542,19 @@ func (m *manager) getFactory(id string) (*tx.Factory, error) {
 	return &factory, nil
 }
 
-func (m *manager) getSignedBytes(ctx context.Context, id string, unsignedTx client.TxBuilder, factory *tx.Factory) ([]byte, time.Time, error) {
-	// Gas is not charged, but without a high gas limit the transactions fail
-	timestamp := getTimestamp(m.defaultTimeout)
+func (m *manager) getSignedBytes(id string, unsignedTx client.TxBuilder, factory *tx.Factory) ([]byte, time.Time, error) {
+	blockTs := m.blockTimeTracker.latestBlockTime.Load().(time.Time)
+	if blockTs.IsZero() {
+		_, err := m.updateChainHalt()
+		if err != nil {
+			return nil, time.Time{}, err
+		}
+		blockTs = m.blockTimeTracker.latestBlockTime.Load().(time.Time)
+	}
 
+	timestamp := getTimestamp(blockTs.UnixNano(), m.defaultTimeout)
+
+	// Gas is not charged, but without a high gas limit the transactions fail
 	unsignedTx.SetGasLimit(1000000000)
 	unsignedTx.SetFeeAmount(sdk.Coins{})
 	unsignedTx.SetUnordered(true)
@@ -497,7 +562,7 @@ func (m *manager) getSignedBytes(ctx context.Context, id string, unsignedTx clie
 	name := m.apiAccount.SignerAccount.Name
 	logging.Debug("Signing transaction", types.Messages, "tx_id", id, "timeout", timestamp.String(), "name", name)
 
-	err := tx.Sign(ctx, *factory, name, unsignedTx, false)
+	err := tx.Sign(m.ctx, *factory, name, unsignedTx, false)
 	if err != nil {
 		logging.Error("Failed to sign transaction", types.Messages, "tx_id", id, "error", err)
 		return nil, time.Time{}, err
@@ -508,4 +573,37 @@ func (m *manager) getSignedBytes(ctx context.Context, id string, unsignedTx clie
 		return nil, time.Time{}, err
 	}
 	return txBytes, timestamp, nil
+}
+
+func (m *manager) updateChainHalt() (bool, error) {
+	now := time.Now()
+	if now.Sub(m.blockTimeTracker.lastUpdatedAt) < time.Second*3 {
+		return m.blockTimeTracker.chainHalt, nil
+	}
+
+	status, err := m.client.Status(m.ctx)
+	if err != nil {
+		logging.Error("error getting blockchain status", types.Messages, "err", err)
+		return false, err
+	}
+
+	m.blockTimeTracker.mtx.Lock()
+	defer m.blockTimeTracker.mtx.Unlock()
+
+	if status.SyncInfo.LatestBlockTime.Equal(m.blockTimeTracker.latestBlockTime.Load().(time.Time)) &&
+		status.SyncInfo.LatestBlockHeight == m.blockTimeTracker.latestBlockHeight &&
+		!m.blockTimeTracker.lastUpdatedAt.IsZero() && now.Sub(m.blockTimeTracker.lastUpdatedAt) > m.blockTimeTracker.maxBlockTimeout {
+		// same block, and we sow it more than N seconds ago -> chain halt
+		m.blockTimeTracker.chainHalt = true
+	}
+
+	if status.SyncInfo.LatestBlockTime.After(m.blockTimeTracker.latestBlockTime.Load().(time.Time)) &&
+		status.SyncInfo.LatestBlockHeight > m.blockTimeTracker.latestBlockHeight {
+		m.blockTimeTracker.latestBlockHeight = status.SyncInfo.LatestBlockHeight
+		m.blockTimeTracker.latestBlockTime.Store(status.SyncInfo.LatestBlockTime)
+		m.blockTimeTracker.chainHalt = false
+	}
+
+	m.blockTimeTracker.lastUpdatedAt = now
+	return m.blockTimeTracker.chainHalt, nil
 }

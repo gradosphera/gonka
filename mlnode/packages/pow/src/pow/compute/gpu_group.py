@@ -1,6 +1,14 @@
 from typing import List, Dict
 import torch
 from pow.models.utils import PARAMS_V1, PARAMS_V2, Params
+from common.logger import create_logger
+
+logger = create_logger(__name__)
+
+
+class NotEnoughGPUResources(Exception):
+    """Raised when GPU is not available or has insufficient resources"""
+    pass
 
 
 def get_min_group_vram(params: Params) -> float:
@@ -63,14 +71,18 @@ class GpuGroup:
 def create_gpu_groups(min_vram_gb: float = None, params: Params = None) -> List[GpuGroup]:
 
     if not torch.cuda.is_available():
-        return [GpuGroup([0])]  # CPU fallback
+        error_msg = "CUDA is not available - no GPU support detected"
+        logger.error(error_msg)
+        raise NotEnoughGPUResources(error_msg)
 
     if min_vram_gb is None:
         min_vram_gb = get_min_group_vram(params)
 
     device_count = torch.cuda.device_count()
     if device_count == 0:
-        return [GpuGroup([0])]  # CPU fallback
+        error_msg = "No CUDA devices found - GPU count is 0"
+        logger.error(error_msg)
+        raise NotEnoughGPUResources(error_msg)
 
     # Get VRAM for each device, sorted by device_id for determinism
     device_vram = []
@@ -100,6 +112,13 @@ def create_gpu_groups(min_vram_gb: float = None, params: Params = None) -> List[
         if not group_formed:
             # Could not form a valid group starting with the current device.
             # Discard it and try to form a group from the remaining devices.
-            available_devices.pop(0)
+            discarded_device = available_devices.pop(0)
+            logger.warning(f"GPU {discarded_device[0]} has insufficient VRAM ({discarded_device[1]:.1f}GB) to form a group, required: {min_vram_gb:.1f}GB")
+
+    if not groups:
+        device_info = ", ".join([f"GPU{device_id}: {vram:.1f}GB" for device_id, vram in device_vram])
+        error_msg = f"Not enough GPU memory to form any groups - required: {min_vram_gb:.1f}GB per group, available: [{device_info}]"
+        logger.error(error_msg)
+        raise NotEnoughGPUResources(error_msg)
 
     return groups

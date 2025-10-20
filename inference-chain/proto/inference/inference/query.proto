@@ -340,22 +340,19 @@ service Query {
   }
 
   // Dynamic pricing queries (Task 7.1)
-  rpc GetModelPerTokenPrice (QueryGetModelPerTokenPriceRequest) returns (QueryGetModelPerTokenPriceResponse) {
+  rpc GetModelPerTokenPrice     (QueryGetModelPerTokenPriceRequest    ) returns (QueryGetModelPerTokenPriceResponse    ) {
     option (google.api.http).get = "/productscience/inference/inference/model_per_token_price/{model_id}";
 
   }
-
   rpc GetAllModelPerTokenPrices (QueryGetAllModelPerTokenPricesRequest) returns (QueryGetAllModelPerTokenPricesResponse) {
     option (google.api.http).get = "/productscience/inference/inference/all_model_per_token_prices";
 
   }
-
-  rpc GetModelCapacity (QueryGetModelCapacityRequest) returns (QueryGetModelCapacityResponse) {
+  rpc GetModelCapacity          (QueryGetModelCapacityRequest         ) returns (QueryGetModelCapacityResponse         ) {
     option (google.api.http).get = "/productscience/inference/inference/model_capacity/{model_id}";
 
   }
-
-  rpc GetAllModelCapacities (QueryGetAllModelCapacitiesRequest) returns (QueryGetAllModelCapacitiesResponse) {
+  rpc GetAllModelCapacities     (QueryGetAllModelCapacitiesRequest    ) returns (QueryGetAllModelCapacitiesResponse    ) {
     option (google.api.http).get = "/productscience/inference/inference/all_model_capacities";
 
   }
@@ -369,6 +366,12 @@ service Query {
   // Queries the current MLNode version.
   rpc MLNodeVersion (QueryGetMLNodeVersionRequest) returns (QueryGetMLNodeVersionResponse) {
     option (google.api.http).get = "/productscience/inference/inference/mlnode_version";
+
+  }
+
+  // Queries a list of TrainingAllowList items.
+  rpc TrainingAllowList (QueryTrainingAllowListRequest) returns (QueryTrainingAllowListResponse) {
+    option (google.api.http).get = "/productscience/inference/inference/training_allow_list";
 
   }
 
@@ -450,7 +453,7 @@ message QueryGetRandomExecutorResponse {
 
 message QueryGetEpochGroupDataRequest {
   uint64 epoch_index = 1;
-  string model_id               = 2;
+  string model_id    = 2;
 }
 
 message QueryGetEpochGroupDataResponse {
@@ -484,8 +487,8 @@ message QueryAllSettleAmountResponse {
 }
 
 message QueryGetEpochGroupValidationsRequest {
-  string participant            = 1;
-  uint64 epoch_index            = 2;
+  string participant = 1;
+  uint64 epoch_index = 2;
 }
 
 message QueryGetEpochGroupValidationsResponse {
@@ -622,8 +625,8 @@ message QueryGetInferenceValidationParametersResponse {
 }
 
 message QueryGetEpochPerformanceSummaryRequest {
-  uint64 epoch_index = 1;
-  string participantId    = 2;
+  uint64 epoch_index   = 1;
+  string participantId = 2;
 }
 
 message QueryGetEpochPerformanceSummaryResponse {
@@ -893,14 +896,14 @@ message QueryGetModelPerTokenPriceRequest {
 
 message QueryGetModelPerTokenPriceResponse {
   uint64 price = 1;
-  bool found = 2;
+  bool   found = 2;
 }
 
 message QueryGetAllModelPerTokenPricesRequest {}
 
 message ModelPrice {
   string model_id = 1;
-  uint64 price = 2;
+  uint64 price    = 2;
 }
 
 message QueryGetAllModelPerTokenPricesResponse {
@@ -913,7 +916,7 @@ message QueryGetModelCapacityRequest {
 
 message QueryGetModelCapacityResponse {
   uint64 capacity = 1;
-  bool found = 2;
+  bool   found    = 2;
 }
 
 message QueryGetAllModelCapacitiesRequest {}
@@ -928,8 +931,8 @@ message ModelCapacity {
 }
 
 message QueryGranteesByMessageTypeRequest {
-  string granter_address   = 1;
-  string message_type_url  = 2;
+  string granter_address  = 1;
+  string message_type_url = 2;
 }
 
 message Grantee {
@@ -940,6 +943,15 @@ message Grantee {
 message QueryGranteesByMessageTypeResponse {
   repeated Grantee grantees = 1;
 }
+
+message QueryTrainingAllowListRequest {
+  int32 role = 1;
+}
+
+message QueryTrainingAllowListResponse {
+  repeated string addresses = 1;
+}
+
 
 message QueryGetMLNodeVersionRequest {}
 

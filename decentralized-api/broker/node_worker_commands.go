@@ -212,12 +212,37 @@ func (c InferenceUpNodeCommand) Execute(ctx context.Context, worker *NodeWorker)
 		return result
 	}
 
-	// Start inference
 	if len(worker.node.State.EpochModels) == 0 {
-		result.Succeeded = false
-		result.Error = "No epoch models available for this node"
-		result.FinalStatus = types.HardwareNodeStatus_FAILED
-		logging.Error(result.Error, types.Nodes, "node_id", worker.nodeId)
+		govModels, err := worker.broker.chainBridge.GetGovernanceModels()
+		if err != nil {
+			result.Succeeded = false
+			result.Error = "Failed to get governance models: " + err.Error()
+			result.FinalStatus = types.HardwareNodeStatus_FAILED
+			logging.Error(result.Error, types.Nodes, "node_id", worker.nodeId)
+			return result
+		}
+
+		hasIntersection := false
+		for _, govModel := range govModels.Model {
+			if _, ok := worker.node.Node.Models[govModel.Id]; ok {
+				hasIntersection = true
+				break
+			}
+		}
+
+		if !hasIntersection {
+			result.Succeeded = false
+			result.Error = "No epoch models available for this node"
+			result.FinalStatus = types.HardwareNodeStatus_FAILED
+			logging.Error(result.Error, types.Nodes, "node_id", worker.nodeId)
+			return result
+		}
+
+		// Node has models that match governance but not yet assigned to epoch, skip for now
+		result.Succeeded = true
+		result.FinalStatus = types.HardwareNodeStatus_STOPPED
+		result.FinalPocStatus = PocStatusIdle
+		logging.Info("Node has governance models configured but not yet assigned to epoch, skipping inference start", types.Nodes, "node_id", worker.nodeId)
 		return result
 	}
 

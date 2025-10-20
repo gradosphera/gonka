@@ -80,6 +80,15 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 	registry.RegisterImplementations((*sdk.Msg)(nil),
 		&MsgCreateDummyTrainingTask{},
 	)
+	registry.RegisterImplementations((*sdk.Msg)(nil),
+		&MsgAddUserToTrainingAllowList{},
+	)
+	registry.RegisterImplementations((*sdk.Msg)(nil),
+		&MsgRemoveUserFromTrainingAllowList{},
+	)
+	registry.RegisterImplementations((*sdk.Msg)(nil),
+		&MsgSetTrainingAllowList{},
+	)
 	// this line is used by starport scaffolding # 3
 
 	registry.RegisterImplementations((*sdk.Msg)(nil),

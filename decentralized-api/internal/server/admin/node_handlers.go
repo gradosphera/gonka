@@ -93,11 +93,42 @@ func (s *Server) createNewNode(ctx echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err)
 	}
 
-	node, err := s.addNode(newNode)
+	// Upsert: if node exists, update it; otherwise, create
+	nodes, err := s.nodeBroker.GetNodes()
 	if err != nil {
-		return err
+		logging.Error("Error reading nodes", types.Nodes, "error", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-	return ctx.JSON(http.StatusOK, node)
+
+	exists := false
+	for _, n := range nodes {
+		if n.Node.Id == newNode.Id {
+			exists = true
+			break
+		}
+	}
+
+	if exists {
+		command := broker.NewUpdateNodeCommand(newNode)
+		response := command.Response
+		err := s.nodeBroker.QueueMessage(command)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+		node := <-response
+		if node == nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "failed to update node")
+		}
+		// sync config file with updated node list
+		syncNodesWithConfig(s.nodeBroker, s.configManager)
+		return ctx.JSON(http.StatusOK, node)
+	} else {
+		node, err := s.addNode(newNode)
+		if err != nil {
+			return err
+		}
+		return ctx.JSON(http.StatusOK, node)
+	}
 }
 
 func (s *Server) addNode(newNode apiconfig.InferenceNodeConfig) (apiconfig.InferenceNodeConfig, error) {
@@ -190,4 +221,20 @@ func (s *Server) disableNode(c echo.Context) error {
 		"message": "node disabled successfully",
 		"node_id": nodeId,
 	})
+}
+
+// exportDb returns a human-readable JSON snapshot of DB-backed dynamic config
+func (s *Server) exportDb(c echo.Context) error {
+	ctx := c.Request().Context()
+	db := s.configManager.SqlDb()
+	if db == nil || db.GetDb() == nil {
+		logging.Error("DB not initialized", types.Nodes)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "db not initialized"})
+	}
+	payload, err := apiconfig.ExportAllDb(ctx, db.GetDb())
+	if err != nil {
+		logging.Error("Failed to export DB state", types.Nodes, "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, payload)
 }

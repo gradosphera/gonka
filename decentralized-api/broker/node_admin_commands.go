@@ -109,6 +109,85 @@ func (c RegisterNode) Execute(b *Broker) {
 	c.Response <- &c.Node
 }
 
+// UpdateNode updates an existing node's configuration while preserving runtime state
+type UpdateNode struct {
+	Node     apiconfig.InferenceNodeConfig
+	Response chan *apiconfig.InferenceNodeConfig
+}
+
+func NewUpdateNodeCommand(node apiconfig.InferenceNodeConfig) UpdateNode {
+	return UpdateNode{
+		Node:     node,
+		Response: make(chan *apiconfig.InferenceNodeConfig, 2),
+	}
+}
+
+func (u UpdateNode) GetResponseChannelCapacity() int {
+	return cap(u.Response)
+}
+
+func (c UpdateNode) Execute(b *Broker) {
+	// Validate models exist in governance
+	govModels, err := b.chainBridge.GetGovernanceModels()
+	if err != nil {
+		logging.Error("UpdateNode. Failed to get governance models", types.Nodes, "error", err)
+		c.Response <- nil
+		return
+	}
+
+	modelMap := make(map[string]struct{})
+	for _, model := range govModels.Model {
+		modelMap[model.Id] = struct{}{}
+	}
+
+	for modelId := range c.Node.Models {
+		if _, ok := modelMap[modelId]; !ok {
+			logging.Error("UpdateNode. Model is not a valid governance model", types.Nodes, "model_id", modelId)
+			c.Response <- nil
+			return
+		}
+	}
+
+	// Fetch existing node
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	existing, exists := b.nodes[c.Node.Id]
+	if !exists {
+		logging.Error("UpdateNode. Node not found", types.Nodes, "node_id", c.Node.Id)
+		c.Response <- nil
+		return
+	}
+
+	// Build updated Node struct, preserving node number
+	models := make(map[string]ModelArgs)
+	for model, config := range c.Node.Models {
+		models[model] = ModelArgs{Args: config.Args}
+	}
+
+	updated := Node{
+		Host:             c.Node.Host,
+		InferenceSegment: c.Node.InferenceSegment,
+		InferencePort:    c.Node.InferencePort,
+		PoCSegment:       c.Node.PoCSegment,
+		PoCPort:          c.Node.PoCPort,
+		Models:           models,
+		Id:               c.Node.Id,
+		MaxConcurrent:    c.Node.MaxConcurrent,
+		NodeNum:          existing.Node.NodeNum,
+		Hardware:         c.Node.Hardware,
+	}
+
+	// Apply update
+	existing.Node = updated
+
+	// Optionally trigger a status re-check
+	b.TriggerStatusQuery()
+
+	logging.Info("UpdateNode. Updated node configuration", types.Nodes, "node_id", c.Node.Id)
+	c.Response <- &c.Node
+}
+
 type RemoveNode struct {
 	NodeId   string
 	Response chan bool
@@ -174,5 +253,31 @@ func (c SetNodeAdminStateCommand) Execute(b *Broker) {
 		"enabled", c.Enabled,
 		"epoch", currentEpoch)
 
+	c.Response <- nil
+}
+
+// UpdateNodeHardwareCommand updates the Hardware field for a specific node
+type UpdateNodeHardwareCommand struct {
+	NodeId   string
+	Hardware []apiconfig.Hardware
+	Response chan error
+}
+
+func (c UpdateNodeHardwareCommand) GetResponseChannelCapacity() int {
+	return cap(c.Response)
+}
+
+func (c UpdateNodeHardwareCommand) Execute(b *Broker) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	node, exists := b.nodes[c.NodeId]
+	if !exists {
+		c.Response <- fmt.Errorf("node not found: %s", c.NodeId)
+		return
+	}
+
+	node.Node.Hardware = c.Hardware
+	logging.Info("Updated node hardware", types.Nodes, "node_id", c.NodeId, "hardware_count", len(c.Hardware))
 	c.Response <- nil
 }

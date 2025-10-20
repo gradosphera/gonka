@@ -39,7 +39,7 @@ func TestPack_Unpack_Msg(t *testing.T) {
 	bz, err := client.Context().Codec.MarshalInterfaceJSON(rawTx)
 	assert.NoError(t, err)
 
-	timeout := getTimestamp(time.Second)
+	timeout := getTimestamp(time.Now().UnixNano(), time.Second)
 	b, err := json.Marshal(&txToSend{TxInfo: txInfo{RawTx: bz, Timeout: timeout}})
 	assert.NoError(t, err)
 

@@ -258,6 +258,15 @@ func (c UpdateNodeResultCommand) Execute(b *Broker) {
 	node.State.cancelInFlightTask = nil
 	if !c.Result.Succeeded {
 		node.State.FailureReason = c.Result.Error
+	} else {
+		// Clear failure reason on success
+		node.State.FailureReason = ""
+	}
+
+	// Reset POC fields when moving away from POC status
+	if c.Result.FinalStatus != types.HardwareNodeStatus_POC {
+		node.State.PocIntendedStatus = PocStatusIdle
+		node.State.PocCurrentStatus = PocStatusIdle
 	}
 
 	c.Response <- true

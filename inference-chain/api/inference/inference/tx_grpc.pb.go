@@ -19,34 +19,35 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Msg_UpdateParams_FullMethodName                       = "/inference.inference.Msg/UpdateParams"
-	Msg_StartInference_FullMethodName                     = "/inference.inference.Msg/StartInference"
-	Msg_FinishInference_FullMethodName                    = "/inference.inference.Msg/FinishInference"
-	Msg_SubmitNewParticipant_FullMethodName               = "/inference.inference.Msg/SubmitNewParticipant"
-	Msg_Validation_FullMethodName                         = "/inference.inference.Msg/Validation"
-	Msg_SubmitNewUnfundedParticipant_FullMethodName       = "/inference.inference.Msg/SubmitNewUnfundedParticipant"
-	Msg_InvalidateInference_FullMethodName                = "/inference.inference.Msg/InvalidateInference"
-	Msg_RevalidateInference_FullMethodName                = "/inference.inference.Msg/RevalidateInference"
-	Msg_ClaimRewards_FullMethodName                       = "/inference.inference.Msg/ClaimRewards"
-	Msg_SubmitPocBatch_FullMethodName                     = "/inference.inference.Msg/SubmitPocBatch"
-	Msg_SubmitPocValidation_FullMethodName                = "/inference.inference.Msg/SubmitPocValidation"
-	Msg_SubmitSeed_FullMethodName                         = "/inference.inference.Msg/SubmitSeed"
-	Msg_SubmitUnitOfComputePriceProposal_FullMethodName   = "/inference.inference.Msg/SubmitUnitOfComputePriceProposal"
-	Msg_RegisterModel_FullMethodName                      = "/inference.inference.Msg/RegisterModel"
-	Msg_CreateTrainingTask_FullMethodName                 = "/inference.inference.Msg/CreateTrainingTask"
-	Msg_SubmitHardwareDiff_FullMethodName                 = "/inference.inference.Msg/SubmitHardwareDiff"
-	Msg_CreatePartialUpgrade_FullMethodName               = "/inference.inference.Msg/CreatePartialUpgrade"
-	Msg_ClaimTrainingTaskForAssignment_FullMethodName     = "/inference.inference.Msg/ClaimTrainingTaskForAssignment"
-	Msg_AssignTrainingTask_FullMethodName                 = "/inference.inference.Msg/AssignTrainingTask"
-	Msg_SubmitTrainingKvRecord_FullMethodName             = "/inference.inference.Msg/SubmitTrainingKvRecord"
-	Msg_JoinTraining_FullMethodName                       = "/inference.inference.Msg/JoinTraining"
-	Msg_TrainingHeartbeat_FullMethodName                  = "/inference.inference.Msg/TrainingHeartbeat"
-	Msg_SetBarrier_FullMethodName                         = "/inference.inference.Msg/SetBarrier"
-	Msg_JoinTrainingStatus_FullMethodName                 = "/inference.inference.Msg/JoinTrainingStatus"
-	Msg_CreateDummyTrainingTask_FullMethodName            = "/inference.inference.Msg/CreateDummyTrainingTask"
-	Msg_BridgeExchange_FullMethodName                     = "/inference.inference.Msg/BridgeExchange"
-	Msg_SubmitParticipantsProof_FullMethodName            = "/inference.inference.Msg/SubmitParticipantsProof"
-	Msg_SubmitMissingParticipantsProofData_FullMethodName = "/inference.inference.Msg/SubmitMissingParticipantsProofData"
+	Msg_UpdateParams_FullMethodName                     = "/inference.inference.Msg/UpdateParams"
+	Msg_StartInference_FullMethodName                   = "/inference.inference.Msg/StartInference"
+	Msg_FinishInference_FullMethodName                  = "/inference.inference.Msg/FinishInference"
+	Msg_SubmitNewParticipant_FullMethodName             = "/inference.inference.Msg/SubmitNewParticipant"
+	Msg_Validation_FullMethodName                       = "/inference.inference.Msg/Validation"
+	Msg_SubmitNewUnfundedParticipant_FullMethodName     = "/inference.inference.Msg/SubmitNewUnfundedParticipant"
+	Msg_InvalidateInference_FullMethodName              = "/inference.inference.Msg/InvalidateInference"
+	Msg_RevalidateInference_FullMethodName              = "/inference.inference.Msg/RevalidateInference"
+	Msg_ClaimRewards_FullMethodName                     = "/inference.inference.Msg/ClaimRewards"
+	Msg_SubmitPocBatch_FullMethodName                   = "/inference.inference.Msg/SubmitPocBatch"
+	Msg_SubmitPocValidation_FullMethodName              = "/inference.inference.Msg/SubmitPocValidation"
+	Msg_SubmitSeed_FullMethodName                       = "/inference.inference.Msg/SubmitSeed"
+	Msg_SubmitUnitOfComputePriceProposal_FullMethodName = "/inference.inference.Msg/SubmitUnitOfComputePriceProposal"
+	Msg_RegisterModel_FullMethodName                    = "/inference.inference.Msg/RegisterModel"
+	Msg_CreateTrainingTask_FullMethodName               = "/inference.inference.Msg/CreateTrainingTask"
+	Msg_SubmitHardwareDiff_FullMethodName               = "/inference.inference.Msg/SubmitHardwareDiff"
+	Msg_CreatePartialUpgrade_FullMethodName             = "/inference.inference.Msg/CreatePartialUpgrade"
+	Msg_ClaimTrainingTaskForAssignment_FullMethodName   = "/inference.inference.Msg/ClaimTrainingTaskForAssignment"
+	Msg_AssignTrainingTask_FullMethodName               = "/inference.inference.Msg/AssignTrainingTask"
+	Msg_SubmitTrainingKvRecord_FullMethodName           = "/inference.inference.Msg/SubmitTrainingKvRecord"
+	Msg_JoinTraining_FullMethodName                     = "/inference.inference.Msg/JoinTraining"
+	Msg_TrainingHeartbeat_FullMethodName                = "/inference.inference.Msg/TrainingHeartbeat"
+	Msg_SetBarrier_FullMethodName                       = "/inference.inference.Msg/SetBarrier"
+	Msg_JoinTrainingStatus_FullMethodName               = "/inference.inference.Msg/JoinTrainingStatus"
+	Msg_CreateDummyTrainingTask_FullMethodName          = "/inference.inference.Msg/CreateDummyTrainingTask"
+	Msg_BridgeExchange_FullMethodName                   = "/inference.inference.Msg/BridgeExchange"
+	Msg_AddUserToTrainingAllowList_FullMethodName       = "/inference.inference.Msg/AddUserToTrainingAllowList"
+	Msg_RemoveUserFromTrainingAllowList_FullMethodName  = "/inference.inference.Msg/RemoveUserFromTrainingAllowList"
+	Msg_SetTrainingAllowList_FullMethodName             = "/inference.inference.Msg/SetTrainingAllowList"
 )
 
 // MsgClient is the client API for Msg service.
@@ -81,8 +82,9 @@ type MsgClient interface {
 	JoinTrainingStatus(ctx context.Context, in *MsgJoinTrainingStatus, opts ...grpc.CallOption) (*MsgJoinTrainingStatusResponse, error)
 	CreateDummyTrainingTask(ctx context.Context, in *MsgCreateDummyTrainingTask, opts ...grpc.CallOption) (*MsgCreateDummyTrainingTaskResponse, error)
 	BridgeExchange(ctx context.Context, in *MsgBridgeExchange, opts ...grpc.CallOption) (*MsgBridgeExchangeResponse, error)
-	SubmitParticipantsProof(ctx context.Context, in *MsgSubmitParticipantsProof, opts ...grpc.CallOption) (*MsgSubmitParticipantsProofResponse, error)
-	SubmitMissingParticipantsProofData(ctx context.Context, in *MsgSubmitActiveParticipantsProofData, opts ...grpc.CallOption) (*MsgSubmitActiveParticipantsProofDataResponse, error)
+	AddUserToTrainingAllowList(ctx context.Context, in *MsgAddUserToTrainingAllowList, opts ...grpc.CallOption) (*MsgAddUserToTrainingAllowListResponse, error)
+	RemoveUserFromTrainingAllowList(ctx context.Context, in *MsgRemoveUserFromTrainingAllowList, opts ...grpc.CallOption) (*MsgRemoveUserFromTrainingAllowListResponse, error)
+	SetTrainingAllowList(ctx context.Context, in *MsgSetTrainingAllowList, opts ...grpc.CallOption) (*MsgSetTrainingAllowListResponse, error)
 }
 
 type msgClient struct {
@@ -327,18 +329,27 @@ func (c *msgClient) BridgeExchange(ctx context.Context, in *MsgBridgeExchange, o
 	return out, nil
 }
 
-func (c *msgClient) SubmitParticipantsProof(ctx context.Context, in *MsgSubmitParticipantsProof, opts ...grpc.CallOption) (*MsgSubmitParticipantsProofResponse, error) {
-	out := new(MsgSubmitParticipantsProofResponse)
-	err := c.cc.Invoke(ctx, Msg_SubmitParticipantsProof_FullMethodName, in, out, opts...)
+func (c *msgClient) AddUserToTrainingAllowList(ctx context.Context, in *MsgAddUserToTrainingAllowList, opts ...grpc.CallOption) (*MsgAddUserToTrainingAllowListResponse, error) {
+	out := new(MsgAddUserToTrainingAllowListResponse)
+	err := c.cc.Invoke(ctx, Msg_AddUserToTrainingAllowList_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *msgClient) SubmitMissingParticipantsProofData(ctx context.Context, in *MsgSubmitActiveParticipantsProofData, opts ...grpc.CallOption) (*MsgSubmitActiveParticipantsProofDataResponse, error) {
-	out := new(MsgSubmitActiveParticipantsProofDataResponse)
-	err := c.cc.Invoke(ctx, Msg_SubmitMissingParticipantsProofData_FullMethodName, in, out, opts...)
+func (c *msgClient) RemoveUserFromTrainingAllowList(ctx context.Context, in *MsgRemoveUserFromTrainingAllowList, opts ...grpc.CallOption) (*MsgRemoveUserFromTrainingAllowListResponse, error) {
+	out := new(MsgRemoveUserFromTrainingAllowListResponse)
+	err := c.cc.Invoke(ctx, Msg_RemoveUserFromTrainingAllowList_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) SetTrainingAllowList(ctx context.Context, in *MsgSetTrainingAllowList, opts ...grpc.CallOption) (*MsgSetTrainingAllowListResponse, error) {
+	out := new(MsgSetTrainingAllowListResponse)
+	err := c.cc.Invoke(ctx, Msg_SetTrainingAllowList_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -377,8 +388,9 @@ type MsgServer interface {
 	JoinTrainingStatus(context.Context, *MsgJoinTrainingStatus) (*MsgJoinTrainingStatusResponse, error)
 	CreateDummyTrainingTask(context.Context, *MsgCreateDummyTrainingTask) (*MsgCreateDummyTrainingTaskResponse, error)
 	BridgeExchange(context.Context, *MsgBridgeExchange) (*MsgBridgeExchangeResponse, error)
-	SubmitParticipantsProof(context.Context, *MsgSubmitParticipantsProof) (*MsgSubmitParticipantsProofResponse, error)
-	SubmitMissingParticipantsProofData(context.Context, *MsgSubmitActiveParticipantsProofData) (*MsgSubmitActiveParticipantsProofDataResponse, error)
+	AddUserToTrainingAllowList(context.Context, *MsgAddUserToTrainingAllowList) (*MsgAddUserToTrainingAllowListResponse, error)
+	RemoveUserFromTrainingAllowList(context.Context, *MsgRemoveUserFromTrainingAllowList) (*MsgRemoveUserFromTrainingAllowListResponse, error)
+	SetTrainingAllowList(context.Context, *MsgSetTrainingAllowList) (*MsgSetTrainingAllowListResponse, error)
 	mustEmbedUnimplementedMsgServer()
 }
 
@@ -464,11 +476,14 @@ func (UnimplementedMsgServer) CreateDummyTrainingTask(context.Context, *MsgCreat
 func (UnimplementedMsgServer) BridgeExchange(context.Context, *MsgBridgeExchange) (*MsgBridgeExchangeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BridgeExchange not implemented")
 }
-func (UnimplementedMsgServer) SubmitParticipantsProof(context.Context, *MsgSubmitParticipantsProof) (*MsgSubmitParticipantsProofResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SubmitParticipantsProof not implemented")
+func (UnimplementedMsgServer) AddUserToTrainingAllowList(context.Context, *MsgAddUserToTrainingAllowList) (*MsgAddUserToTrainingAllowListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddUserToTrainingAllowList not implemented")
 }
-func (UnimplementedMsgServer) SubmitMissingParticipantsProofData(context.Context, *MsgSubmitActiveParticipantsProofData) (*MsgSubmitActiveParticipantsProofDataResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SubmitMissingParticipantsProofData not implemented")
+func (UnimplementedMsgServer) RemoveUserFromTrainingAllowList(context.Context, *MsgRemoveUserFromTrainingAllowList) (*MsgRemoveUserFromTrainingAllowListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveUserFromTrainingAllowList not implemented")
+}
+func (UnimplementedMsgServer) SetTrainingAllowList(context.Context, *MsgSetTrainingAllowList) (*MsgSetTrainingAllowListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetTrainingAllowList not implemented")
 }
 func (UnimplementedMsgServer) mustEmbedUnimplementedMsgServer() {}
 
@@ -951,38 +966,56 @@ func _Msg_BridgeExchange_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Msg_SubmitParticipantsProof_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgSubmitParticipantsProof)
+func _Msg_AddUserToTrainingAllowList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgAddUserToTrainingAllowList)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MsgServer).SubmitParticipantsProof(ctx, in)
+		return srv.(MsgServer).AddUserToTrainingAllowList(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Msg_SubmitParticipantsProof_FullMethodName,
+		FullMethod: Msg_AddUserToTrainingAllowList_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).SubmitParticipantsProof(ctx, req.(*MsgSubmitParticipantsProof))
+		return srv.(MsgServer).AddUserToTrainingAllowList(ctx, req.(*MsgAddUserToTrainingAllowList))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Msg_SubmitMissingParticipantsProofData_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgSubmitActiveParticipantsProofData)
+func _Msg_RemoveUserFromTrainingAllowList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgRemoveUserFromTrainingAllowList)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MsgServer).SubmitMissingParticipantsProofData(ctx, in)
+		return srv.(MsgServer).RemoveUserFromTrainingAllowList(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Msg_SubmitMissingParticipantsProofData_FullMethodName,
+		FullMethod: Msg_RemoveUserFromTrainingAllowList_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).SubmitMissingParticipantsProofData(ctx, req.(*MsgSubmitActiveParticipantsProofData))
+		return srv.(MsgServer).RemoveUserFromTrainingAllowList(ctx, req.(*MsgRemoveUserFromTrainingAllowList))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_SetTrainingAllowList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgSetTrainingAllowList)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).SetTrainingAllowList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_SetTrainingAllowList_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).SetTrainingAllowList(ctx, req.(*MsgSetTrainingAllowList))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1099,12 +1132,16 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Msg_BridgeExchange_Handler,
 		},
 		{
-			MethodName: "SubmitParticipantsProof",
-			Handler:    _Msg_SubmitParticipantsProof_Handler,
+			MethodName: "AddUserToTrainingAllowList",
+			Handler:    _Msg_AddUserToTrainingAllowList_Handler,
 		},
 		{
-			MethodName: "SubmitMissingParticipantsProofData",
-			Handler:    _Msg_SubmitMissingParticipantsProofData_Handler,
+			MethodName: "RemoveUserFromTrainingAllowList",
+			Handler:    _Msg_RemoveUserFromTrainingAllowList_Handler,
+		},
+		{
+			MethodName: "SetTrainingAllowList",
+			Handler:    _Msg_SetTrainingAllowList_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

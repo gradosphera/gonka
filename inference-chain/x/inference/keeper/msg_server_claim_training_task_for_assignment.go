@@ -15,6 +15,10 @@ const TrainingTaskAssignmentDeadline = 100
 func (k msgServer) ClaimTrainingTaskForAssignment(goCtx context.Context, msg *types.MsgClaimTrainingTaskForAssignment) (*types.MsgClaimTrainingTaskForAssignmentResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	if err := k.CheckTrainingAllowList(ctx, msg); err != nil {
+		return nil, err
+	}
+
 	task, found := k.GetTrainingTask(ctx, msg.TaskId)
 	if !found {
 		return nil, types.ErrTrainingTaskNotFound
@@ -25,7 +29,7 @@ func (k msgServer) ClaimTrainingTaskForAssignment(goCtx context.Context, msg *ty
 	}
 
 	blockHeight := uint64(ctx.BlockHeight())
-	blocksSinceAssignment := task.ClaimedByAssignerAtBlockHeight - blockHeight
+	blocksSinceAssignment := blockHeight - task.ClaimedByAssignerAtBlockHeight
 	if task.Assigner != "" && blocksSinceAssignment < TrainingTaskAssignmentDeadline {
 		return nil, types.ErrTrainingTaskAlreadyAssigned
 	}

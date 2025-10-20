@@ -21,11 +21,11 @@ func (k Keeper) GetParams(ctx context.Context) (params types.Params) {
 	return params
 }
 
-func (k Keeper) TryGetParams(ctx context.Context) (params types.Params, err error) {
+func (k Keeper) GetParamsSafe(ctx context.Context) (params types.Params, err error) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	bz := store.Get(types.ParamsKey)
 	if bz == nil {
-		return params, collections.ErrNotFound
+		return params, nil
 	}
 
 	err = k.cdc.Unmarshal(bz, &params)

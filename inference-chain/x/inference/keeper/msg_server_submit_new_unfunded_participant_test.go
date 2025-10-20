@@ -17,11 +17,11 @@ func TestMsgServer_SubmitNewUnfundedParticipant(t *testing.T) {
 	k, ms, ctx, mocks := setupKeeperWithMocks(t)
 
 	// Create a test address and public key
-	testAddress := testutil.Requester
 	privKey := secp256k1.GenPrivKey()
 	pubKey := privKey.PubKey()
 	pubKeyBytes := pubKey.Bytes()
 	encodedPubKey := base64.StdEncoding.EncodeToString(pubKeyBytes)
+	testAddress := sdk.AccAddress(pubKey.Address()).String()
 
 	// Setup expectations for account keeper
 	mocks.AccountKeeper.EXPECT().GetAccount(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
@@ -97,11 +97,11 @@ func TestMsgServer_SubmitNewUnfundedParticipant_WithInferenceUrl(t *testing.T) {
 	k, ms, ctx, mocks := setupKeeperWithMocks(t)
 
 	// Create a test address and public key
-	testAddress := testutil.Requester
 	privKey := secp256k1.GenPrivKey()
 	pubKey := privKey.PubKey()
 	pubKeyBytes := pubKey.Bytes()
 	encodedPubKey := base64.StdEncoding.EncodeToString(pubKeyBytes)
+	testAddress := sdk.AccAddress(pubKey.Address()).String()
 
 	// Setup expectations for account keeper
 	mocks.AccountKeeper.EXPECT().GetAccount(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()

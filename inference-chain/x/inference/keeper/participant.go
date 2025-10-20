@@ -8,8 +8,11 @@ import (
 )
 
 // SetParticipant set a specific participant in the store from its index
-func (k Keeper) SetParticipant(ctx context.Context, participant types.Participant) {
-	participantAddress := sdk.MustAccAddressFromBech32(participant.Index)
+func (k Keeper) SetParticipant(ctx context.Context, participant types.Participant) error {
+	participantAddress, err := sdk.AccAddressFromBech32(participant.Index)
+	if err != nil {
+		return err
+	}
 	var oldParticipant *types.Participant
 	p, err := k.Participants.Get(ctx, participantAddress)
 	if err != nil {
@@ -19,18 +22,32 @@ func (k Keeper) SetParticipant(ctx context.Context, participant types.Participan
 	}
 	err = k.Participants.Set(ctx, participantAddress, participant)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	k.LogDebug("Saved Participant", types.Participants, "address", participant.Address, "index", participant.Index, "balance", participant.CoinBalance)
 	group, err := k.GetCurrentEpochGroup(ctx)
 	if err != nil {
 		k.LogWarn("Failed to get current epoch group", types.Participants, "error", err)
-	} else {
-		err = group.UpdateMember(ctx, oldParticipant, &participant)
-		if err != nil {
-			k.LogWarn("Failed to update member", types.Participants, "error", err)
+		return nil
+	}
+	err = group.UpdateMember(ctx, oldParticipant, &participant)
+	if err != nil {
+		k.LogWarn("Failed to update member", types.Participants, "error", err)
+		return nil
+	}
+	return nil
+}
+
+func (k Keeper) GetParticipants(
+	ctx context.Context,
+	addresses []string) (participants []types.Participant) {
+	for _, address := range addresses {
+		participant, found := k.GetParticipant(ctx, address)
+		if found {
+			participants = append(participants, participant)
 		}
 	}
+	return participants
 }
 
 // GetParticipant returns a participant from its index
@@ -48,19 +65,6 @@ func (k Keeper) GetParticipant(
 		return val, false
 	}
 	return val, true
-}
-
-func (k Keeper) GetParticipants(ctx context.Context, ids []string) ([]types.Participant, bool) {
-	var participants = make([]types.Participant, len(ids))
-	for i, id := range ids {
-		b, err := k.Participants.Get(ctx, sdk.MustAccAddressFromBech32(id))
-		if err != nil {
-			return nil, false
-		}
-		participants[i] = b
-	}
-
-	return participants, true
 }
 
 // RemoveParticipant removes a participant from the store

@@ -51,6 +51,7 @@ func StubModelSubgroup(t *testing.T, ctx context.Context, k keeper.Keeper, mocks
 	require.NoError(t, err)
 	mocks.ExpectAnyCreateGroupWithPolicyCall()
 	_, err = eg.CreateSubGroup(ctx, model)
+
 	require.NoError(t, err)
 }
 

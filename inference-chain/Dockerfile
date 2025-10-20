@@ -13,6 +13,7 @@ ENV GOOS=${GOOS} \
     CGO_ENABLED=1 \
     GO111MODULE=on \
     GOCACHE=/root/.cache/go-build \
+    GOMODCACHE=/go/pkg/mod \
     CGO_CFLAGS="-I/lib" \
     CGO_LDFLAGS="-L/lib" \
     # Override the wasmvm library path to use our musl version
@@ -43,6 +44,7 @@ WORKDIR /app/inference-chain
 COPY inference-chain/go.mod inference-chain/go.sum ./
 
 RUN --mount=type=cache,id=go-build-cache,target=/root/.cache/go-build \
+    --mount=type=cache,id=go-mod-cache,target=/go/pkg/mod \
     CGO_ENABLED=1 CC=gcc \
     go mod download
 
@@ -51,6 +53,7 @@ COPY inference-chain/. .
 ARG LDFLAGS
 ARG TAGS=""
 RUN --mount=type=cache,id=go-build-cache,target=/root/.cache/go-build \
+    --mount=type=cache,id=go-mod-cache,target=/go/pkg/mod \
     CGO_ENABLED=1 CC=gcc \
     go build -mod=readonly -tags="muslc ${TAGS}" -ldflags "${LDFLAGS}" \
     -o ./build/inferenced \

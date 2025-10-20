@@ -1,7 +1,8 @@
 import asyncio
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
+import uvicorn
 import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import StreamingResponse
@@ -25,8 +26,14 @@ vllm_counts: Dict[int, int] = {}
 vllm_pick_lock = asyncio.Lock()
 vllm_client: Optional[httpx.AsyncClient] = None
 
+shutdown_event = asyncio.Event()
+active_proxy_tasks: Set[asyncio.Task] = set()
+tasks_lock = asyncio.Lock()
+
 compatibility_app: Optional[FastAPI] = None
 compatibility_server_task: Optional[asyncio.Task] = None
+compatibility_server: Optional[object] = None  # uvicorn.Server instance
+health_check_task: Optional[asyncio.Task] = None
 
 
 class ProxyMiddleware(BaseHTTPMiddleware):
@@ -49,65 +56,87 @@ class ProxyMiddleware(BaseHTTPMiddleware):
 
 
 async def _proxy_request_to_backend(request: Request, backend_path: str) -> Response:
-    """Common proxy logic for routing requests to vLLM backends."""
-    if not vllm_backend_ports:
+    logger.debug(f"Proxying request to backend: {request.method} {backend_path}")
+    
+    if not vllm_backend_ports or not any(vllm_healthy.values()):
+        logger.warning(f"No vLLM backend available. Ports: {vllm_backend_ports}, Healthy: {vllm_healthy}")
         return Response(status_code=503, content=b"No vLLM backend available")
     
-    if not any(vllm_healthy.values()):
-        return Response(status_code=503, content=b"vLLM backend not ready")
+    if shutdown_event.is_set():
+        return Response(status_code=503, content=b"Service is shutting down")
     
     try:
         port = await _pick_vllm_backend()
     except RuntimeError:
         return Response(status_code=503, content=b"No vLLM backend available")
-
-    async def iter_body():
-        async for chunk in request.stream():
-            yield chunk
-
+    
     if not backend_path.startswith("/"):
         backend_path = "/" + backend_path
     url = f"http://{VLLM_HOST}:{port}{backend_path}"
     headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
-
+    
     if vllm_client is None:
+        await _release_vllm_backend(port)
         return Response(status_code=503, content=b"vLLM client not initialized")
-
+    
     try:
-        cm = vllm_client.stream(
+        context_manager = vllm_client.stream(
             request.method,
             url,
             params=request.query_params,
             headers=headers,
-            content=iter_body(),
+            content=request.stream(),
             timeout=httpx.Timeout(None, read=900),
         )
-
-        upstream = await cm.__aenter__()
-
-        resp_headers = {
-            k: v
-            for k, v in upstream.headers.items()
-            if k.lower() not in {"content-length", "transfer-encoding", "connection"}
-        }
-
-        async def _cleanup(cxt, port_):
-            try:
-                await cxt.__aexit__(None, None, None)
-            finally:
-                await _release_vllm_backend(port_)
-
-        return StreamingResponse(
-            upstream.aiter_raw(),
-            status_code=upstream.status_code,
-            headers=resp_headers,
-            background=BackgroundTask(_cleanup, cm, port),
-        )
-
+        upstream = await context_manager.__aenter__()
     except Exception as exc:
-        logger.exception("vLLM proxy error: %s", exc)
+        logger.exception(f"Failed to connect to vLLM backend: {exc}")
         await _release_vllm_backend(port)
-        return Response(status_code=502, content=b"vLLM upstream failure")
+        return Response(status_code=502, content=b"vLLM connection failed")
+    
+    resp_headers = {
+        k: v for k, v in upstream.headers.items()
+        if k.lower() not in {"content-length", "transfer-encoding", "connection"}
+    }
+    
+    async def stream_with_tracking():
+        current_task = asyncio.current_task()
+        
+        if current_task:
+            async with tasks_lock:
+                if shutdown_event.is_set():
+                    raise asyncio.CancelledError("Shutdown in progress")
+                active_proxy_tasks.add(current_task)
+        
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+                
+        except asyncio.CancelledError:
+            logger.info(f"Stream cancelled for port {port} during shutdown")
+            raise
+        
+        except Exception as exc:
+            logger.exception(f"vLLM streaming error on port {port}: {exc}")
+            raise
+            
+        finally:
+            if current_task:
+                async with tasks_lock:
+                    active_proxy_tasks.discard(current_task)
+            
+            try:
+                await context_manager.__aexit__(None, None, None)
+            except Exception as e:
+                logger.error(f"Error closing upstream connection: {e}")
+            
+            await _release_vllm_backend(port)
+    
+    return StreamingResponse(
+        stream_with_tracking(),
+        status_code=upstream.status_code,
+        headers=resp_headers,
+    )
 
 
 async def _pick_vllm_backend() -> int:
@@ -127,19 +156,21 @@ async def _release_vllm_backend(port: int):
         vllm_counts[port] -= 1
 
 
-async def _health_check_vllm(interval: float = 5.0):
-    """Health check for vLLM backends."""
+async def _health_check_vllm(interval: float = 2.0):
+    """Health check for vLLM backends and manage compatibility server."""
+    logger.info("Health check loop started, checking every %s seconds", interval)
     while True:
         if not vllm_backend_ports:
             # No backends configured yet, wait and check again
+            logger.debug("No backend ports configured yet, waiting...")
             await asyncio.sleep(interval)
             continue
             
-        logger.debug("Health check running, backend ports: %s", vllm_backend_ports)
         for p in vllm_backend_ports:
             ok = False
             try:
                 if vllm_client is None:
+                    logger.warning(f"Health check skipped for port {p}: vllm_client is None")
                     continue
                 r = await vllm_client.get(f"http://{VLLM_HOST}:{p}/health", timeout=2)
                 ok = r.status_code == 200
@@ -151,11 +182,16 @@ async def _health_check_vllm(interval: float = 5.0):
             if prev != ok:
                 logger.info("%s:%d is %s", VLLM_HOST, p, "UP" if ok else "DOWN")
             vllm_healthy[p] = ok
-        logger.debug("Current healthy status: %s", vllm_healthy)
         
-        if compatibility_server_task and not any(vllm_healthy.values()):
+        # Manage backward compatibility server based on backend health
+        has_healthy_backends = any(vllm_healthy.values())
+        
+        if compatibility_server_task and not has_healthy_backends:
             logger.info("No vLLM backends healthy, stopping backward compatibility server")
             await stop_backward_compatibility()
+        elif not compatibility_server_task and has_healthy_backends:
+            logger.info("vLLM backends are healthy, starting backward compatibility server")
+            await start_backward_compatibility()
         
         await asyncio.sleep(interval)
 
@@ -174,43 +210,45 @@ def setup_vllm_proxy(backend_ports: List[int]):
 
 async def start_vllm_proxy():
     """Start vLLM proxy components."""
-    global vllm_client
+    global vllm_client, health_check_task
     vllm_client = httpx.AsyncClient(http2=True, limits=LIMITS)
-    # Always start health check - it will monitor for new backends
-    asyncio.create_task(_health_check_vllm())
-    asyncio.create_task(_start_backward_compatibility_when_ready())
+    # Health check monitors backends and manages compatibility server automatically
+    health_check_task = asyncio.create_task(_health_check_vllm())
     logger.info("vLLM proxy started")
 
 
 async def stop_vllm_proxy():
     """Stop vLLM proxy components."""
-    global vllm_client
+    global vllm_client, health_check_task
+    
+    # Cancel health check task
+    if health_check_task and not health_check_task.done():
+        health_check_task.cancel()
+        try:
+            await health_check_task
+        except asyncio.CancelledError:
+            pass
+        health_check_task = None
+    
+    # Stop compatibility server
+    await stop_backward_compatibility()
+    
+    # Close HTTP client
     if vllm_client:
         await vllm_client.aclose()
         vllm_client = None
     logger.info("vLLM proxy stopped")
 
 
-async def _start_backward_compatibility_when_ready():
-    """Start backward compatibility server when vLLM backends are ready."""
-    while True:
-        if any(vllm_healthy.values()):
-            logger.info("vLLM backends are ready, starting backward compatibility server")
-            await start_backward_compatibility()
-            break
-        logger.debug("Waiting for vLLM backends to be ready...")
-        await asyncio.sleep(2)
-
-
-
 async def _compatibility_proxy_handler(request: Request, path: str):
     """Handler for backward compatibility server - proxies all requests to vLLM backends."""
+    logger.debug(f"Compatibility server received request: {request.method} /{path}")
     return await _proxy_request_to_backend(request, path)
 
 
 async def _run_compatibility_server():
     """Run the backward compatibility server on port 5000."""
-    global compatibility_app
+    global compatibility_app, compatibility_server
     
     compatibility_app = FastAPI(title="vLLM Backward Compatibility Proxy")
     
@@ -218,7 +256,6 @@ async def _run_compatibility_server():
     async def proxy_all(request: Request, path: str):
         return await _compatibility_proxy_handler(request, path)
     
-    import uvicorn
     
     logger.info("Starting backward compatibility server on port 5000")
     config = uvicorn.Config(
@@ -230,28 +267,47 @@ async def _run_compatibility_server():
         log_level="info"
     )
     server = uvicorn.Server(config)
-    await server.serve()
+    compatibility_server = server  # Save reference for shutdown
+    try:
+        await server.serve()
+    finally:
+        compatibility_server = None
 
 
 async def start_backward_compatibility():
     """Start backward compatibility server on port 5000."""
     global compatibility_server_task
     if compatibility_server_task is None:
+        logger.info("Creating backward compatibility server task on port 5000...")
         compatibility_server_task = asyncio.create_task(_run_compatibility_server())
-        logger.info("Backward compatibility server started on port 5000")
+        # Give it a moment to start
+        await asyncio.sleep(0.1)
+        logger.info("Backward compatibility server task created")
     else:
         logger.debug("Backward compatibility server already running")
 
 
 async def stop_backward_compatibility():
     """Stop backward compatibility server."""
-    global compatibility_server_task, compatibility_app
+    global compatibility_server_task, compatibility_app, compatibility_server
     if compatibility_server_task:
-        compatibility_server_task.cancel()
-        try:
-            await compatibility_server_task
-        except asyncio.CancelledError:
-            pass
+        # First, shutdown the uvicorn server gracefully
+        if compatibility_server:
+            try:
+                compatibility_server.should_exit = True
+                await asyncio.sleep(0.1)  # Give it a moment to start shutdown
+            except Exception as e:
+                logger.debug(f"Error during server shutdown signal: {e}")
+        
+        # Then cancel the task if it's still running
+        if not compatibility_server_task.done():
+            compatibility_server_task.cancel()
+            try:
+                await compatibility_server_task
+            except (asyncio.CancelledError, RuntimeError, Exception) as e:
+                logger.debug(f"Error awaiting cancelled compatibility server task: {e}")
+        
         compatibility_server_task = None
+        compatibility_server = None
         compatibility_app = None
         logger.info("Backward compatibility server stopped") 

@@ -686,6 +686,14 @@ data class ApplicationCLI(
         execAndParse(finalArgs)
     }
 
+    data class AllowList(
+        val addresses: List<String> = emptyList()
+    )
+
+    fun getTrainingAllowList(role: Int): List<String> = wrapLog("getTrainingAllowList", true ) {
+        execAndParse<AllowList>(listOf("query", "inference","training-allow-list", role.toString())).addresses
+    }
+
     data class Count(
         val count: Long = 0
     )

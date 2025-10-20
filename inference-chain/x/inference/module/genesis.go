@@ -31,6 +31,10 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 
 	// Init empty TokenomicsData
 	k.SetTokenomicsData(ctx, types.TokenomicsData{})
+	err := k.PruningState.Set(ctx, types.PruningState{})
+	if err != nil {
+		panic(err)
+	}
 
 	// Set MLNode version with default if not defined
 	if genState.MlnodeVersion != nil {
@@ -60,16 +64,20 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 	}
 
 	for _, p := range genState.ParticipantList {
-		k.SetParticipant(ctx, p)
-		if p.ValidatorKey != "" {
-			k.LogInfo("INIT GENESTS: adding active particiapnt", types.Participants, "val_key", p.ValidatorKey)
-			activeParticiapntGenesisEpoch.Participants = append(activeParticiapntGenesisEpoch.Participants,
-				&types.ActiveParticipant{
-					Index:        p.Index,
-					ValidatorKey: p.ValidatorKey,
-					Weight:       int64(p.Weight),
-					InferenceUrl: p.InferenceUrl,
-				})
+		err := k.SetParticipant(ctx, p)
+		if err != nil {
+			k.LogWarn("Error importing participant", types.System, "error", err, "participant", p)
+		} else {
+			if p.ValidatorKey != "" {
+				k.LogInfo("INIT GENESTS: adding active particiapnt", types.Participants, "val_key", p.ValidatorKey)
+				activeParticiapntGenesisEpoch.Participants = append(activeParticiapntGenesisEpoch.Participants,
+					&types.ActiveParticipant{
+						Index:        p.Index,
+						ValidatorKey: p.ValidatorKey,
+						Weight:       int64(p.Weight),
+						InferenceUrl: p.InferenceUrl,
+					})
+			}
 		}
 	}
 

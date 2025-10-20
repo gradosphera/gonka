@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from pow.compute.gpu_group import GpuGroup, create_gpu_groups, get_min_group_vram
+from pow.compute.gpu_group import GpuGroup, create_gpu_groups, get_min_group_vram, NotEnoughGPUResources
 
 
 class TestGpuGroup:
@@ -69,25 +69,34 @@ class TestCreateGpuGroups:
             assert result_devices == expected_groups
 
     def test_no_cuda_fallback(self):
-        """Test CPU fallback when CUDA is not available."""
+        """Test exception raised when CUDA is not available."""
         with patch('torch.cuda.is_available', return_value=False):
-            groups = create_gpu_groups()
-            assert len(groups) == 1 and groups[0].devices == [0]
+            with pytest.raises(NotEnoughGPUResources, match="CUDA is not available"):
+                create_gpu_groups()
 
     def test_zero_devices_fallback(self):
-        """Test CPU fallback when no CUDA devices are found."""
+        """Test exception raised when no CUDA devices are found."""
         with patch('torch.cuda.is_available', return_value=True), \
              patch('torch.cuda.device_count', return_value=0):
-            groups = create_gpu_groups()
-            assert len(groups) == 1 and groups[0].devices == [0]
+            with pytest.raises(NotEnoughGPUResources, match="No CUDA devices found"):
+                create_gpu_groups()
 
     def test_single_gpu_sufficient_vram(self):
         """Single GPU with enough VRAM should form a group."""
         self._run_test([24], 23.0, [[0]])
 
     def test_single_gpu_insufficient_vram(self):
-        """Single GPU with not enough VRAM should form no group."""
-        self._run_test([16], 23.0, [])
+        """Single GPU with not enough VRAM should raise exception."""
+        def mock_get_device_properties(device_id):
+            props = MagicMock()
+            props.total_memory = 16 * (1024**3)
+            return props
+
+        with patch('torch.cuda.is_available', return_value=True), \
+             patch('torch.cuda.device_count', return_value=1), \
+             patch('torch.cuda.get_device_properties', side_effect=mock_get_device_properties):
+            with pytest.raises(NotEnoughGPUResources, match="Not enough GPU memory"):
+                create_gpu_groups(min_vram_gb=23.0)
 
     def test_prefers_single_gpu_groups(self):
         """Multiple GPUs with sufficient VRAM should form single-device groups."""
@@ -121,5 +130,14 @@ class TestCreateGpuGroups:
         self._run_test([24, 24, 24, 24], 23.0, [[0], [1], [2], [3]])
 
     def test_no_valid_groups(self):
-        """No groups should be formed if no combination meets VRAM requirements."""
-        self._run_test([10, 10, 10, 10], 41.0, [])
+        """Exception raised if no combination meets VRAM requirements."""
+        def mock_get_device_properties(device_id):
+            props = MagicMock()
+            props.total_memory = 10 * (1024**3)
+            return props
+
+        with patch('torch.cuda.is_available', return_value=True), \
+             patch('torch.cuda.device_count', return_value=4), \
+             patch('torch.cuda.get_device_properties', side_effect=mock_get_device_properties):
+            with pytest.raises(NotEnoughGPUResources, match="Not enough GPU memory"):
+                create_gpu_groups(min_vram_gb=41.0)

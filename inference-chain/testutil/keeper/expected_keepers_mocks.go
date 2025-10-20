@@ -30,7 +30,6 @@ import (
 type MockAccountKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockAccountKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockAccountKeeperMockRecorder is the mock recorder for MockAccountKeeper.
@@ -122,7 +121,6 @@ func (mr *MockAccountKeeperMockRecorder) SetAccount(ctx, acc any) *gomock.Call {
 type MockBankKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockBankKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockBankKeeperMockRecorder is the mock recorder for MockBankKeeper.
@@ -189,7 +187,6 @@ func (mr *MockBankKeeperMockRecorder) SpendableCoins(arg0, arg1 any) *gomock.Cal
 type MockGroupMessageKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockGroupMessageKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockGroupMessageKeeperMockRecorder is the mock recorder for MockGroupMessageKeeper.
@@ -269,6 +266,21 @@ func (mr *MockGroupMessageKeeperMockRecorder) GroupMembers(goCtx, request any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GroupMembers", reflect.TypeOf((*MockGroupMessageKeeper)(nil).GroupMembers), goCtx, request)
 }
 
+// ProposalsByGroupPolicy mocks base method.
+func (m *MockGroupMessageKeeper) ProposalsByGroupPolicy(goCtx context.Context, request *group.QueryProposalsByGroupPolicyRequest) (*group.QueryProposalsByGroupPolicyResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ProposalsByGroupPolicy", goCtx, request)
+	ret0, _ := ret[0].(*group.QueryProposalsByGroupPolicyResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ProposalsByGroupPolicy indicates an expected call of ProposalsByGroupPolicy.
+func (mr *MockGroupMessageKeeperMockRecorder) ProposalsByGroupPolicy(goCtx, request any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProposalsByGroupPolicy", reflect.TypeOf((*MockGroupMessageKeeper)(nil).ProposalsByGroupPolicy), goCtx, request)
+}
+
 // SubmitProposal mocks base method.
 func (m *MockGroupMessageKeeper) SubmitProposal(goCtx context.Context, msg *group.MsgSubmitProposal) (*group.MsgSubmitProposalResponse, error) {
 	m.ctrl.T.Helper()
@@ -333,7 +345,6 @@ func (mr *MockGroupMessageKeeperMockRecorder) Vote(goCtx, msg any) *gomock.Call 
 type MockParamSubspace struct {
 	ctrl     *gomock.Controller
 	recorder *MockParamSubspaceMockRecorder
-	isgomock struct{}
 }
 
 // MockParamSubspaceMockRecorder is the mock recorder for MockParamSubspace.
@@ -381,7 +392,6 @@ func (mr *MockParamSubspaceMockRecorder) Set(arg0, arg1, arg2 any) *gomock.Call 
 type MockStakingHooks struct {
 	ctrl     *gomock.Controller
 	recorder *MockStakingHooksMockRecorder
-	isgomock struct{}
 }
 
 // MockStakingHooksMockRecorder is the mock recorder for MockStakingHooks.
@@ -545,7 +555,6 @@ func (mr *MockStakingHooksMockRecorder) BeforeValidatorSlashed(ctx, valAddr, fra
 type MockValidatorSet struct {
 	ctrl     *gomock.Controller
 	recorder *MockValidatorSetMockRecorder
-	isgomock struct{}
 }
 
 // MockValidatorSetMockRecorder is the mock recorder for MockValidatorSet.
@@ -583,7 +592,6 @@ func (mr *MockValidatorSetMockRecorder) IterateValidators(arg0, arg1 any) *gomoc
 type MockStakingKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockStakingKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockStakingKeeperMockRecorder is the mock recorder for MockStakingKeeper.
@@ -619,25 +627,24 @@ func (mr *MockStakingKeeperMockRecorder) GetAllValidators(ctx any) *gomock.Call 
 }
 
 // SetComputeValidators mocks base method.
-func (m *MockStakingKeeper) SetComputeValidators(ctx context.Context, computeResults []keeper.ComputeResult) ([]types1.Validator, error) {
+func (m *MockStakingKeeper) SetComputeValidators(ctx context.Context, computeResults []keeper.ComputeResult, isTestnet bool) ([]types1.Validator, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetComputeValidators", ctx, computeResults)
+	ret := m.ctrl.Call(m, "SetComputeValidators", ctx, computeResults, isTestnet)
 	ret0, _ := ret[0].([]types1.Validator)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SetComputeValidators indicates an expected call of SetComputeValidators.
-func (mr *MockStakingKeeperMockRecorder) SetComputeValidators(ctx, computeResults any) *gomock.Call {
+func (mr *MockStakingKeeperMockRecorder) SetComputeValidators(ctx, computeResults, isTestnet any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetComputeValidators", reflect.TypeOf((*MockStakingKeeper)(nil).SetComputeValidators), ctx, computeResults)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetComputeValidators", reflect.TypeOf((*MockStakingKeeper)(nil).SetComputeValidators), ctx, computeResults, isTestnet)
 }
 
 // MockCollateralKeeper is a mock of CollateralKeeper interface.
 type MockCollateralKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockCollateralKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockCollateralKeeperMockRecorder is the mock recorder for MockCollateralKeeper.
@@ -703,7 +710,6 @@ func (mr *MockCollateralKeeperMockRecorder) Slash(ctx, participant, slashFractio
 type MockStreamVestingKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockStreamVestingKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockStreamVestingKeeperMockRecorder is the mock recorder for MockStreamVestingKeeper.
@@ -755,7 +761,6 @@ func (mr *MockStreamVestingKeeperMockRecorder) AdvanceEpoch(ctx, completedEpoch 
 type MockParticipantKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockParticipantKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockParticipantKeeperMockRecorder is the mock recorder for MockParticipantKeeper.
@@ -804,21 +809,6 @@ func (mr *MockParticipantKeeperMockRecorder) GetParticipant(ctx, index any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetParticipant", reflect.TypeOf((*MockParticipantKeeper)(nil).GetParticipant), ctx, index)
 }
 
-// GetParticipants mocks base method.
-func (m *MockParticipantKeeper) GetParticipants(ctx context.Context, ids []string) ([]types3.Participant, bool) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetParticipants", ctx, ids)
-	ret0, _ := ret[0].([]types3.Participant)
-	ret1, _ := ret[1].(bool)
-	return ret0, ret1
-}
-
-// GetParticipants indicates an expected call of GetParticipants.
-func (mr *MockParticipantKeeperMockRecorder) GetParticipants(ctx, ids any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetParticipants", reflect.TypeOf((*MockParticipantKeeper)(nil).GetParticipants), ctx, ids)
-}
-
 // ParticipantAll mocks base method.
 func (m *MockParticipantKeeper) ParticipantAll(ctx context.Context, req *types3.QueryAllParticipantRequest) (*types3.QueryAllParticipantResponse, error) {
 	m.ctrl.T.Helper()
@@ -847,9 +837,11 @@ func (mr *MockParticipantKeeperMockRecorder) RemoveParticipant(ctx, index any) *
 }
 
 // SetParticipant mocks base method.
-func (m *MockParticipantKeeper) SetParticipant(ctx context.Context, participant types3.Participant) {
+func (m *MockParticipantKeeper) SetParticipant(ctx context.Context, participant types3.Participant) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetParticipant", ctx, participant)
+	ret := m.ctrl.Call(m, "SetParticipant", ctx, participant)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // SetParticipant indicates an expected call of SetParticipant.
@@ -862,7 +854,6 @@ func (mr *MockParticipantKeeperMockRecorder) SetParticipant(ctx, participant any
 type MockHardwareNodeKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockHardwareNodeKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockHardwareNodeKeeperMockRecorder is the mock recorder for MockHardwareNodeKeeper.
@@ -901,7 +892,6 @@ func (mr *MockHardwareNodeKeeperMockRecorder) GetHardwareNodes(ctx, address any)
 type MockEpochGroupDataKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockEpochGroupDataKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockEpochGroupDataKeeperMockRecorder is the mock recorder for MockEpochGroupDataKeeper.
@@ -978,7 +968,6 @@ func (mr *MockEpochGroupDataKeeperMockRecorder) SetEpochGroupData(ctx, epochGrou
 type MockBookkeepingBankKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockBookkeepingBankKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockBookkeepingBankKeeperMockRecorder is the mock recorder for MockBookkeepingBankKeeper.
@@ -1084,7 +1073,6 @@ func (mr *MockBookkeepingBankKeeperMockRecorder) SendCoinsFromModuleToModule(ctx
 type MockModelKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockModelKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockModelKeeperMockRecorder is the mock recorder for MockModelKeeper.
@@ -1138,7 +1126,6 @@ func (mr *MockModelKeeperMockRecorder) GetGovernanceModels(ctx any) *gomock.Call
 type MockAuthzKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockAuthzKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockAuthzKeeperMockRecorder is the mock recorder for MockAuthzKeeper.
@@ -1173,25 +1160,10 @@ func (mr *MockAuthzKeeperMockRecorder) GranterGrants(ctx, req any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GranterGrants", reflect.TypeOf((*MockAuthzKeeper)(nil).GranterGrants), ctx, req)
 }
 
-// SaveGrant mocks base method.
-func (m *MockAuthzKeeper) SaveGrant(ctx context.Context, grantee, granter types.AccAddress, authorization authz.Authorization, expiration *time.Time) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveGrant", ctx, grantee, granter, authorization, expiration)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// SaveGrant indicates an expected call of SaveGrant.
-func (mr *MockAuthzKeeperMockRecorder) SaveGrant(ctx, grantee, granter, authorization, expiration any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveGrant", reflect.TypeOf((*MockAuthzKeeper)(nil).SaveGrant), ctx, grantee, granter, authorization, expiration)
-}
-
 // MockBlsKeeper is a mock of BlsKeeper interface.
 type MockBlsKeeper struct {
 	ctrl     *gomock.Controller
 	recorder *MockBlsKeeperMockRecorder
-	isgomock struct{}
 }
 
 // MockBlsKeeperMockRecorder is the mock recorder for MockBlsKeeper.

@@ -56,6 +56,11 @@ type (
 		TopMiners                 collections.Map[sdk.AccAddress, types.TopMiner]
 		PartialUpgrades           collections.Map[uint64, types.PartialUpgrade]
 		EpochPerformanceSummaries collections.Map[collections.Pair[sdk.AccAddress, uint64], types.EpochPerformanceSummary]
+		TrainingExecAllowListSet  collections.KeySet[sdk.AccAddress]
+		TrainingStartAllowListSet collections.KeySet[sdk.AccAddress]
+		PruningState              collections.Item[types.PruningState]
+		InferencesToPrune         collections.Map[collections.Pair[int64, string], collections.NoValue]
+		ActiveInvalidations       collections.KeySet[collections.Pair[sdk.AccAddress, string]]
 
 		// Proofs
 		ActiveParticipantsMerkleProofs collections.Map[uint64, types.ProofOps]
@@ -241,6 +246,37 @@ func NewKeeper(
 			"epoch_performance_summary",
 			collections.PairKeyCodec(sdk.AccAddressKey, collections.Uint64Key),
 			codec.CollValue[types.EpochPerformanceSummary](cdc),
+		),
+		TrainingExecAllowListSet: collections.NewKeySet(
+			sb,
+			types.TrainingExecAllowListPrefix,
+			"training_exec_allow_list",
+			sdk.AccAddressKey,
+		),
+		TrainingStartAllowListSet: collections.NewKeySet(
+			sb,
+			types.TrainingStartAllowListPrefix,
+			"training_start_allow_list",
+			sdk.AccAddressKey,
+		),
+		PruningState: collections.NewItem(
+			sb,
+			types.PruningStatePrefix,
+			"pruning_state",
+			codec.CollValue[types.PruningState](cdc),
+		),
+		InferencesToPrune: collections.NewMap(
+			sb,
+			types.InferencesToPrunePrefix,
+			"inferences_to_prune",
+			collections.PairKeyCodec(collections.Int64Key, collections.StringKey),
+			collections.NoValue{},
+		),
+		ActiveInvalidations: collections.NewKeySet(
+			sb,
+			types.ActiveInvalidationsPrefix,
+			"active_invalidations",
+			collections.PairKeyCodec(sdk.AccAddressKey, collections.StringKey),
 		),
 		ActiveParticipantsMerkleProofs: collections.NewMap(
 			sb,

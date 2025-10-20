@@ -12,6 +12,7 @@ services:
       - SNAPSHOT_INTERVAL=100
       - SNAPSHOT_KEEP_RECENT=5
       - DEBUG=false
+      - IS_TEST_NET=true
     ports:
       - "${RPC_PORT:-26657}:26657"  # RPC
       - "${P2P_PORT:-26656}:26656"  # P2P
@@ -44,6 +45,7 @@ services:
       - DAPI_API__GENESIS_APP_HASH_HEX=${GENESIS_APP_HASH}
       - NODE_CONFIG_PATH=/root/node_config.json
       - DEBUG=true
+      - IS_TEST_NET=true
     networks:
       - chain-public
 
