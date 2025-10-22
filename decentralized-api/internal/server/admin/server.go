@@ -13,6 +13,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	authztypes "github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	v1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	"github.com/labstack/echo/v4"
@@ -57,6 +58,8 @@ func NewServer(
 
 	g.POST("nodes", s.createNewNode)
 	g.POST("nodes/batch", s.createNewNodes)
+	// For explicit updates, also allow PUT on a single node
+	g.PUT("nodes/:id", s.createNewNode)
 	g.GET("nodes/upgrade-status", s.getUpgradeStatus)
 	g.POST("nodes/version-status", s.postVersionStatus)
 	g.GET("nodes", s.getNodes)
@@ -74,8 +77,17 @@ func NewServer(
 
 	g.POST("debug/create-dummy-training-task", s.postDummyTrainingTask)
 
+	// Export DB state (human-readable JSON) for admin purposes
+	g.GET("export/db", s.exportDb)
+
+	// Return current unsanitized config as JSON
+	g.GET("config", s.getConfig)
+
 	// Manual validation recovery and claim endpoint
 	g.POST("claim-reward/recover", s.postClaimRewardRecover)
+
+	// EXPERIMENTAL: Setup and health report endpoint for participant onboarding
+	g.GET("setup/report", s.getSetupReport)
 
 	// Bridge
 	g.POST("bridge/block", s.postBridgeBlock)
@@ -88,6 +100,7 @@ func getCodec() *codec.ProtoCodec {
 	app.RegisterLegacyModules(interfaceRegistry)
 	types.RegisterInterfaces(interfaceRegistry)
 	banktypes.RegisterInterfaces(interfaceRegistry)
+	authztypes.RegisterInterfaces(interfaceRegistry)
 	v1.RegisterInterfaces(interfaceRegistry)
 	upgradetypes.RegisterInterfaces(interfaceRegistry)
 	collateraltypes.RegisterInterfaces(interfaceRegistry)
@@ -99,4 +112,10 @@ func getCodec() *codec.ProtoCodec {
 
 func (s *Server) Start(addr string) {
 	go s.e.Start(addr)
+}
+
+// getConfig returns the current configuration as JSON (unsanitized)
+func (s *Server) getConfig(c echo.Context) error {
+	cfg := s.configManager.GetConfig()
+	return c.JSONPretty(200, cfg, "  ")
 }

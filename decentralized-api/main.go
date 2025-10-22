@@ -8,6 +8,7 @@ import (
 	"decentralized-api/cosmosclient"
 	"decentralized-api/internal/bls"
 	"decentralized-api/internal/event_listener"
+	"decentralized-api/internal/modelmanager"
 	"decentralized-api/internal/nats/server"
 	"decentralized-api/internal/poc"
 	adminserver "decentralized-api/internal/server/admin"
@@ -130,6 +131,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // Ensure resources are cleaned up
 
+	// Start periodic config auto-flush of dynamic data to DB
+	config.StartAutoFlush(ctx, 60*time.Second)
+
 	training.NewAssigner(recorder, &tendermintClient, ctx)
 	trainingExecutor := training.NewExecutor(ctx, nodeBroker, recorder)
 
@@ -138,6 +142,15 @@ func main() {
 	listener := event_listener.NewEventListener(config, nodePocOrchestrator, nodeBroker, validator, *recorder, trainingExecutor, chainPhaseTracker, cancel, blsManager)
 	// TODO: propagate trainingExecutor
 	go listener.Start(ctx)
+
+	mlnodeBackgroundManager := modelmanager.NewMLNodeBackgroundManager(
+		config,
+		chainPhaseTracker,
+		nodeBroker,
+		&mlnodeclient.HttpClientFactory{},
+		30*time.Minute,
+	)
+	go mlnodeBackgroundManager.Start(ctx)
 
 	addr := fmt.Sprintf(":%v", config.GetApiConfig().PublicServerPort)
 	logging.Info("start public server on addr", types.Server, "addr", addr)
@@ -182,6 +195,17 @@ func main() {
 	logging.Info("Servers started", types.Server, "addr", addr)
 
 	<-ctx.Done()
+
+	ctxFlush, cancelFlush := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelFlush()
+	logging.Info("Flushing config to the DB on app exit", types.Config)
+	_ = config.FlushNow(ctxFlush)
+
+	// Close DB gracefully
+	if db := config.SqlDb().GetDb(); db != nil {
+		_ = db.Close()
+	}
+
 	os.Exit(1) // Exit with an error for cosmovisor to restart the process
 }
 

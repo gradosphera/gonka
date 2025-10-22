@@ -53,6 +53,9 @@ const (
 	Msg_RequestBridgeMint_FullMethodName                = "/inference.inference.Msg/RequestBridgeMint"
 	Msg_RegisterWrappedTokenContract_FullMethodName     = "/inference.inference.Msg/RegisterWrappedTokenContract"
 	Msg_MigrateAllWrappedTokens_FullMethodName          = "/inference.inference.Msg/MigrateAllWrappedTokens"
+	Msg_AddUserToTrainingAllowList_FullMethodName       = "/inference.inference.Msg/AddUserToTrainingAllowList"
+	Msg_RemoveUserFromTrainingAllowList_FullMethodName  = "/inference.inference.Msg/RemoveUserFromTrainingAllowList"
+	Msg_SetTrainingAllowList_FullMethodName             = "/inference.inference.Msg/SetTrainingAllowList"
 )
 
 // MsgClient is the client API for Msg service.
@@ -95,6 +98,9 @@ type MsgClient interface {
 	RequestBridgeMint(ctx context.Context, in *MsgRequestBridgeMint, opts ...grpc.CallOption) (*MsgRequestBridgeMintResponse, error)
 	RegisterWrappedTokenContract(ctx context.Context, in *MsgRegisterWrappedTokenContract, opts ...grpc.CallOption) (*MsgRegisterWrappedTokenContractResponse, error)
 	MigrateAllWrappedTokens(ctx context.Context, in *MsgMigrateAllWrappedTokens, opts ...grpc.CallOption) (*MsgMigrateAllWrappedTokensResponse, error)
+	AddUserToTrainingAllowList(ctx context.Context, in *MsgAddUserToTrainingAllowList, opts ...grpc.CallOption) (*MsgAddUserToTrainingAllowListResponse, error)
+	RemoveUserFromTrainingAllowList(ctx context.Context, in *MsgRemoveUserFromTrainingAllowList, opts ...grpc.CallOption) (*MsgRemoveUserFromTrainingAllowListResponse, error)
+	SetTrainingAllowList(ctx context.Context, in *MsgSetTrainingAllowList, opts ...grpc.CallOption) (*MsgSetTrainingAllowListResponse, error)
 }
 
 type msgClient struct {
@@ -411,6 +417,33 @@ func (c *msgClient) MigrateAllWrappedTokens(ctx context.Context, in *MsgMigrateA
 	return out, nil
 }
 
+func (c *msgClient) AddUserToTrainingAllowList(ctx context.Context, in *MsgAddUserToTrainingAllowList, opts ...grpc.CallOption) (*MsgAddUserToTrainingAllowListResponse, error) {
+	out := new(MsgAddUserToTrainingAllowListResponse)
+	err := c.cc.Invoke(ctx, Msg_AddUserToTrainingAllowList_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) RemoveUserFromTrainingAllowList(ctx context.Context, in *MsgRemoveUserFromTrainingAllowList, opts ...grpc.CallOption) (*MsgRemoveUserFromTrainingAllowListResponse, error) {
+	out := new(MsgRemoveUserFromTrainingAllowListResponse)
+	err := c.cc.Invoke(ctx, Msg_RemoveUserFromTrainingAllowList_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) SetTrainingAllowList(ctx context.Context, in *MsgSetTrainingAllowList, opts ...grpc.CallOption) (*MsgSetTrainingAllowListResponse, error) {
+	out := new(MsgSetTrainingAllowListResponse)
+	err := c.cc.Invoke(ctx, Msg_SetTrainingAllowList_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MsgServer is the server API for Msg service.
 // All implementations must embed UnimplementedMsgServer
 // for forward compatibility
@@ -451,6 +484,9 @@ type MsgServer interface {
 	RequestBridgeMint(context.Context, *MsgRequestBridgeMint) (*MsgRequestBridgeMintResponse, error)
 	RegisterWrappedTokenContract(context.Context, *MsgRegisterWrappedTokenContract) (*MsgRegisterWrappedTokenContractResponse, error)
 	MigrateAllWrappedTokens(context.Context, *MsgMigrateAllWrappedTokens) (*MsgMigrateAllWrappedTokensResponse, error)
+	AddUserToTrainingAllowList(context.Context, *MsgAddUserToTrainingAllowList) (*MsgAddUserToTrainingAllowListResponse, error)
+	RemoveUserFromTrainingAllowList(context.Context, *MsgRemoveUserFromTrainingAllowList) (*MsgRemoveUserFromTrainingAllowListResponse, error)
+	SetTrainingAllowList(context.Context, *MsgSetTrainingAllowList) (*MsgSetTrainingAllowListResponse, error)
 	mustEmbedUnimplementedMsgServer()
 }
 
@@ -559,6 +595,15 @@ func (UnimplementedMsgServer) RegisterWrappedTokenContract(context.Context, *Msg
 }
 func (UnimplementedMsgServer) MigrateAllWrappedTokens(context.Context, *MsgMigrateAllWrappedTokens) (*MsgMigrateAllWrappedTokensResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MigrateAllWrappedTokens not implemented")
+}
+func (UnimplementedMsgServer) AddUserToTrainingAllowList(context.Context, *MsgAddUserToTrainingAllowList) (*MsgAddUserToTrainingAllowListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddUserToTrainingAllowList not implemented")
+}
+func (UnimplementedMsgServer) RemoveUserFromTrainingAllowList(context.Context, *MsgRemoveUserFromTrainingAllowList) (*MsgRemoveUserFromTrainingAllowListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveUserFromTrainingAllowList not implemented")
+}
+func (UnimplementedMsgServer) SetTrainingAllowList(context.Context, *MsgSetTrainingAllowList) (*MsgSetTrainingAllowListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetTrainingAllowList not implemented")
 }
 func (UnimplementedMsgServer) mustEmbedUnimplementedMsgServer() {}
 
@@ -1185,6 +1230,60 @@ func _Msg_MigrateAllWrappedTokens_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_AddUserToTrainingAllowList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgAddUserToTrainingAllowList)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).AddUserToTrainingAllowList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_AddUserToTrainingAllowList_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).AddUserToTrainingAllowList(ctx, req.(*MsgAddUserToTrainingAllowList))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_RemoveUserFromTrainingAllowList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgRemoveUserFromTrainingAllowList)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).RemoveUserFromTrainingAllowList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_RemoveUserFromTrainingAllowList_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).RemoveUserFromTrainingAllowList(ctx, req.(*MsgRemoveUserFromTrainingAllowList))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_SetTrainingAllowList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgSetTrainingAllowList)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).SetTrainingAllowList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_SetTrainingAllowList_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).SetTrainingAllowList(ctx, req.(*MsgSetTrainingAllowList))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Msg_ServiceDesc is the grpc.ServiceDesc for Msg service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1327,6 +1426,18 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MigrateAllWrappedTokens",
 			Handler:    _Msg_MigrateAllWrappedTokens_Handler,
+		},
+		{
+			MethodName: "AddUserToTrainingAllowList",
+			Handler:    _Msg_AddUserToTrainingAllowList_Handler,
+		},
+		{
+			MethodName: "RemoveUserFromTrainingAllowList",
+			Handler:    _Msg_RemoveUserFromTrainingAllowList_Handler,
+		},
+		{
+			MethodName: "SetTrainingAllowList",
+			Handler:    _Msg_SetTrainingAllowList_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

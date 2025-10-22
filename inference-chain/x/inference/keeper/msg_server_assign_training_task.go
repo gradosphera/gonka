@@ -11,6 +11,10 @@ import (
 func (k msgServer) AssignTrainingTask(goCtx context.Context, msg *types.MsgAssignTrainingTask) (*types.MsgAssignTrainingTaskResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	if err := k.CheckTrainingAllowList(ctx, msg); err != nil {
+		return nil, err
+	}
+
 	err := k.StartTask(ctx, msg.TaskId, msg.Assignees)
 	if err != nil {
 		k.LogError("MsgAssignTrainingTask: failed to StartTask", types.Training, "error", err)

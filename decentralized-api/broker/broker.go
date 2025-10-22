@@ -391,6 +391,8 @@ func (b *Broker) executeCommand(command Command) {
 		command.Execute(b)
 	case RemoveNode:
 		command.Execute(b)
+	case UpdateNode:
+		command.Execute(b)
 	case GetNodesCommand:
 		command.Execute(b)
 	case SyncNodesCommand:
@@ -402,6 +404,8 @@ func (b *Broker) executeCommand(command Command) {
 	case SetNodesActualStatusCommand:
 		command.Execute(b)
 	case SetNodeAdminStateCommand:
+		command.Execute(b)
+	case UpdateNodeHardwareCommand:
 		command.Execute(b)
 	case InferenceUpAllCommand:
 		command.Execute(b)
@@ -446,7 +450,9 @@ func (b *Broker) lockAvailableNode(command LockAvailableNode) {
 	leastBusyNode := b.getLeastBusyNode(command)
 
 	if leastBusyNode != nil {
+		b.mu.RLock()
 		leastBusyNode.State.LockCount++
+		b.mu.RUnlock()
 	}
 	logging.Debug("Locked node", types.Nodes, "node", leastBusyNode)
 	if leastBusyNode == nil {
@@ -528,7 +534,9 @@ func (b *Broker) releaseNode(command ReleaseNode) {
 		command.Response <- false
 		return
 	} else {
+		b.mu.RLock()
 		node.State.LockCount--
+		b.mu.RUnlock()
 		if !command.Outcome.IsSuccess() {
 			logging.Error("Node failed", types.Nodes, "node_id", command.NodeId, "reason", command.Outcome.GetMessage())
 			// FIXME: need a write lock here?
@@ -634,7 +642,7 @@ func (b *Broker) syncNodes() {
 
 	logging.Info("[sync nodes] Hardware diff computed", types.Nodes, "diff", diff)
 
-	if (diff.Removed == nil || len(diff.Removed) == 0) && (diff.NewOrModified == nil || len(diff.NewOrModified) == 0) {
+	if len(diff.Removed) == 0 && len(diff.NewOrModified) == 0 {
 		logging.Info("[sync nodes] No diff to submit", types.Nodes)
 	} else {
 		logging.Info("[sync nodes] Submitting diff", types.Nodes)
@@ -1260,7 +1268,7 @@ func (b *Broker) UpdateNodeWithEpochData(epochState *chainphase.EpochState) erro
 		logging.Error("Parent epoch group data is nil", types.Nodes, "epoch_index", epochState.LatestEpoch.EpochIndex, "epoch_poc_start_block_height", epochState.LatestEpoch.PocStartBlockHeight, "epoch_group_data_poc_start_block_height")
 		return nil
 	}
-	if parentGroupResp.EpochGroupData.SubGroupModels == nil || len(parentGroupResp.EpochGroupData.SubGroupModels) == 0 {
+	if len(parentGroupResp.EpochGroupData.SubGroupModels) == 0 {
 		logging.Warn("Parent epoch group SubGroupModels are empty", types.Nodes, "epoch_index", epochState.LatestEpoch.EpochIndex, "epoch_poc_start_block_height", epochState.LatestEpoch.PocStartBlockHeight, "epoch_group_data_poc_start_block_height", parentGroupResp.EpochGroupData.PocStartBlockHeight)
 		return nil
 	}

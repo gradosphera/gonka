@@ -100,6 +100,12 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{},
 				},
 				{
+					RpcMethod:      "TrainingAllowList",
+					Use:            "training-allow-list [role]",
+					Short:          "Query the current training allow list",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "role"}},
+				},
+				{
 					RpcMethod: "TokenomicsData",
 					Use:       "show-tokenomics-data",
 					Short:     "show tokenomics_data",
@@ -301,7 +307,6 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					Short:          "Get cached capacity for a specific model",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "model_id"}},
 				},
-
 				// this line is used by ignite scaffolding # autocli/query
 			},
 		},
@@ -432,6 +437,24 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					Use:            "set-barrier",
 					Short:          "Send a set-barrier tx",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{},
+				},
+				{
+					RpcMethod:      "AddUserToTrainingAllowList",
+					Use:            "add-user-to-training-allow-list [authority] [address]",
+					Short:          "Send a addUserToTrainingAllowList tx",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "authority"}, {ProtoField: "address"}},
+				},
+				{
+					RpcMethod:      "RemoveUserFromTrainingAllowList",
+					Use:            "remove-user-from-training-allow-list [authority] [address]",
+					Short:          "Send a removeUserFromTrainingAllowList tx",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "authority"}, {ProtoField: "address"}},
+				},
+				{
+					RpcMethod:      "SetTrainingAllowList",
+					Use:            "set-training-allow-list [authority] [addresses]",
+					Short:          "Send a setTrainingAllowList tx",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "authority"}, {ProtoField: "addresses"}},
 				},
 				{
 					RpcMethod:      "RequestBridgeMint",

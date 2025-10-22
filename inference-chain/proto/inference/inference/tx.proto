@@ -55,6 +55,9 @@ service Msg {
   rpc RequestBridgeMint                (MsgRequestBridgeMint               ) returns (MsgRequestBridgeMintResponse               );
   rpc RegisterWrappedTokenContract     (MsgRegisterWrappedTokenContract    ) returns (MsgRegisterWrappedTokenContractResponse    );
   rpc MigrateAllWrappedTokens          (MsgMigrateAllWrappedTokens         ) returns (MsgMigrateAllWrappedTokensResponse         );
+  rpc AddUserToTrainingAllowList       (MsgAddUserToTrainingAllowList) returns (MsgAddUserToTrainingAllowListResponse);
+  rpc RemoveUserFromTrainingAllowList  (MsgRemoveUserFromTrainingAllowList) returns (MsgRemoveUserFromTrainingAllowListResponse);
+  rpc SetTrainingAllowList             (MsgSetTrainingAllowList) returns (MsgSetTrainingAllowListResponse);
 }
 // MsgUpdateParams is the Msg/UpdateParams request type.
 message MsgUpdateParams {
@@ -135,7 +138,7 @@ message MsgValidation {
   string creator = 1;
   string id = 2;
   string inference_id = 3;
-  string response_payload = 4;
+  string response_payload = 4 [ deprecated = true];
   string response_hash = 5;
   double value = 6;
   bool   revalidation = 7;
@@ -159,6 +162,7 @@ message MsgInvalidateInference {
   option (cosmos.msg.v1.signer) = "creator";
   string creator = 1;
   string inference_id = 2;
+  string invalidator = 3;
 }
 
 message MsgInvalidateInferenceResponse {}
@@ -167,6 +171,7 @@ message MsgRevalidateInference {
   option (cosmos.msg.v1.signer) = "creator";
   string creator = 1;
   string inference_id = 2;
+  string invalidator = 3;
 }
 
 message MsgRevalidateInferenceResponse {}
@@ -215,7 +220,7 @@ message MsgSubmitPocValidationResponse {}
 message MsgSubmitSeed {
   option (cosmos.msg.v1.signer) = "creator";
   string creator = 1;
-  uint64  epoch_index = 2;
+  uint64 epoch_index = 2;
   string signature = 3;
 }
 
@@ -231,15 +236,15 @@ message MsgSubmitUnitOfComputePriceProposalResponse {}
 
 message MsgRegisterModel {
   option (cosmos.msg.v1.signer) = "authority";
-  string authority = 1;
-  string proposed_by = 2;
-  string id = 3;
-  uint64 units_of_compute_per_token = 4;
-  string hf_repo = 5;
-  string hf_commit = 6;
-  repeated string model_args = 7;
-  uint64 v_ram = 8;
-  uint64 throughput_per_nonce = 9;
+  string  authority = 1;
+  string  proposed_by = 2;
+  string  id = 3;
+  uint64  units_of_compute_per_token = 4;
+  string  hf_repo = 5;
+  string  hf_commit = 6;
+  repeated string  model_args = 7;
+  uint64  v_ram = 8;
+  uint64  throughput_per_nonce = 9;
   Decimal validation_threshold = 10;
 }
 
@@ -345,30 +350,64 @@ message MsgJoinTrainingStatusResponse {
 
 message MsgCreateDummyTrainingTask {
   option (cosmos.msg.v1.signer) = "creator";
-  string creator = 1;
+  string       creator = 1;
   TrainingTask task = 2;
 }
 
 message MsgCreateDummyTrainingTaskResponse {
   TrainingTask task = 1;
 }
+
 message MsgBridgeExchange {
   option (cosmos.msg.v1.signer) = "validator";
   string validator = 1;
-  string originChain = 2;  // e.g., "ethereum"
-  string contractAddress = 3;  // original chain smart contract address
-  string ownerAddress = 4;  // token owner's address on the origin chain
-  string ownerPubKey = 5;  // public key of the token owner
-  string amount = 6;  // amount of tokens being bridged
-  string blockNumber = 7;  // block number where the transaction occurred
-  string receiptIndex = 8;  // index of the transaction receipt in the block
-  string receiptsRoot = 9;  // merkle root of receipts trie for transaction verification
-
+  string originChain = 2; // e.g., "ethereum"
+  string contractAddress = 3; // original chain smart contract address
+  string ownerAddress = 4; // token owner's address on the origin chain
+  string ownerPubKey = 5; // public key of the token owner
+  string amount = 6; // amount of tokens being bridged
+  string blockNumber = 7; // block number where the transaction occurred
+  string receiptIndex = 8; // index of the transaction receipt in the block
+  string receiptsRoot = 9; // merkle root of receipts trie for transaction verification
 }
 
 message MsgBridgeExchangeResponse {
-  string id = 1;  // Unique bridge transaction ID (originChain_blockNumber_receiptIndex)
+  string id = 1; // Unique bridge transaction ID (originChain_blockNumber_receiptIndex)
 }
+
+message MsgAddUserToTrainingAllowList {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string address = 2;
+  TrainingRole role = 3;
+}
+
+enum TrainingRole {
+  ROLE_EXEC = 0;
+  ROLE_START = 1;
+}
+
+message MsgAddUserToTrainingAllowListResponse {}
+
+message MsgRemoveUserFromTrainingAllowList {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string address = 2;
+  TrainingRole role = 3;
+}
+
+message MsgRemoveUserFromTrainingAllowListResponse {}
+
+message MsgSetTrainingAllowList {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  repeated string addresses = 2;
+  TrainingRole role = 3;
+}
+
+message MsgSetTrainingAllowListResponse {}
+
+
 
 message MsgRegisterBridgeAddresses {
   option (cosmos.msg.v1.signer) = "authority";

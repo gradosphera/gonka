@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+
+	"github.com/productscience/inference/testenv"
 )
 
 const (
@@ -33,6 +35,13 @@ type InitDto struct {
 	URL            string  `json:"url"`
 }
 
+func getNetworkParams() *Params {
+	if testenv.IsTestNet() {
+		return &TestNetParams
+	}
+	return &MainNetParams
+}
+
 func BuildInitDto(blockHeight int64, pubKey string, totalNodes int64, nodeNum uint64, blockHash, callbackUrl string) InitDto {
 	return InitDto{
 		BlockHeight:    blockHeight,
@@ -41,7 +50,7 @@ func BuildInitDto(blockHeight int64, pubKey string, totalNodes int64, nodeNum ui
 		BatchSize:      DefaultBatchSize,
 		RTarget:        DefaultRTarget,
 		FraudThreshold: DefaultFraudThreshold,
-		Params:         &MainNetParams,
+		Params:         getNetworkParams(),
 		URL:            callbackUrl,
 		TotalNodes:     totalNodes,
 		NodeNum:        nodeNum,

@@ -1,8 +1,9 @@
-.PHONY: all build-docker docker-push release
+.PHONY: all build-docker release
 
 VERSION ?= $(shell git describe --always)
 SET_LATEST ?= 0
 SET_LATEST := $(shell if [ "$(SET_LATEST)" = "1" ]; then echo 1; else echo 0; fi)
+PLATFORMS ?= linux/amd64,linux/arm64
 
 define DOCKER_BUILD
 	@echo "--> building proxy docker image"
@@ -26,14 +27,13 @@ build-docker:
 		docker tag $(DOCKER_TAG) ghcr.io/product-science/proxy:latest; \
 	fi
 
-docker-push:
-	@echo "--> pushing proxy docker image"
-	@echo "pushing to GitHub Container Registry"
-	@docker push ghcr.io/product-science/proxy:$(VERSION)
-	@if [ "$(SET_LATEST)" = "1" ]; then \
-		echo "Setting latest tag..."; \
-		docker tag ghcr.io/product-science/proxy:$(VERSION) ghcr.io/product-science/proxy:latest; \
-		docker push ghcr.io/product-science/proxy:latest; \
-	fi
-
-release: build-docker 
+release:
+	@echo "--> releasing proxy (multi-arch)"
+	@echo "platforms: $(PLATFORMS)"
+	$(eval DOCKER_FILE=Dockerfile)
+	@docker buildx build \
+		--platform $(PLATFORMS) \
+		-f $(DOCKER_FILE) \
+		-t ghcr.io/product-science/proxy:$(VERSION) \
+		--push \
+		.

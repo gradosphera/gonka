@@ -38,6 +38,7 @@ type GroupMessageKeeper interface {
 	Vote(goCtx context.Context, msg *group.MsgVote) (*group.MsgVoteResponse, error)
 	GroupInfo(goCtx context.Context, request *group.QueryGroupInfoRequest) (*group.QueryGroupInfoResponse, error)
 	GroupMembers(goCtx context.Context, request *group.QueryGroupMembersRequest) (*group.QueryGroupMembersResponse, error)
+	ProposalsByGroupPolicy(goCtx context.Context, request *group.QueryProposalsByGroupPolicyRequest) (*group.QueryProposalsByGroupPolicyResponse, error)
 }
 
 // ParamSubspace defines the expected Subspace interface for parameters.
@@ -68,7 +69,7 @@ type ValidatorSet interface {
 }
 
 type StakingKeeper interface {
-	SetComputeValidators(ctx context.Context, computeResults []keeper.ComputeResult) ([]types.Validator, error)
+	SetComputeValidators(ctx context.Context, computeResults []keeper.ComputeResult, isTestnet bool) ([]types.Validator, error)
 	GetAllValidators(ctx context.Context) (validators []types.Validator, err error)
 }
 
@@ -87,8 +88,7 @@ type StreamVestingKeeper interface {
 
 type ParticipantKeeper interface {
 	GetParticipant(ctx context.Context, index string) (val Participant, found bool)
-	GetParticipants(ctx context.Context, ids []string) ([]Participant, bool)
-	SetParticipant(ctx context.Context, participant Participant)
+	SetParticipant(ctx context.Context, participant Participant) error
 	RemoveParticipant(ctx context.Context, index string)
 	GetAllParticipant(ctx context.Context) []Participant
 	ParticipantAll(ctx context.Context, req *QueryAllParticipantRequest) (*QueryAllParticipantResponse, error)

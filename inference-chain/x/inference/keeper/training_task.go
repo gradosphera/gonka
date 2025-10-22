@@ -3,10 +3,11 @@ package keeper
 import (
 	"encoding/binary"
 	"fmt"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/productscience/inference/x/inference/types"
 	"strconv"
 	"strings"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/productscience/inference/x/inference/types"
 )
 
 // CreateTask creates a new task, storing the full object under /tasks/{taskID}
@@ -94,9 +95,9 @@ func (k Keeper) StartTask(ctx sdk.Context, taskId uint64, assignees []*types.Tra
 	return nil
 }
 
-// CompleteTask marks a task as finished by removing it from the in-progress set.
+// RemoveTaskFromInProgress marks a task as finished by removing it from the in-progress set.
 // Optionally, you can also update the full object state to indicate completion.
-func (k Keeper) CompleteTask(ctx sdk.Context, taskId uint64) error {
+func (k Keeper) RemoveTaskFromInProgress(ctx sdk.Context, taskId uint64) error {
 	store := EmptyPrefixStore(ctx, &k)
 
 	inProgressKey := types.InProgressTrainingTaskFullKey(taskId)

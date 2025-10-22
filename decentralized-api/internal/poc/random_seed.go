@@ -58,22 +58,7 @@ func (rsm *RandomSeedManagerImpl) GenerateSeedInfo(epochIndex uint64) {
 }
 
 func (rsm *RandomSeedManagerImpl) ChangeCurrentSeed() {
-	configManager := rsm.configManager
-	err := configManager.SetPreviousSeed(configManager.GetCurrentSeed())
-	if err != nil {
-		logging.Error("Failed to set previous seed", types.Claims, "error", err)
-		return
-	}
-	err = configManager.SetCurrentSeed(configManager.GetUpcomingSeed())
-	if err != nil {
-		logging.Error("Failed to set current seed", types.Claims, "error", err)
-		return
-	}
-	err = configManager.SetUpcomingSeed(apiconfig.SeedInfo{})
-	if err != nil {
-		logging.Error("Failed to set upcoming seed", types.Claims, "error", err)
-		return
-	}
+	rsm.configManager.AdvanceCurrentSeed()
 }
 
 func (rsm *RandomSeedManagerImpl) GetSeedForEpoch(epochIndex uint64) apiconfig.SeedInfo {
@@ -95,6 +80,12 @@ func (rsm *RandomSeedManagerImpl) RequestMoney(epochIndex uint64) {
 	//  e.g. generation fails a few times in a row for some reason
 	//  Solution: query seed here?
 	seed := rsm.GetSeedForEpoch(epochIndex)
+
+	// This will only happen in tests, and it starts a long retry process that
+	// obscures good failures
+	if seed.EpochIndex == 0 {
+		return
+	}
 
 	logging.Info("IsSetNewValidatorsStage: sending ClaimRewards transaction", types.Claims, "seed", seed)
 	err := rsm.transactionRecorder.ClaimRewards(&inference.MsgClaimRewards{

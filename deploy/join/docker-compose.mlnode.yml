@@ -1,13 +1,12 @@
 services:
   mlnode-308:
-    image: ghcr.io/product-science/mlnode:3.0.9
+    image: ghcr.io/product-science/mlnode:3.0.10
     hostname: mlnode-308
     volumes:
       - ${HF_HOME:-${HOME}/.cache}:/root/.cache
     environment:
       - HF_HOME=/root/.cache
       - VLLM_ATTENTION_BACKEND=FLASHINFER
-      - HF_HUB_OFFLINE=true
     deploy:
       resources:
         reservations:

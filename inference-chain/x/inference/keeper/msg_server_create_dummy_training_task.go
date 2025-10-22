@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+
 	"github.com/productscience/inference/x/inference/training"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -10,6 +11,10 @@ import (
 
 func (k msgServer) CreateDummyTrainingTask(goCtx context.Context, msg *types.MsgCreateDummyTrainingTask) (*types.MsgCreateDummyTrainingTaskResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if err := k.CheckTrainingAllowList(ctx, msg); err != nil {
+		return nil, err
+	}
 
 	msg.Task.CreatedAtBlockHeight = uint64(ctx.BlockHeight())
 	if msg.Task.Epoch == nil {

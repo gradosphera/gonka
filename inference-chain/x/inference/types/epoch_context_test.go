@@ -53,7 +53,8 @@ func getEpochId(initialEpoch types.Epoch) uint64 {
 func test(t *testing.T, epochParams types.EpochParams, initialBlockHeight int64, startOfPoc int64, initialEpoch types.Epoch) {
 	var i = initialBlockHeight
 	for i < startOfPoc {
-		ec := types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+		ec, err := types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+		require.NoError(t, err)
 		require.Equal(t, getEpochId(initialEpoch), ec.EpochIndex)
 		require.Equal(t, types.InferencePhase, ec.GetCurrentPhase(i))
 
@@ -64,7 +65,8 @@ func test(t *testing.T, epochParams types.EpochParams, initialBlockHeight int64,
 		i++
 	}
 
-	ec := types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+	ec, err := types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+	require.NoError(t, err)
 	require.Equal(t, getEpochId(initialEpoch)+1, ec.EpochIndex)
 	require.Equal(t, types.PoCGeneratePhase, ec.GetCurrentPhase(i))
 	require.Equal(t, i, ec.PocStartBlockHeight)
@@ -75,7 +77,8 @@ func test(t *testing.T, epochParams types.EpochParams, initialBlockHeight int64,
 	i++
 
 	for i < startOfPoc+epochParams.GetPoCWindDownStage() {
-		ec := types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+		ec, err := types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+		require.NoError(t, err)
 		require.Equal(t, getEpochId(initialEpoch)+1, ec.EpochIndex)
 		require.Equal(t, types.PoCGeneratePhase, ec.GetCurrentPhase(i))
 		require.True(t, ec.IsPoCExchangeWindow(i))
@@ -87,7 +90,8 @@ func test(t *testing.T, epochParams types.EpochParams, initialBlockHeight int64,
 
 	valStart := startOfPoc + epochParams.GetStartOfPoCValidationStage()
 	for i < valStart {
-		ec := types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+		ec, err := types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+		require.NoError(t, err)
 		require.Equal(t, getEpochId(initialEpoch)+1, ec.EpochIndex)
 		require.Equal(t, types.PoCGenerateWindDownPhase, ec.GetCurrentPhase(i))
 		require.True(t, ec.IsPoCExchangeWindow(i))
@@ -103,7 +107,8 @@ func test(t *testing.T, epochParams types.EpochParams, initialBlockHeight int64,
 	}
 
 	// Validation phase starts
-	ec = types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+	ec, err = types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+	require.NoError(t, err)
 	require.Equal(t, getEpochId(initialEpoch)+1, ec.EpochIndex)
 	require.Equal(t, types.PoCValidatePhase, ec.GetCurrentPhase(i))
 	require.True(t, ec.IsStartOfPoCValidationStage(i))
@@ -112,7 +117,8 @@ func test(t *testing.T, epochParams types.EpochParams, initialBlockHeight int64,
 	i++
 
 	for i < startOfPoc+epochParams.GetPoCValidationWindDownStage() {
-		ec = types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+		ec, err = types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+		require.NoError(t, err)
 		require.Equal(t, getEpochId(initialEpoch)+1, ec.EpochIndex)
 		require.Equal(t, types.PoCValidatePhase, ec.GetCurrentPhase(i))
 
@@ -125,7 +131,8 @@ func test(t *testing.T, epochParams types.EpochParams, initialBlockHeight int64,
 	}
 
 	for i < startOfPoc+epochParams.GetEndOfPoCValidationStage() {
-		ec = types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+		ec, err = types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+		require.NoError(t, err)
 		require.Equal(t, getEpochId(initialEpoch)+1, ec.EpochIndex)
 		require.Equal(t, types.PoCValidateWindDownPhase, ec.GetCurrentPhase(i))
 
@@ -137,7 +144,8 @@ func test(t *testing.T, epochParams types.EpochParams, initialBlockHeight int64,
 		i++
 	}
 
-	ec = types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+	ec, err = types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+	require.NoError(t, err)
 	require.Equal(t, getEpochId(initialEpoch)+1, ec.EpochIndex)
 	require.Equal(t, types.InferencePhase, ec.GetCurrentPhase(i))
 	require.False(t, ec.IsPoCExchangeWindow(i))
@@ -146,7 +154,8 @@ func test(t *testing.T, epochParams types.EpochParams, initialBlockHeight int64,
 	require.True(t, ec.IsEndOfPoCValidationStage(i))
 	i++
 
-	ec = types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+	ec, err = types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+	require.NoError(t, err)
 	require.Equal(t, getEpochId(initialEpoch)+1, ec.EpochIndex)
 	require.Equal(t, types.InferencePhase, ec.GetCurrentPhase(i))
 	require.False(t, ec.IsPoCExchangeWindow(i))
@@ -155,14 +164,13 @@ func test(t *testing.T, epochParams types.EpochParams, initialBlockHeight int64,
 	require.True(t, ec.IsSetNewValidatorsStage(i))
 	i++
 
-	require.Panics(t, func() {
-		fmt.Println("About to call NewEpochContextFromEffectiveEpoch")
-		types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
-		fmt.Println("Returned from NewEpochContextFromEffectiveEpoch (no panic?)")
-	})
+	fmt.Println("About to call NewEpochContextFromEffectiveEpoch")
+	_, err = types.NewEpochContextFromEffectiveEpoch(initialEpoch, epochParams, i)
+	require.Error(t, err)
 
 	nextEpochGroup := types.Epoch{Index: getEpochId(initialEpoch) + 1, PocStartBlockHeight: startOfPoc}
-	ec = types.NewEpochContextFromEffectiveEpoch(nextEpochGroup, epochParams, i)
+	ec, err = types.NewEpochContextFromEffectiveEpoch(nextEpochGroup, epochParams, i)
+	require.NoError(t, err)
 	require.Equal(t, getEpochId(nextEpochGroup), ec.EpochIndex)
 	require.Equal(t, types.InferencePhase, ec.GetCurrentPhase(i))
 	require.False(t, ec.IsSetNewValidatorsStage(i))

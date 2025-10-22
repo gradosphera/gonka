@@ -2,13 +2,14 @@ package apiconfig
 
 import (
 	"context"
+	"database/sql"
 	"decentralized-api/logging"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -27,7 +28,10 @@ type ConfigManager struct {
 	currentConfig  Config
 	KoanProvider   koanf.Provider
 	WriterProvider WriteCloserProvider
+	sqlDb          SqlDatabase
 	mutex          sync.Mutex
+	configDumpPath string
+	sqlitePath     string
 }
 
 type WriteCloserProvider interface {
@@ -35,28 +39,79 @@ type WriteCloserProvider interface {
 }
 
 func LoadDefaultConfigManager() (*ConfigManager, error) {
+	return LoadConfigManagerWithPaths(getConfigPath(), getSqlitePath(), os.Getenv("NODE_CONFIG_PATH"))
+}
+
+// LoadConfigManagerWithPaths allows tests to supply explicit paths.
+func LoadConfigManagerWithPaths(configPath, sqlitePath, nodeConfigPath string) (*ConfigManager, error) {
+	defaultDbCfg := SqliteConfig{
+		Path: sqlitePath,
+	}
+
+	db := NewSQLiteDb(defaultDbCfg)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := db.BootstrapLocal(ctx); err != nil {
+		log.Printf("Error bootstrapping local SQLite DB: %+v", err)
+		return nil, err
+	}
+
 	manager := ConfigManager{
-		KoanProvider:   getFileProvider(),
-		WriterProvider: NewFileWriteCloserProvider(getConfigPath()),
+		KoanProvider:   file.Provider(configPath),
+		WriterProvider: NewFileWriteCloserProvider(configPath),
+		sqlDb:          db,
 		mutex:          sync.Mutex{},
+		configDumpPath: filepath.Join(filepath.Dir(sqlitePath), "config-dump.json"),
+		sqlitePath:     sqlitePath,
 	}
 	err := manager.Load()
 	if err != nil {
 		return nil, err
 	}
-	err = manager.Write()
+
+	err = manager.migrateDynamicDataToDb(ctx)
 	if err != nil {
+		log.Printf("Error migrating dynamic data to DB: %+v", err)
+		return nil, err
+	}
+
+	if err = manager.Write(); err != nil {
 		log.Printf("Error writing config: %+v", err)
 		return nil, err
 	}
-	log.Printf("Saved loaded config: %+v", manager.currentConfig)
+	log.Printf("Saved static config after load")
+
+	// Hydrate in-memory dynamic state from DB once
+	if err := manager.HydrateFromDB(context.Background()); err != nil {
+		log.Printf("Error hydrating dynamic data from DB: %+v", err)
+		return nil, err
+	}
+	// Load node config JSON into in-memory struct if it's the very first run
+	if err := manager.LoadNodeConfig(ctx, nodeConfigPath); err != nil {
+		log.Fatalf("error loading node config: %v", err)
+	}
+
+	// Log the resulting config in pretty JSON format for easier debugging
+	// Make a copy and sanitize sensitive fields before logging
+	sanitized := manager.currentConfig
+	sanitized.CurrentSeed.Seed = 0
+	sanitized.PreviousSeed.Seed = 0
+	sanitized.UpcomingSeed.Seed = 0
+	sanitized.MLNodeKeyConfig.WorkerPrivateKey = ""
+	if cfgBytes, err := json.MarshalIndent(sanitized, "", "  "); err != nil {
+		log.Printf("Error marshaling final config to JSON: %+v", err)
+	} else {
+		log.Printf("Final loaded config (JSON):\n%s", string(cfgBytes))
+	}
 	return &manager, nil
 }
 
 func (cm *ConfigManager) Write() error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	// Write only static fields to config file
+	staticCopy := cm.getStaticConfigCopyUnsafe()
+	return writeConfig(staticCopy, cm.WriterProvider)
 }
 
 func (cm *ConfigManager) Load() error {
@@ -90,30 +145,47 @@ func (cm *ConfigManager) GetNodes() []InferenceNodeConfig {
 	return nodes
 }
 
+// SqlDb returns the configured SQL database handle if available
+func (cm *ConfigManager) SqlDb() SqlDatabase {
+	return cm.sqlDb
+}
+
 func (cm *ConfigManager) getConfig() *Config {
 	return &cm.currentConfig
 }
 
-func (cm *ConfigManager) GetUpgradePlan() UpgradePlan {
-	return cm.currentConfig.UpgradePlan
+// GetConfig returns a snapshot copy of the current configuration.
+// The returned value should be treated as read-only by callers.
+func (cm *ConfigManager) GetConfig() Config {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+	return cm.currentConfig
 }
 
+func (cm *ConfigManager) GetUpgradePlan() UpgradePlan { return cm.currentConfig.UpgradePlan }
+
 func (cm *ConfigManager) SetUpgradePlan(plan UpgradePlan) error {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
 	cm.currentConfig.UpgradePlan = plan
 	logging.Info("Setting upgrade plan", types.Config, "plan", plan)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) ClearUpgradePlan() error {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
 	cm.currentConfig.UpgradePlan = UpgradePlan{}
 	logging.Info("Clearing upgrade plan", types.Config)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) SetHeight(height int64) error {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
 	cm.currentConfig.CurrentHeight = height
 	logging.Info("Setting height", types.Config, "height", height)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) GetLastProcessedHeight() int64 {
@@ -121,9 +193,11 @@ func (cm *ConfigManager) GetLastProcessedHeight() int64 {
 }
 
 func (cm *ConfigManager) SetLastProcessedHeight(height int64) error {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
 	cm.currentConfig.LastProcessedHeight = height
 	logging.Info("Setting last processed height", types.Config, "height", height)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) GetCurrentNodeVersion() string {
@@ -131,12 +205,12 @@ func (cm *ConfigManager) GetCurrentNodeVersion() string {
 }
 
 func (cm *ConfigManager) SetCurrentNodeVersion(version string) error {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
 	oldVersion := cm.currentConfig.CurrentNodeVersion
 	cm.currentConfig.CurrentNodeVersion = version
-
 	logging.Info("Setting current node version", types.Config, "oldVersion", oldVersion, "newVersion", version)
-
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 // SyncVersionFromChain queries the current version from chain and updates config if needed
@@ -178,7 +252,7 @@ func (cm *ConfigManager) SetValidationParams(params ValidationParamsCache) error
 	defer cm.mutex.Unlock()
 	cm.currentConfig.ValidationParams = params
 	logging.Info("Setting validation params", types.Config, "params", params)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) GetValidationParams() ValidationParamsCache {
@@ -190,7 +264,7 @@ func (cm *ConfigManager) SetBandwidthParams(params BandwidthParamsCache) error {
 	defer cm.mutex.Unlock()
 	cm.currentConfig.BandwidthParams = params
 	logging.Info("Setting bandwidth params", types.Config, "params", params)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) GetBandwidthParams() BandwidthParamsCache {
@@ -206,9 +280,11 @@ func (cm *ConfigManager) GetLastUsedVersion() string {
 }
 
 func (cm *ConfigManager) SetLastUsedVersion(version string) error {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
 	cm.currentConfig.LastUsedVersion = version
 	logging.Info("Setting last used version", types.Config, "version", version)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) ShouldRefreshClients() bool {
@@ -218,19 +294,35 @@ func (cm *ConfigManager) ShouldRefreshClients() bool {
 }
 
 func (cm *ConfigManager) SetPreviousSeed(seed SeedInfo) error {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
 	cm.currentConfig.PreviousSeed = seed
 	logging.Info("Setting previous seed", types.Config, "seed", seed)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
+}
+
+func (cm *ConfigManager) AdvanceCurrentSeed() {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+
+	cm.currentConfig.PreviousSeed = cm.currentConfig.CurrentSeed
+	cm.currentConfig.CurrentSeed = cm.currentConfig.UpcomingSeed
+	cm.currentConfig.UpcomingSeed = SeedInfo{}
 }
 
 func (cm *ConfigManager) MarkPreviousSeedClaimed() error {
-	cm.currentConfig.PreviousSeed.Claimed = true
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+	prev := cm.currentConfig.PreviousSeed
+	prev.Claimed = true
+	cm.currentConfig.PreviousSeed = prev
 	logging.Info("Marking previous seed as claimed", types.Config, "epochIndex", cm.currentConfig.PreviousSeed.EpochIndex)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) IsPreviousSeedClaimed() bool {
-	return cm.currentConfig.PreviousSeed.Claimed
+	seed := cm.GetPreviousSeed()
+	return seed.Claimed
 }
 
 func (cm *ConfigManager) GetPreviousSeed() SeedInfo {
@@ -238,9 +330,11 @@ func (cm *ConfigManager) GetPreviousSeed() SeedInfo {
 }
 
 func (cm *ConfigManager) SetCurrentSeed(seed SeedInfo) error {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
 	cm.currentConfig.CurrentSeed = seed
 	logging.Info("Setting current seed", types.Config, "seed", seed)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) GetCurrentSeed() SeedInfo {
@@ -248,19 +342,26 @@ func (cm *ConfigManager) GetCurrentSeed() SeedInfo {
 }
 
 func (cm *ConfigManager) SetUpcomingSeed(seed SeedInfo) error {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
 	cm.currentConfig.UpcomingSeed = seed
 	logging.Info("Setting upcoming seed", types.Config, "seed", seed)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) GetUpcomingSeed() SeedInfo {
 	return cm.currentConfig.UpcomingSeed
 }
 
+// Called from:
+// 1. syncNodesWithConfig periodic routine
+// 2. admin API when nodes are added/removed
 func (cm *ConfigManager) SetNodes(nodes []InferenceNodeConfig) error {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
 	cm.currentConfig.Nodes = nodes
 	logging.Info("Setting nodes", types.Config, "nodes", nodes)
-	return writeConfig(cm.currentConfig, cm.WriterProvider)
+	return nil
 }
 
 func (cm *ConfigManager) CreateWorkerKey() (string, error) {
@@ -269,12 +370,8 @@ func (cm *ConfigManager) CreateWorkerKey() (string, error) {
 	workerPublicKeyString := base64.StdEncoding.EncodeToString(workerPublicKey.Bytes())
 	workerPrivateKey := workerKey.Bytes()
 	workerPrivateKeyString := base64.StdEncoding.EncodeToString(workerPrivateKey)
-	cm.currentConfig.MLNodeKeyConfig.WorkerPrivateKey = workerPrivateKeyString
-	cm.currentConfig.MLNodeKeyConfig.WorkerPublicKey = workerPublicKeyString
-	err := cm.Write()
-	if err != nil {
-		return "", err
-	}
+	cfg := MLNodeKeyConfig{WorkerPublicKey: workerPublicKeyString, WorkerPrivateKey: workerPrivateKeyString}
+	cm.currentConfig.MLNodeKeyConfig = cfg
 	return workerPublicKeyString, nil
 }
 
@@ -289,6 +386,14 @@ func getConfigPath() string {
 		configPath = "config.yaml" // Default value if the environment variable is not set
 	}
 	return configPath
+}
+
+func getSqlitePath() string {
+	path := os.Getenv("API_SQLITE_PATH")
+	if path == "" {
+		return "/root/.dapi/gonka.db"
+	}
+	return path
 }
 
 type FileWriteCloserProvider struct {
@@ -349,10 +454,6 @@ func readConfig(provider koanf.Provider) (Config, error) {
 		log.Printf("Warning: KEYRING_PASSWORD environment variable not set - keyring operations may fail")
 	}
 
-	if err := loadNodeConfig(&config); err != nil {
-		log.Fatalf("error loading node config: %v", err)
-	}
-
 	return config, nil
 }
 
@@ -388,15 +489,29 @@ type WriteCloser interface {
 	Close() error
 }
 
-// Called once at startup to load additional nodes from a separate config file
-func loadNodeConfig(config *Config) error {
-	if config.NodeConfigIsMerged {
+// LoadNodeConfig loads additional nodes from a JSON file and writes them into the DB once.
+// Idempotent via KV flag kvKeyNodeConfigMerged.
+func (cm *ConfigManager) LoadNodeConfig(ctx context.Context, nodeConfigPathOverride string) error {
+	if err := cm.ensureDbReady(ctx); err != nil {
+		return err
+	}
+
+	// If already merged, skip
+	var merged bool
+	if ok, err := KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyNodeConfigMerged, &merged); err == nil && ok && merged {
 		logging.Info("Node config already merged. Skipping", types.Config)
 		return nil
 	}
 
-	nodeConfigPath, found := os.LookupEnv("NODE_CONFIG_PATH")
-	if !found || strings.TrimSpace(nodeConfigPath) == "" {
+	nodeConfigPath := nodeConfigPathOverride
+	if strings.TrimSpace(nodeConfigPath) == "" {
+		var found bool
+		nodeConfigPath, found = os.LookupEnv("NODE_CONFIG_PATH")
+		if !found {
+			nodeConfigPath = ""
+		}
+	}
+	if strings.TrimSpace(nodeConfigPath) == "" {
 		logging.Info("NODE_CONFIG_PATH not set. No additional nodes will be added to config", types.Config)
 		return nil
 	}
@@ -408,32 +523,13 @@ func loadNodeConfig(config *Config) error {
 		return err
 	}
 
-	// Check for duplicate IDs across both existing and new nodes
-	seenIds := make(map[string]bool)
+	// Populate in-memory nodes and mark dirty. Auto-flush will persist and then set merged flag.
+	cm.mutex.Lock()
+	cm.currentConfig.Nodes = newNodes
+	cm.mutex.Unlock()
 
-	// First, add existing nodes to the map
-	for _, node := range config.Nodes {
-		if seenIds[node.Id] {
-			return fmt.Errorf("duplicate node ID found in config: %s", node.Id)
-		}
-		seenIds[node.Id] = true
-	}
-
-	// Check new nodes for duplicates
-	for _, node := range newNodes {
-		if seenIds[node.Id] {
-			return fmt.Errorf("duplicate node ID found in config: %s", node.Id)
-		}
-		seenIds[node.Id] = true
-	}
-
-	// Merge new nodes with existing ones
-	config.Nodes = append(config.Nodes, newNodes...)
-	config.NodeConfigIsMerged = true
-
-	logging.Info("Successfully loaded and merged node configuration",
-		types.Config, "new_nodes", len(newNodes),
-		"total_nodes", len(config.Nodes))
+	logging.Info("Loaded node configuration into memory; will persist on next flush", types.Config,
+		"new_nodes", len(newNodes))
 	return nil
 }
 
@@ -459,3 +555,318 @@ func parseInferenceNodesFromNodeConfigJson(nodeConfigPath string) ([]InferenceNo
 
 	return newNodes, nil
 }
+
+func (cm *ConfigManager) migrateDynamicDataToDb(ctx context.Context) error {
+	if err := cm.ensureDbReady(ctx); err != nil {
+		return err
+	}
+	// Only migrate once, gated by a KV flag
+	var migrated bool
+	if ok, err := KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyConfigMigrated, &migrated); err == nil && ok && migrated {
+		logging.Info("Config migration already completed. Skipping", types.Config)
+		return nil
+	}
+	config := cm.currentConfig
+	// If YAML indicates nodes were already merged historically, persist the flag so LoadNodeConfig skips
+	if config.NodeConfigIsMerged {
+		_ = KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyNodeConfigMerged, true)
+	}
+	// Nodes: upsert unconditionally (idempotent)
+	if err := WriteNodes(ctx, cm.sqlDb.GetDb(), config.Nodes); err != nil {
+		logging.Error("Error writing nodes to DB", types.Config, "error", err)
+		return err
+	}
+
+	// Per-key idempotent migrations: only populate if missing
+	// Heights
+	if _, ok, _ := KVGetInt64(ctx, cm.sqlDb.GetDb(), kvKeyCurrentHeight); !ok && config.CurrentHeight != 0 {
+		_ = KVSetInt64(ctx, cm.sqlDb.GetDb(), kvKeyCurrentHeight, config.CurrentHeight)
+	}
+	if _, ok, _ := KVGetInt64(ctx, cm.sqlDb.GetDb(), kvKeyLastProcessedHeight); !ok && config.LastProcessedHeight != 0 {
+		_ = KVSetInt64(ctx, cm.sqlDb.GetDb(), kvKeyLastProcessedHeight, config.LastProcessedHeight)
+	}
+
+	// Seeds (migrate once into typed table if not already present)
+	if s := config.CurrentSeed; s.Seed != 0 || s.Signature != "" {
+		_ = SetActiveSeed(ctx, cm.sqlDb.GetDb(), "current", s)
+	}
+	if s := config.PreviousSeed; s.Seed != 0 || s.Signature != "" {
+		_ = SetActiveSeed(ctx, cm.sqlDb.GetDb(), "previous", s)
+	}
+	if s := config.UpcomingSeed; s.Seed != 0 || s.Signature != "" {
+		_ = SetActiveSeed(ctx, cm.sqlDb.GetDb(), "upcoming", s)
+	}
+
+	// Upgrade plan
+	var up UpgradePlan
+	if ok, _ := func() (bool, error) { return KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyUpgradePlan, &up) }(); !ok && (config.UpgradePlan.Height != 0 || config.UpgradePlan.Name != "") {
+		_ = KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyUpgradePlan, config.UpgradePlan)
+	}
+
+	// Versions
+	if _, ok, _ := KVGetString(ctx, cm.sqlDb.GetDb(), kvKeyCurrentNodeVersion); !ok && config.CurrentNodeVersion != "" {
+		_ = KVSetString(ctx, cm.sqlDb.GetDb(), kvKeyCurrentNodeVersion, config.CurrentNodeVersion)
+	}
+	if _, ok, _ := KVGetString(ctx, cm.sqlDb.GetDb(), kvKeyLastUsedVersion); !ok && config.LastUsedVersion != "" {
+		_ = KVSetString(ctx, cm.sqlDb.GetDb(), kvKeyLastUsedVersion, config.LastUsedVersion)
+	}
+
+	// Params
+	var vp ValidationParamsCache
+	if ok, _ := func() (bool, error) { return KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyValidationParams, &vp) }(); !ok && (config.ValidationParams.TimestampExpiration != 0 || config.ValidationParams.ExpirationBlocks != 0) {
+		_ = KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyValidationParams, config.ValidationParams)
+	}
+	var bp BandwidthParamsCache
+	if ok, _ := func() (bool, error) { return KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyBandwidthParams, &bp) }(); !ok && (config.BandwidthParams.EstimatedLimitsPerBlockKb != 0) {
+		_ = KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyBandwidthParams, config.BandwidthParams)
+	}
+
+	// ML node key config
+	var mk MLNodeKeyConfig
+	if ok, _ := func() (bool, error) { return KVGetJSON(ctx, cm.sqlDb.GetDb(), kvKeyMLNodeKeyConfig, &mk) }(); !ok && (config.MLNodeKeyConfig.WorkerPublicKey != "" || config.MLNodeKeyConfig.WorkerPrivateKey != "") {
+		_ = KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyMLNodeKeyConfig, config.MLNodeKeyConfig)
+	}
+
+	// Mark migration as done
+	_ = KVSetJSON(ctx, cm.sqlDb.GetDb(), kvKeyConfigMigrated, true)
+	return nil
+}
+
+// HydrateFromDB loads dynamic fields from DB into memory ONCE during startup.
+func (cm *ConfigManager) HydrateFromDB(_ context.Context) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = cm.ensureDbReady(ctx)
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+	if db := cm.sqlDb.GetDb(); db != nil {
+		if nodes, err := ReadNodes(ctx, db); err == nil && len(nodes) >= 0 {
+			logging.Info("Reading nodes from DB", types.Config, "nodes", nodes)
+			cm.currentConfig.Nodes = nodes
+		}
+		if s, ok, err := GetActiveSeed(ctx, db, "current"); err == nil && ok {
+			cm.currentConfig.CurrentSeed = s
+			sanitizedS := s
+			sanitizedS.Seed = 0
+			logging.Info("Reading active seed from DB", types.Config, "sanitizedSeed", s)
+		}
+		if s, ok, err := GetActiveSeed(ctx, db, "previous"); err == nil && ok {
+			cm.currentConfig.PreviousSeed = s
+			sanitizedS := s
+			sanitizedS.Seed = 0
+			logging.Info("Reading previous seed from DB", types.Config, "sanitizedSeed", s)
+		}
+		if s, ok, err := GetActiveSeed(ctx, db, "upcoming"); err == nil && ok {
+			cm.currentConfig.UpcomingSeed = s
+			sanitizedS := s
+			sanitizedS.Seed = 0
+			logging.Info("Reading upcoming seed from DB", types.Config, "sanitizedSeed", s)
+		}
+		if v, ok, err := KVGetInt64(ctx, db, kvKeyCurrentHeight); err == nil && ok {
+			logging.Info("Reading current height from DB", types.Config, "height", v)
+			cm.currentConfig.CurrentHeight = v
+		}
+		if v, ok, err := KVGetInt64(ctx, db, kvKeyLastProcessedHeight); err == nil && ok {
+			logging.Info("Reading last processed height from DB", types.Config, "height", v)
+			cm.currentConfig.LastProcessedHeight = v
+		}
+		var up UpgradePlan
+		if ok, err := KVGetJSON(ctx, db, kvKeyUpgradePlan, &up); err == nil && ok {
+			logging.Info("Reading upgrade plan from DB", types.Config, "plan", up)
+			cm.currentConfig.UpgradePlan = up
+		}
+		if v, ok, err := KVGetString(ctx, db, kvKeyCurrentNodeVersion); err == nil && ok {
+			logging.Info("Reading current node version from DB", types.Config, "version", v)
+			cm.currentConfig.CurrentNodeVersion = v
+		}
+		if v, ok, err := KVGetString(ctx, db, kvKeyLastUsedVersion); err == nil && ok {
+			logging.Info("Reading last used version from DB", types.Config, "version", v)
+			cm.currentConfig.LastUsedVersion = v
+		}
+		var vp ValidationParamsCache
+		if ok, err := KVGetJSON(ctx, db, kvKeyValidationParams, &vp); err == nil && ok {
+			logging.Info("Reading validation params from DB", types.Config, "params", vp)
+			cm.currentConfig.ValidationParams = vp
+		}
+		var bp BandwidthParamsCache
+		if ok, err := KVGetJSON(ctx, db, kvKeyBandwidthParams, &bp); err == nil && ok {
+			logging.Info("Reading bandwidth params from DB", types.Config, "params", bp)
+			cm.currentConfig.BandwidthParams = bp
+		}
+		var mk MLNodeKeyConfig
+		if ok, err := KVGetJSON(ctx, db, kvKeyMLNodeKeyConfig, &mk); err == nil && ok {
+			cm.currentConfig.MLNodeKeyConfig = mk
+			sanitizedMk := mk
+			mk.WorkerPrivateKey = ""
+			logging.Info("Reading MLNodeKeyConfig from DB", types.Config, "sanitizedConfig", sanitizedMk)
+		}
+	}
+	return nil
+}
+
+// StartAutoFlush launches a background goroutine that periodically flushes dynamic fields to DB.
+func (cm *ConfigManager) StartAutoFlush(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	go func() {
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				_ = cm.flushToDB(ctx)
+			}
+		}
+	}()
+}
+
+// FlushNow flushes dynamic fields immediately.
+func (cm *ConfigManager) FlushNow(ctx context.Context) error {
+	logging.Info("Executing FlushNow", types.Config)
+	return cm.flushToDB(ctx)
+}
+
+// flushToDB writes all dynamic fields if there were any changes since last flush.
+func (cm *ConfigManager) flushToDB(ctx context.Context) error {
+	logging.Info("Executing flushToDB", types.Config)
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := cm.ensureDbReady(ctx); err != nil {
+		return err
+	}
+	cm.mutex.Lock()
+	cfg := cm.currentConfig
+	cm.mutex.Unlock()
+	db := cm.sqlDb.GetDb()
+	if db == nil {
+		return nil
+	}
+
+	// Always flush everything; each logical group uses its own transaction inside helpers
+	if err := ReplaceInferenceNodes(ctx, db, cfg.Nodes); err != nil {
+		return err
+	}
+	_ = KVSetJSON(ctx, db, kvKeyNodeConfigMerged, true)
+
+	// Seeds: must be atomic as a group; perform in one tx
+	if err := setSeedsAtomic(ctx, db, cfg); err != nil {
+		return err
+	}
+
+	_ = KVSetInt64(ctx, db, kvKeyCurrentHeight, cfg.CurrentHeight)
+	_ = KVSetInt64(ctx, db, kvKeyLastProcessedHeight, cfg.LastProcessedHeight)
+	_ = KVSetJSON(ctx, db, kvKeyUpgradePlan, cfg.UpgradePlan)
+	_ = KVSetString(ctx, db, kvKeyCurrentNodeVersion, cfg.CurrentNodeVersion)
+	_ = KVSetString(ctx, db, kvKeyLastUsedVersion, cfg.LastUsedVersion)
+	_ = KVSetJSON(ctx, db, kvKeyMLNodeKeyConfig, cfg.MLNodeKeyConfig)
+	_ = KVSetJSON(ctx, db, kvKeyValidationParams, cfg.ValidationParams)
+	_ = KVSetJSON(ctx, db, kvKeyBandwidthParams, cfg.BandwidthParams)
+
+	logging.Info("Flushed dynamic config to DB", types.Config)
+
+	// Also write a pretty-printed config dump JSON next to the DB
+	if cm.configDumpPath != "" {
+		if dumpBytes, err := json.MarshalIndent(cfg, "", "  "); err != nil {
+			logging.Warn("Failed to marshal config dump", types.Config, "error", err)
+		} else {
+			// Ensure directory exists
+			_ = os.MkdirAll(filepath.Dir(cm.configDumpPath), 0o755)
+			if err := os.WriteFile(cm.configDumpPath, dumpBytes, 0o644); err != nil {
+				logging.Warn("Failed to write config dump", types.Config, "path", cm.configDumpPath, "error", err)
+			}
+			logging.Info("Saved config dump", types.Config, "configDumpPath", cm.configDumpPath)
+		}
+	}
+	return nil
+}
+
+// setSeedsAtomic writes all three seeds in a single transaction to keep them consistent.
+func setSeedsAtomic(ctx context.Context, db *sql.DB, cfg Config) error {
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `UPDATE seed_info SET is_active = 0 WHERE is_active = 1 AND type IN ('current','previous','upcoming')`); err != nil {
+		return err
+	}
+	if err := insertSeedTx(ctx, tx, "current", cfg.CurrentSeed); err != nil {
+		return err
+	}
+	if err := insertSeedTx(ctx, tx, "previous", cfg.PreviousSeed); err != nil {
+		return err
+	}
+	if err := insertSeedTx(ctx, tx, "upcoming", cfg.UpcomingSeed); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func insertSeedTx(ctx context.Context, tx *sql.Tx, seedType string, s SeedInfo) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO seed_info(type, seed, epoch_index, signature, claimed, is_active) VALUES(?, ?, ?, ?, ?, 1)`,
+		seedType, s.Seed, s.EpochIndex, s.Signature, s.Claimed)
+	return err
+}
+
+// ensureDbReady pings the DB and attempts to reopen if needed
+func (cm *ConfigManager) ensureDbReady(ctx context.Context) error {
+	db := cm.sqlDb.GetDb()
+	if db != nil {
+		if err := db.PingContext(ctx); err == nil {
+			return nil
+		}
+	}
+	// Reopen
+	reopenPath := cm.sqlitePath
+	if strings.TrimSpace(reopenPath) == "" {
+		reopenPath = getSqlitePath()
+	}
+	newDb := NewSQLiteDb(SqliteConfig{Path: reopenPath})
+	if err := newDb.BootstrapLocal(ctx); err != nil {
+		return err
+	}
+	// Close old handle to avoid leaks
+	if cm.sqlDb != nil && cm.sqlDb.GetDb() != nil {
+		_ = cm.sqlDb.GetDb().Close()
+	}
+	cm.sqlDb = newDb
+	return nil
+}
+
+// getStaticConfigCopyUnsafe returns a copy of config with dynamic fields zeroed for file persistence.
+func (cm *ConfigManager) getStaticConfigCopyUnsafe() Config {
+	c := cm.currentConfig
+	// Zero dynamic fields
+	c.Nodes = nil
+	c.NodeConfigIsMerged = false
+	c.UpcomingSeed = SeedInfo{}
+	c.CurrentSeed = SeedInfo{}
+	c.PreviousSeed = SeedInfo{}
+	c.CurrentHeight = 0
+	c.LastProcessedHeight = 0
+	c.UpgradePlan = UpgradePlan{}
+	c.MLNodeKeyConfig = MLNodeKeyConfig{}
+	c.CurrentNodeVersion = ""
+	c.LastUsedVersion = ""
+	c.ValidationParams = ValidationParamsCache{}
+	c.BandwidthParams = BandwidthParamsCache{}
+	return c
+}
+
+// KV keys for dynamic data
+const (
+	kvKeyCurrentHeight       = "current_height"
+	kvKeyLastProcessedHeight = "last_processed_height"
+	kvKeyUpgradePlan         = "upgrade_plan"
+	kvKeyCurrentSeed         = "seed_current"
+	kvKeyPreviousSeed        = "seed_previous"
+	kvKeyUpcomingSeed        = "seed_upcoming"
+	kvKeyCurrentNodeVersion  = "current_node_version"
+	kvKeyLastUsedVersion     = "last_used_version"
+	kvKeyValidationParams    = "validation_params"
+	kvKeyBandwidthParams     = "bandwidth_params"
+	kvKeyMLNodeKeyConfig     = "ml_node_key_config"
+	kvKeyNodeConfigMerged    = "node_config_merged"
+	kvKeyConfigMigrated      = "config_migrated"
+)

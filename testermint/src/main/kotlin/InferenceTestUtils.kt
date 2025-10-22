@@ -36,12 +36,15 @@ fun runParallelInferencesWithResults(
         async(limitedDispatcher) {
             val requestStart = System.currentTimeMillis()
             try {
+                Logger.info("Making inference request $i")
                 System.nanoTime()
                 // This works, because the Instant.now() resolution gives us 3 zeros at the end, so we know these will be unique
                 val timestamp = Instant.now().toEpochNanos() + i
                 val result = genesis.makeInferenceRequest(inferenceRequest.copy(model = models.random()).toJson(), timestamp = timestamp)
+                Logger.info("Inference request $i completed in ${System.currentTimeMillis() - requestStart}ms")
                 result
             } catch (e: Exception) {
+                Logger.error(e, "Error making inference request $i")
                 null
             }
         }

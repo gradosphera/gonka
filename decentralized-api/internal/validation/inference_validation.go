@@ -857,10 +857,9 @@ func ToMsgValidation(result ValidationResult) (*inference.MsgValidation, error) 
 	}
 
 	return &inference.MsgValidation{
-		Id:              uuid.New().String(),
-		InferenceId:     result.GetInferenceId(),
-		ResponsePayload: string(result.GetValidationResponseBytes()),
-		ResponseHash:    responseHash,
-		Value:           simVal,
+		Id:           uuid.New().String(),
+		InferenceId:  result.GetInferenceId(),
+		ResponseHash: responseHash,
+		Value:        simVal,
 	}, nil
 }

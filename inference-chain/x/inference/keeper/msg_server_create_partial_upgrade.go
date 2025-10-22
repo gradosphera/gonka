@@ -17,12 +17,16 @@ func (k msgServer) CreatePartialUpgrade(goCtx context.Context, msg *types.MsgCre
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	k.LogInfo("CreatePartialUpgrade", types.Upgrades, "height", msg.Height, "node_version", msg.NodeVersion, "api_binaries_json", msg.ApiBinariesJson)
-	k.SetPartialUpgrade(ctx, types.PartialUpgrade{
+	err := k.SetPartialUpgrade(ctx, types.PartialUpgrade{
 		Height:          msg.Height,
 		NodeVersion:     msg.NodeVersion,
 		ApiBinariesJson: msg.ApiBinariesJson,
 		Name:            "PartialUpgrade at height " + strconv.FormatUint(msg.Height, 10) + " for node version " + msg.NodeVersion,
 	})
+
+	if err != nil {
+		return nil, err
+	}
 
 	return &types.MsgCreatePartialUpgradeResponse{}, nil
 }

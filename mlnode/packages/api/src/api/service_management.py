@@ -1,5 +1,6 @@
 from enum import Enum
 from fastapi import HTTPException, Request
+import asyncio
 
 API_PREFIX = "/api/v1"
 
@@ -13,7 +14,7 @@ def get_service_name(request: Request):
     path = request.url.path
     return path.removeprefix(API_PREFIX).lstrip("/").split("/")[0].upper()
 
-def update_service_state(request: Request):
+async def update_service_state(request: Request):
     pow_running = request.app.state.pow_manager.is_running()
     inference_running = request.app.state.inference_manager.is_running()
     train_running = request.app.state.train_manager.is_running()
@@ -21,7 +22,8 @@ def update_service_state(request: Request):
     running_services = sum([pow_running, inference_running, train_running])
     if running_services > 1:
         request.app.state.pow_manager.stop()
-        request.app.state.inference_manager.stop()
+        # Use async stop for inference manager in async context
+        await request.app.state.inference_manager._async_stop()
         request.app.state.train_manager.stop()
         raise HTTPException(
             status_code=409,
@@ -53,6 +55,6 @@ def handle_conflicts(request: Request):
             )
         )
 
-def check_service_conflicts(request: Request):
-    update_service_state(request)
+async def check_service_conflicts(request: Request):
+    await update_service_state(request)
     handle_conflicts(request)

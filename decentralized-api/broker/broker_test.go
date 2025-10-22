@@ -326,22 +326,15 @@ func TestReleaseNode(t *testing.T) {
 	availableNode := make(chan *Node, 2)
 	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
 	runningNode := <-availableNode
-	if runningNode == nil {
-		t.Fatalf("expected node1, got nil")
-	}
-	if runningNode.Id != node.Id {
-		t.Fatalf("expected node1, got: " + runningNode.Id)
-	}
+	require.NotNil(t, runningNode)
+	require.Equal(t, node.Id, runningNode.Id)
 	release := make(chan bool, 2)
 	queueMessage(t, broker, ReleaseNode{node.Id, InferenceSuccess{}, release})
-	if !<-release {
-		t.Fatalf("expected true, got false")
-	}
-	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
-	if <-availableNode == nil {
-		t.Fatalf("expected node1, got nil")
-	}
 
+	b := <-release
+	require.True(t, b, "expected release response to be true")
+	queueMessage(t, broker, LockAvailableNode{"model1", availableNode})
+	require.NotNil(t, <-availableNode, "expected node1, got nil")
 }
 
 func TestRoundTripSegment(t *testing.T) {
@@ -510,4 +503,75 @@ func TestImmediateClientRefreshLogic(t *testing.T) {
 
 	// Should have called stop again
 	assert.Greater(t, mockClient.StopCalled, previousStopCalled, "Stop should have been called again during second refresh")
+}
+
+func TestUpdateNodeConfiguration(t *testing.T) {
+	broker := NewTestBroker()
+	node := apiconfig.InferenceNodeConfig{
+		Host:          "localhost",
+		InferencePort: 8080,
+		PoCPort:       5000,
+		Models:        map[string]apiconfig.ModelConfig{"model1": {Args: make([]string, 0)}},
+		Id:            "node1",
+		MaxConcurrent: 1,
+	}
+
+	registerNodeAndSetInferenceStatus(t, broker, node)
+
+	// Capture initial node info
+	nodesBefore, err := broker.GetNodes()
+	require.NoError(t, err)
+	require.Equal(t, 1, len(nodesBefore))
+	before := nodesBefore[0]
+	require.Equal(t, types.HardwareNodeStatus_INFERENCE, before.State.CurrentStatus)
+	beforeNodeNum := before.Node.NodeNum
+
+	// Get mock client and capture StopCalled baseline
+	mockFactory := broker.mlNodeClientFactory.(*mlnodeclient.MockClientFactory)
+	var mockClient *mlnodeclient.MockClient
+	for _, c := range mockFactory.GetAllClients() {
+		mockClient = c
+		break
+	}
+	require.NotNil(t, mockClient, "Mock client should exist")
+
+	// Prepare an update: change host, ports, models, maxConcurrent, hardware
+	updated := apiconfig.InferenceNodeConfig{
+		Host:             "127.0.0.1",
+		InferenceSegment: "/api",
+		InferencePort:    9090,
+		PoCSegment:       "/api",
+		PoCPort:          5050,
+		Models:           map[string]apiconfig.ModelConfig{"model1": {Args: []string{"--foo", "bar"}}},
+		Id:               "node1",
+		MaxConcurrent:    3,
+		Hardware:         []apiconfig.Hardware{{Type: "GPU", Count: 2}},
+	}
+
+	// Queue UpdateNode
+	command := NewUpdateNodeCommand(updated)
+	resp := command.Response
+	err = broker.QueueMessage(command)
+	require.NoError(t, err)
+	out := <-resp
+	require.NotNil(t, out)
+
+	// Validate updated view
+	nodesAfter, err := broker.GetNodes()
+	require.NoError(t, err)
+	require.Equal(t, 1, len(nodesAfter))
+	after := nodesAfter[0]
+
+	assert.Equal(t, updated.Host, after.Node.Host)
+	assert.Equal(t, updated.InferenceSegment, after.Node.InferenceSegment)
+	assert.Equal(t, updated.InferencePort, after.Node.InferencePort)
+	assert.Equal(t, updated.PoCSegment, after.Node.PoCSegment)
+	assert.Equal(t, updated.PoCPort, after.Node.PoCPort)
+	assert.Equal(t, updated.MaxConcurrent, after.Node.MaxConcurrent)
+	assert.Equal(t, beforeNodeNum, after.Node.NodeNum, "NodeNum should be preserved")
+	assert.Equal(t, types.HardwareNodeStatus_INFERENCE, after.State.CurrentStatus, "Current status should remain unchanged")
+
+	// Validate models args updated
+	require.Contains(t, after.Node.Models, "model1")
+	assert.Equal(t, []string{"--foo", "bar"}, after.Node.Models["model1"].Args)
 }

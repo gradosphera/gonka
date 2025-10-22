@@ -1,21 +1,50 @@
-# VCS and editor metadata
+# VCS and IDE
+.git
+.gitignore
+.gitattributes
 **/.git
 **/.DS_Store
-**/.idea
-**/.vscode
+**/.idea/
+**/.vscode/
+
+# Logs and transient files
+**/*.log
+direct.log
+test-logs-*/
+
+# Dependency caches
+**/.gradle/
+**/node_modules/
 
 # Build outputs and caches
-**/build
-**/dist
-**/output
+**/build/
+**/dist/
+**/output/
 **/.cache
-**/node_modules
 **/.pytest_cache
 **/__pycache__
 
-prod-local/
-public-html/
-demo/
-mlnode/
+# Environment files
 **/.venv
 **/*.env
+
+# Large/unrelated directories to api/node Docker builds
+local-test-net/
+testermint/
+public-html/
+data/
+genesis/
+prod-genesis/
+prod-local/
+prod-sim/
+deploy/
+docs/
+proposals/
+mcp-obsidian/
+logdy/
+jq_test/
+test-net-cloud/
+upgrade-build-files/
+16504109747-artifacts/
+demo/
+mlnode/

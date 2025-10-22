@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"decentralized-api/apiconfig"
 	"decentralized-api/logging"
-	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/knadh/koanf/providers/rawbytes"
@@ -109,10 +109,18 @@ func TestConfigRoundTrip(t *testing.T) {
 	require.Equal(t, "join1", testManager2.GetChainNodeConfig().SignerKeyName)
 	require.Equal(t, "test", testManager2.GetChainNodeConfig().KeyringBackend)
 	require.Equal(t, "/root/.inference", testManager2.GetChainNodeConfig().KeyringDir)
-	require.Equal(t, "v3.0.8", testManager2.GetCurrentNodeVersion())
+	// After Write() we persist only static fields; dynamic fields like version are not in YAML
+	require.Equal(t, "", testManager2.GetCurrentNodeVersion())
 }
 
-func loadManager(t *testing.T, err error) error {
+func writeTemp(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+	return path
+}
+
+func loadManager(t *testing.T) error {
 	testManager := &apiconfig.ConfigManager{
 		KoanProvider: rawbytes.Provider([]byte(testYaml)),
 	}
@@ -126,9 +134,10 @@ func loadManager(t *testing.T, err error) error {
 		os.Unsetenv("KEY_NAME")
 	}()
 
-	err = testManager.Load()
-	require.NoError(t, err)
-	return err
+	if err := testManager.Load(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // We cannot write anything to stdout when loading config or we break cosmovisor!
@@ -148,10 +157,11 @@ func TestNoLoggingToStdout(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Load config with overrides
-	_, err = logging.WithNoopLogger(func() (interface{}, error) {
-		err := loadManager(t, err)
+	_, noLoggerErr := logging.WithNoopLogger(func() (interface{}, error) {
+		err := loadManager(t)
 		return nil, err
 	})
+	require.NoError(t, noLoggerErr)
 
 	// Close the pipe and reset stdout
 	_ = w.Close()
@@ -164,13 +174,6 @@ func TestNoLoggingToStdout(t *testing.T) {
 	if buf.Len() > 0 {
 		t.Errorf("Unexpected logging to stdout: %q", buf.String())
 	}
-}
-
-// Example function in the library
-func LibraryFunctionThatShouldNotLog() {
-	// Simulate a log that should not reach stdout
-	//logging.Info("Oops, this log should fail the test")
-	fmt.Println("This should fail the test")
 }
 
 var testYaml = `

@@ -81,6 +81,15 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgCreateDummyTrainingTask{},
 	)
 	registry.RegisterImplementations((*sdk.Msg)(nil),
+		&MsgAddUserToTrainingAllowList{},
+	)
+	registry.RegisterImplementations((*sdk.Msg)(nil),
+		&MsgRemoveUserFromTrainingAllowList{},
+	)
+	registry.RegisterImplementations((*sdk.Msg)(nil),
+		&MsgSetTrainingAllowList{},
+	)
+	registry.RegisterImplementations((*sdk.Msg)(nil),
 		&MsgRegisterLiquidityPool{},
 	)
 	registry.RegisterImplementations((*sdk.Msg)(nil),

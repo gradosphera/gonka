@@ -18,7 +18,6 @@ func CreateUpgradeHandler(
 		if _, ok := fromVM["capability"]; !ok {
 			fromVM["capability"] = mm.Modules["capability"].(module.HasConsensusVersion).ConsensusVersion()
 		}
-
 		toVM, err := mm.RunMigrations(ctx, configurator, fromVM)
 		if err != nil {
 			return toVM, err

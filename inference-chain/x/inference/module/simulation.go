@@ -123,6 +123,18 @@ const (
 	// TODO: Determine the simulation weight value
 	defaultWeightMsgCreateDummyTrainingTask int = 100
 
+	opWeightMsgAddUserToTrainingAllowList = "op_weight_msg_add_user_to_training_allow_list"
+	// TODO: Determine the simulation weight value
+	defaultWeightMsgAddUserToTrainingAllowList int = 100
+
+	opWeightMsgRemoveUserFromTrainingAllowList = "op_weight_msg_remove_user_from_training_allow_list"
+	// TODO: Determine the simulation weight value
+	defaultWeightMsgRemoveUserFromTrainingAllowList int = 100
+
+	opWeightMsgSetTrainingAllowList = "op_weight_msg_set_training_allow_list"
+	// TODO: Determine the simulation weight value
+	defaultWeightMsgSetTrainingAllowList int = 100
+
 	// this line is used by starport scaffolding # simapp/module/const
 )
 
@@ -410,6 +422,39 @@ func (am AppModule) WeightedOperations(simState module.SimulationState) []simtyp
 		inferencesimulation.SimulateMsgCreateDummyTrainingTask(am.accountKeeper, am.bankKeeper, am.keeper),
 	))
 
+	var weightMsgAddUserToTrainingAllowList int
+	simState.AppParams.GetOrGenerate(opWeightMsgAddUserToTrainingAllowList, &weightMsgAddUserToTrainingAllowList, nil,
+		func(_ *rand.Rand) {
+			weightMsgAddUserToTrainingAllowList = defaultWeightMsgAddUserToTrainingAllowList
+		},
+	)
+	operations = append(operations, simulation.NewWeightedOperation(
+		weightMsgAddUserToTrainingAllowList,
+		inferencesimulation.SimulateMsgAddUserToTrainingAllowList(am.accountKeeper, am.bankKeeper, am.keeper),
+	))
+
+	var weightMsgRemoveUserFromTrainingAllowList int
+	simState.AppParams.GetOrGenerate(opWeightMsgRemoveUserFromTrainingAllowList, &weightMsgRemoveUserFromTrainingAllowList, nil,
+		func(_ *rand.Rand) {
+			weightMsgRemoveUserFromTrainingAllowList = defaultWeightMsgRemoveUserFromTrainingAllowList
+		},
+	)
+	operations = append(operations, simulation.NewWeightedOperation(
+		weightMsgRemoveUserFromTrainingAllowList,
+		inferencesimulation.SimulateMsgRemoveUserFromTrainingAllowList(am.accountKeeper, am.bankKeeper, am.keeper),
+	))
+
+	var weightMsgSetTrainingAllowList int
+	simState.AppParams.GetOrGenerate(opWeightMsgSetTrainingAllowList, &weightMsgSetTrainingAllowList, nil,
+		func(_ *rand.Rand) {
+			weightMsgSetTrainingAllowList = defaultWeightMsgSetTrainingAllowList
+		},
+	)
+	operations = append(operations, simulation.NewWeightedOperation(
+		weightMsgSetTrainingAllowList,
+		inferencesimulation.SimulateMsgSetTrainingAllowList(am.accountKeeper, am.bankKeeper, am.keeper),
+	))
+
 	// this line is used by starport scaffolding # simapp/module/operation
 
 	return operations
@@ -607,6 +652,30 @@ func (am AppModule) ProposalMsgs(simState module.SimulationState) []simtypes.Wei
 			defaultWeightMsgCreateDummyTrainingTask,
 			func(r *rand.Rand, ctx sdk.Context, accs []simtypes.Account) sdk.Msg {
 				inferencesimulation.SimulateMsgCreateDummyTrainingTask(am.accountKeeper, am.bankKeeper, am.keeper)
+				return nil
+			},
+		),
+		simulation.NewWeightedProposalMsg(
+			opWeightMsgAddUserToTrainingAllowList,
+			defaultWeightMsgAddUserToTrainingAllowList,
+			func(r *rand.Rand, ctx sdk.Context, accs []simtypes.Account) sdk.Msg {
+				inferencesimulation.SimulateMsgAddUserToTrainingAllowList(am.accountKeeper, am.bankKeeper, am.keeper)
+				return nil
+			},
+		),
+		simulation.NewWeightedProposalMsg(
+			opWeightMsgRemoveUserFromTrainingAllowList,
+			defaultWeightMsgRemoveUserFromTrainingAllowList,
+			func(r *rand.Rand, ctx sdk.Context, accs []simtypes.Account) sdk.Msg {
+				inferencesimulation.SimulateMsgRemoveUserFromTrainingAllowList(am.accountKeeper, am.bankKeeper, am.keeper)
+				return nil
+			},
+		),
+		simulation.NewWeightedProposalMsg(
+			opWeightMsgSetTrainingAllowList,
+			defaultWeightMsgSetTrainingAllowList,
+			func(r *rand.Rand, ctx sdk.Context, accs []simtypes.Account) sdk.Msg {
+				inferencesimulation.SimulateMsgSetTrainingAllowList(am.accountKeeper, am.bankKeeper, am.keeper)
 				return nil
 			},
 		),

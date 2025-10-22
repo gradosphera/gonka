@@ -21,7 +21,7 @@ class StateResponse(BaseModel):
 
 @router.get("/state")
 async def state(request: Request) -> StateResponse:
-    update_service_state(request)
+    await update_service_state(request)
     state: ServiceState = request.app.state.service_state
     return StateResponse(state=state)
 
@@ -34,7 +34,8 @@ async def stop(request: Request):
     if pow_manager.is_running():
         pow_manager.stop()
     if inference_manager.is_running():
-        inference_manager.stop()
+        # Use async stop in async context to avoid blocking event loop
+        await inference_manager._async_stop()
     if train_manager.is_running():
         train_manager.stop()
 
