@@ -1,144 +1,196 @@
 # Development Guidelines for Gonka Project
 
-This document outlines the development guidelines for the Gonka project, with a special focus on considerations for AI Agents working with the codebase.
+This document outlines the development guidelines for the Gonka project, with a special focus on considerations for AI Agents (like Junie) working with the codebase.
+
+---
 
 ## Project Overview
 
-Gonka is a decentralized AI infrastructure designed to optimize computational power for AI model training and inference. The project uses a novel consensus mechanism called "Proof of Work 2.0" that ensures computational resources are allocated to AI workloads rather than being wasted on securing the blockchain.
+Gonka is a decentralized AI infrastructure designed to optimize computational power for AI model training and inference.
+The project uses a novel consensus mechanism called **Proof of Compute** that ensures computational resources are allocated to AI workloads rather than wasted on securing the blockchain.
 
 The system consists of three main components:
-1. **Chain Node** - Connects to the blockchain, maintains the blockchain layer, and handles consensus
-2. **API Node** - Serves as the coordination layer between the blockchain and the AI execution environment
-3. **ML Node** - Handles AI workload execution: training, inference, and Proof of Work 2.0(This is currently not in this repo)
+
+1. **Chain Node** — Connects to the blockchain, maintains the blockchain layer, and handles consensus.
+2. **API Node** — Serves as the coordination layer between the blockchain and the AI execution environment.
+3. **ML Node** — Handles AI workload execution: training, inference, and Proof of Compute validation (this is currently not in this repo).
+
+---
+
+## ✅ Updated: Live Chain and Upgrade Policy
+
+The Gonka chain is **LIVE**.
+This means **all changes must be upgrade-safe** and **data migration should be avoided** whenever possible.
+
+* **Never break existing chain data or consensus logic.**
+* **If state changes are required**, implement upgrade handlers in separate functions (one per change) inside the appropriate module (e.g., `inference-chain/x/<module>/module.go`).
+* **Do not call these handlers directly.**
+  Instead, the **user** will manually add calls to the correct upgrade migration functions in the chain’s `app/app.go` upgrade handler.
+* **Avoid data migrations** unless absolutely necessary — prefer adding new collections or fields instead of mutating or restructuring existing ones.
+
+---
 
 ## Repository Structure
 
 ```
-/client-libs        # Client script to interact with the chain
+/client-libs        # Client scripts to interact with the chain
 /cosmovisor         # Cosmovisor binaries
-/decentralized-api  # Api node
+/decentralized-api  # API node
 /dev_notes          # Chain developer knowledge base
 /docs               # Documentation on specific aspects of the chain
 /inference-chain    # Chain node
 /prepare-local      # Scripts and configs for running local chain
-/testermint         # Integration tests suite
-/local-test-net     # Scripts and other files for runnina a local test net with multiple nodes
+/testermint         # Integration test suite
+/local-test-net     # Scripts and files for running a local multi-node test net
 ```
 
-## Guidelines for Generated Files
+---
+
+## ✅ Updated: Guidelines for Generated Files and Collections
 
 ### Protobuf Files
 
-**IMPORTANT**: Do not edit `.pb.go` files directly. These are generated files based on `.proto` files.
+**IMPORTANT:** Never edit `.pb.go` files directly. These are auto-generated from `.proto` files.
 
 When working with protobuf definitions:
 
-1. Edit the `.proto` files
-2. Run `ignite generate proto-go` in the `inference-chain` directory to regenerate the Go code
-3. For ML node protobuf definitions, refer to the [chain-protos repository](https://github.com/product-science/chain-protos/blob/main/proto/network_node/v1/network_node.proto)
-4. After editing `.proto` files, copy them to the ML node and Inference Ignite repositories, and regenerate the bindings (currently not possible within this repo)
+1. Edit the `.proto` files.
+2. Run:
 
-### Ignite Commands
+   ```bash
+   ignite generate proto-go
+   ```
 
-For working with Cosmos Ignite:
+   from the `inference-chain` directory.
+3. For ML node protobuf definitions, refer to the [chain-protos repository](https://github.com/product-science/chain-protos/blob/main/proto/network_node/v1/network_node.proto).
+4. After editing `.proto` files, ensure they are synchronized across related repos if needed.
 
-**ALL** ignite commands should be run in the `inference-chain` directory, NOT the root.
+---
 
-- Add new store object: 
-  ```
-  ignite scaffold map participant reputation:int weight:int join_time:uint join_height:int last_inference_time:uint --index address --module inference --no-message
-  ```
-  - Include `--no-message` to prevent the store object from being modifiable by messages sent to the chain
-  - Prefer snake_case naming
-  
-- Add new message:
-  ```
-  ignite scaffold message createGame black red --module checkers --response gameIndex
-  ```
+### ✅ Updated: Collections and `ignite` Usage
 
-- Add new query:
-  ```
+We **no longer use `ignite`** to create new data objects on the chain, since it does **not fully support the new Cosmos `collections` library**.
+
+#### To add new state data (collections-based):
+
+1. **Define your data structure in a `.proto` file.**
+2. Run:
+
+   ```bash
+   ignite generate proto-go
+   ```
+
+   to generate boilerplate code.
+3. **Manually register new collections** in
+   `inference-chain/x/inference/keeper/keeper.go`,
+   following the patterns already established for other collections-based state.
+4. **Do not scaffold new stores or messages using `ignite scaffold map` or similar.**
+
+> ⚠️ Only the `.proto` file should be modified or added.
+> All collection wiring must be done manually in the keeper.
+
+#### We still use `ignite` for:
+
+* **Adding new queries**, since this workflow remains stable:
+
+  ```bash
   ignite scaffold query getGameResult gameIndex --module checkers --response result
   ```
 
-- Modify existing store object:
-  1. Change the types in the `.proto` file for the store object
-  2. Run `ignite generate proto-go`
-
-- Modify existing message:
-  1. Change the types in `tx.proto`
-  2. Run `ignite generate proto-go`
+---
 
 ## Blockchain-Specific Considerations
 
 ### Avoiding Consensus Failures
 
-Consensus failures can occur when nodes calculate the state differently. To prevent this:
+Consensus failures occur when nodes calculate the state differently.
+To prevent this:
 
-1. **Don't use maps in state calculations**
-   - Go's map iteration order is indeterminate
-   - Use slices or arrays instead
-   - If maps are necessary, implement a deterministic map
+1. **Do not use maps** in any deterministic state calculation.
 
-2. **Avoid randomness in state calculations**
-   - All GUIDs, random numbers, and anything using randomness must be calculated outside chain state calculation
-   - Any randomness in state calculations means consensus cannot be reached
+    * Go’s map iteration order is indeterminate.
+    * Use slices or deterministic ordering instead.
 
-3. **Don't use map iteration to generate lists or maps**
-   - If needed, implement a deterministic map or iterate on a sorted list of keys
+2. **Avoid randomness** in any chain state computation.
+
+    * Random values, UUIDs, or timestamps must never affect consensus.
+
+3. **Never iterate over maps** to generate state lists.
+
+    * If needed, sort keys or use deterministic iteration.
+
+---
 
 ### Debugging Consensus Failures
 
 If a consensus failure occurs:
 
-1. Note the block height of the failure
-2. Exec into a container running the node
-3. Run `inferenced export --height <block height>`
-4. Compare the JSON state output from different nodes to identify where states differed
+1. Note the failing block height.
+2. Enter a container running a node.
+3. Run:
+
+   ```bash
+   inferenced export --height <block height>
+   ```
+4. Compare the JSON state output from multiple nodes to locate divergence.
+
+---
 
 ## Testing Requirements
 
 Before submitting a pull request:
 
 1. Run unit tests and integration tests:
-   ```
+
+   ```bash
    make local-build
    make run-tests
    ```
-2. `make run-tests` will take a very long time to run (90 minutes+), so do it only when most of the work is done.
-2. Ensure all unit tests pass
-3. Ensure all integration tests pass, minus known issues listed in `testermint/KNOW_ISSUES.md`
+
+   > Note: `make run-tests` can take over 90 minutes.
+2. Ensure all unit and integration tests pass (except known issues in `testermint/KNOWN_ISSUES.md`).
+
+---
 
 ## Documentation
 
-- Update documentation alongside code changes that affect behavior, APIs, or assumptions
-- Missing documentation may delay PR approval
+Always update documentation alongside any code change that affects:
 
-## Guidelines for AI Agents
+* Behavior
+* APIs
+* Assumptions or chain logic
 
-When working with this codebase, AI Agents should:
+Incomplete documentation can delay PR approval.
 
-1. **Understand the architecture** - Familiarize yourself with the three main components (Chain Node, API Node, ML Node) and how they interact
+---
 
-2. **Respect generated files** - Never modify `.pb.go` files directly; always edit the `.proto` files and regenerate
+## Guidelines for AI Agents (like Junie)
 
-3. **Be aware of blockchain constraints** - Pay special attention to determinism in state calculations, avoiding maps and randomness
+AI Agents contributing to this codebase must:
 
-4. **Follow testing protocols** - Run unit tests before finishing. Do not run integration tests unless specifically told to
+1. **Understand the architecture** — Know how Chain Node, API Node, and ML Node interact.
+2. **Respect generated files** — Never modify `.pb.go` files.
+3. **Be upgrade-aware** —
 
-5. **Document changes thoroughly** - Provide clear explanations for any proposed modifications
+    * All changes must be compatible with a live chain.
+    * Never assume full data resets are allowed.
+    * Use upgrade handlers when unavoidable.
+4. **Avoid non-determinism** — No maps or randomness in consensus paths.
+5. **Run unit tests** — Do not skip; avoid running integration tests unless instructed.
+6. **Document changes** — Explain reasoning and expected behavior clearly.
+7. **Follow Cosmos SDK conventions** — Especially for module structure and handler registration.
+8. **Do not commit** — Provide diffs, PR drafts, or patch instructions for human review.
+9. **Be cautious with collections** — Use existing patterns in `keeper.go` for adding new collections.
+10. **Be explicit about upgrades** — Include notes on whether a change requires an upgrade handler and what it does.
 
-6. **Consider consensus implications** - Any changes to state calculation must maintain deterministic behavior across all nodes. NEVER use maps in proto files or iterate over maps to generate parts of the state, as these are non-deterministic and will BREAK THE CHAIN.
+---
 
-7. **Use appropriate Ignite commands** - Follow the patterns established in the ignite_cheat_sheet.md for scaffolding new and modifying existing components. Components only need to be added using ignite if they are to be stored in the actual state of the blockchain, however.
+## Running Unit Tests During Development
 
-8. **Add new files to Git** - Use `git add` on the CLI to add newly created files to Github.
-9. **NEVER COMMIT FILES** - AI Agents should never commit files directly. Instead, they should provide the necessary changes and explanations, which can then be reviewed and committed by a human developer.
-
-By following these guidelines, AI Agents can contribute effectively to the Gonka project while maintaining the integrity and stability of the system.
-
-## Running Unit Tests During Dev
 To run tests in the `inference-chain` project:
-1. change to the `inference-chain` directory
-2. To execute ALL tests: `go test ./...`
-3. To execute tests for a specific file `go test (relative path from inference-chain)`
+
+```bash
+cd inference-chain
+go test ./...               # Run all tests
+go test ./x/inference/...   # Run tests for a specific module
+```
