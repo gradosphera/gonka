@@ -236,17 +236,11 @@ func (c SetNodeAdminStateCommand) Execute(b *Broker) {
 		}
 	}
 
-	b.mu.Lock()
-	node, exists := b.nodes[c.NodeId]
-	if !exists {
-		c.Response <- fmt.Errorf("node not found: %s", c.NodeId)
-		return
+	err := c.modifyNodeAdminState(b, currentEpoch)
+	if err != nil {
+		logging.Error("Failed to set node admin state", types.Nodes, "node_id", c.NodeId, "error", err)
+		c.Response <- err
 	}
-
-	// Update admin state
-	node.State.AdminState.Enabled = c.Enabled
-	node.State.AdminState.Epoch = currentEpoch
-	b.mu.Unlock()
 
 	logging.Info("Updated node admin state", types.Nodes,
 		"node_id", c.NodeId,
@@ -254,6 +248,22 @@ func (c SetNodeAdminStateCommand) Execute(b *Broker) {
 		"epoch", currentEpoch)
 
 	c.Response <- nil
+}
+
+func (c SetNodeAdminStateCommand) modifyNodeAdminState(b *Broker, currentEpoch uint64) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	node, exists := b.nodes[c.NodeId]
+	if !exists {
+		return fmt.Errorf("node not found: %s", c.NodeId)
+	}
+
+	// Update admin state
+	node.State.AdminState.Enabled = c.Enabled
+	node.State.AdminState.Epoch = currentEpoch
+
+	return nil
 }
 
 // UpdateNodeHardwareCommand updates the Hardware field for a specific node
