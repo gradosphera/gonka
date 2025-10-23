@@ -80,6 +80,12 @@ func NewServer(
 	// Return current unsanitized config as JSON
 	g.GET("config", s.getConfig)
 
+	// Export DB state (human-readable JSON) for admin purposes
+	g.GET("export/db", s.exportDb)
+
+	// Return current unsanitized config as JSON
+	g.GET("config", s.getConfig)
+
 	// Manual validation recovery and claim endpoint
 	g.POST("claim-reward/recover", s.postClaimRewardRecover)
 

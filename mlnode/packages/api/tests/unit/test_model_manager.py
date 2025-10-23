@@ -1,6 +1,7 @@
 """Unit tests for ModelManager."""
 
 import asyncio
+import time
 import pytest
 from unittest.mock import Mock, patch, MagicMock, AsyncMock
 import requests
@@ -506,8 +507,7 @@ async def test_download_model_with_retry_success(mock_subprocess, mock_list_file
 @pytest.mark.asyncio
 @patch('api.models.manager.asyncio.create_subprocess_exec')
 async def test_download_model_with_retry_network_error(mock_subprocess, manager, sample_model):
-    """Test download with network error and retries."""
-    # Mock subprocess that fails with network error (after retries inside subprocess)
+    """Test download with network error retries at manager level."""
     mock_process = AsyncMock()
     mock_process.pid = 12345
     mock_process.returncode = 1
@@ -518,7 +518,7 @@ async def test_download_model_with_retry_network_error(mock_subprocess, manager,
     await manager._download_model("test/model:abc123", sample_model, task_obj)
     
     assert task_obj.status == ModelStatus.PARTIAL
-    # Verify error message contains the network error (retry logic is inside subprocess)
+    assert task_obj.retry_count == 3
     assert "ConnectionError" in task_obj.error_message or "Network error" in task_obj.error_message
 
 
@@ -527,22 +527,35 @@ async def test_download_model_with_retry_network_error(mock_subprocess, manager,
 @patch('api.models.manager.list_repo_files')
 @patch('api.models.manager.asyncio.create_subprocess_exec')
 async def test_download_model_with_retry_eventual_success(mock_subprocess, mock_list_files, mock_download, manager, sample_model):
-    """Test download succeeds after initial failures."""
-    # Mock subprocess that eventually succeeds (retry logic is inside subprocess)
-    mock_process = AsyncMock()
-    mock_process.pid = 12345
-    mock_process.returncode = 0
-    mock_process.communicate.return_value = (b"", b"")
-    mock_subprocess.return_value = mock_process
-    
-    # Mock verification
+    """Test download succeeds after retries at manager level."""
     mock_list_files.return_value = ["config.json", "model.safetensors"]
     mock_download.return_value = "/tmp/test_cache/model.safetensors"
+    
+    call_count = 0
+    
+    async def mock_communicate():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return (b"", b"Temporary network error")
+        return (b"", b"")
+    
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    mock_process.communicate = mock_communicate
+    
+    def set_returncode():
+        nonlocal call_count
+        return 1 if call_count == 1 else 0
+    
+    type(mock_process).returncode = property(lambda self: set_returncode())
+    mock_subprocess.return_value = mock_process
     
     task_obj = DownloadTask(sample_model)
     await manager._download_model("test/model:abc123", sample_model, task_obj)
     
     assert task_obj.status == ModelStatus.DOWNLOADED
+    assert task_obj.retry_count == 1
     assert task_obj.error_message is None
 
 
@@ -596,4 +609,172 @@ def test_verify_download_success(manager, sample_model):
     
     with patch.object(manager, 'is_model_exist', return_value=False):
         assert manager._verify_download_success(sample_model) is False
+
+
+@pytest.mark.asyncio
+@patch('api.models.manager.hf_hub_download')
+@patch('api.models.manager.list_repo_files')
+@patch('api.models.manager.asyncio.create_subprocess_exec')
+async def test_download_retry_on_network_error(mock_subprocess, mock_list_files, mock_download, manager, sample_model):
+    """Test download retries on network error and succeeds."""
+    mock_list_files.return_value = ["config.json", "model.safetensors"]
+    mock_download.return_value = "/tmp/test_cache/model.safetensors"
+    
+    call_count = 0
+    
+    async def mock_communicate():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return (b"", b"ConnectionError: Network error")
+        return (b"", b"")
+    
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    
+    def set_returncode():
+        nonlocal call_count
+        return 1 if call_count == 1 else 0
+    
+    mock_process.communicate = mock_communicate
+    type(mock_process).returncode = property(lambda self: set_returncode())
+    mock_subprocess.return_value = mock_process
+    
+    task_obj = DownloadTask(sample_model)
+    await manager._download_model("test/model:abc123", sample_model, task_obj)
+    
+    assert task_obj.status == ModelStatus.DOWNLOADED
+    assert task_obj.retry_count == 1
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+@patch('api.models.manager.asyncio.create_subprocess_exec')
+async def test_download_retry_on_stall(mock_subprocess, manager, sample_model):
+    """Test download retries on stall and succeeds."""
+    call_count = 0
+    
+    async def mock_communicate():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            await asyncio.sleep(0.1)
+            return (b"", b"")
+        return (b"", b"")
+    
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    mock_process.returncode = 0
+    mock_process.communicate = mock_communicate
+    mock_subprocess.return_value = mock_process
+    
+    task_obj = DownloadTask(sample_model)
+    
+    task_obj.cancelled = True
+    task_obj.should_retry = True
+    
+    with patch.object(manager, '_verify_download_success', side_effect=[False, True]):
+        await manager._download_model("test/model:abc123", sample_model, task_obj)
+    
+    assert task_obj.status == ModelStatus.DOWNLOADED
+    assert task_obj.retry_count >= 1
+
+
+@pytest.mark.asyncio
+@patch('api.models.manager.asyncio.create_subprocess_exec')
+async def test_download_max_retries_exceeded(mock_subprocess, manager, sample_model):
+    """Test download fails after max retries exceeded."""
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    mock_process.returncode = 1
+    mock_process.communicate.return_value = (b"", b"ConnectionError: Network error")
+    mock_subprocess.return_value = mock_process
+    
+    task_obj = DownloadTask(sample_model)
+    await manager._download_model("test/model:abc123", sample_model, task_obj)
+    
+    assert task_obj.status == ModelStatus.PARTIAL
+    assert task_obj.retry_count == 3
+    assert task_obj.error_message is not None
+
+
+@pytest.mark.asyncio
+@patch('api.models.manager.hf_hub_download')
+@patch('api.models.manager.list_repo_files')
+@patch('api.models.manager.asyncio.create_subprocess_exec')
+async def test_download_exponential_backoff(mock_subprocess, mock_list_files, mock_download, manager, sample_model):
+    """Test download uses exponential backoff timing."""
+    mock_list_files.return_value = ["config.json", "model.safetensors"]
+    mock_download.return_value = "/tmp/test_cache/model.safetensors"
+    
+    call_count = 0
+    retry_times = []
+    
+    async def mock_communicate():
+        nonlocal call_count
+        call_count += 1
+        retry_times.append(time.time())
+        if call_count < 3:
+            return (b"", b"ConnectionError: Network error")
+        return (b"", b"")
+    
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    
+    def set_returncode():
+        nonlocal call_count
+        return 1 if call_count < 3 else 0
+    
+    mock_process.communicate = mock_communicate
+    type(mock_process).returncode = property(lambda self: set_returncode())
+    mock_subprocess.return_value = mock_process
+    
+    task_obj = DownloadTask(sample_model)
+    await manager._download_model("test/model:abc123", sample_model, task_obj)
+    
+    assert task_obj.status == ModelStatus.DOWNLOADED
+    assert len(retry_times) == 3
+    
+    if len(retry_times) >= 3:
+        assert retry_times[1] - retry_times[0] >= 2
+        assert retry_times[2] - retry_times[1] >= 4
+
+
+@pytest.mark.asyncio
+@patch('api.models.manager.hf_hub_download')
+@patch('api.models.manager.list_repo_files')
+@patch('api.models.manager.asyncio.create_subprocess_exec')
+async def test_download_retry_count_tracking(mock_subprocess, mock_list_files, mock_download, manager, sample_model):
+    """Test retry count increments correctly."""
+    mock_list_files.return_value = ["config.json", "model.safetensors"]
+    mock_download.return_value = "/tmp/test_cache/model.safetensors"
+    
+    call_count = 0
+    
+    async def mock_communicate():
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 2:
+            return (b"", b"ConnectionError: Network error")
+        return (b"", b"")
+    
+    mock_process = AsyncMock()
+    mock_process.pid = 12345
+    
+    def set_returncode():
+        nonlocal call_count
+        return 1 if call_count <= 2 else 0
+    
+    mock_process.communicate = mock_communicate
+    type(mock_process).returncode = property(lambda self: set_returncode())
+    mock_subprocess.return_value = mock_process
+    
+    task_obj = DownloadTask(sample_model)
+    
+    assert task_obj.retry_count == 0
+    
+    await manager._download_model("test/model:abc123", sample_model, task_obj)
+    
+    assert task_obj.retry_count == 2
+    assert task_obj.status == ModelStatus.DOWNLOADED
 

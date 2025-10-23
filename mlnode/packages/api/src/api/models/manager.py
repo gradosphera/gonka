@@ -15,17 +15,7 @@ from huggingface_hub import (
     list_repo_files,
     hf_hub_download,
 )
-from huggingface_hub.utils import (
-    HfHubHTTPError,
-    EntryNotFoundError,
-)
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-)
-import requests
+from huggingface_hub.utils import EntryNotFoundError
 import psutil
 
 from api.models.types import (
@@ -54,22 +44,13 @@ NETWORK_EXCEPTIONS = (
 
 def _download_model_subprocess(repo_id: str, revision: Optional[str], cache_dir: str):
     """Standalone function to download model - runs in subprocess."""
-    @retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1, min=1, max=60),
-        retry=retry_if_exception_type(NETWORK_EXCEPTIONS),
-        reraise=True,
+    return snapshot_download(
+        repo_id=repo_id,
+        revision=revision,
+        cache_dir=cache_dir,
+        resume_download=True,
+        local_files_only=False,
     )
-    def _download_with_retry():
-        return snapshot_download(
-            repo_id=repo_id,
-            revision=revision,
-            cache_dir=cache_dir,
-            resume_download=True,
-            local_files_only=False,
-        )
-    
-    return _download_with_retry()
 
 
 class DownloadTask:
@@ -84,7 +65,13 @@ class DownloadTask:
         self.cancelled = False
         self.process: Optional[asyncio.subprocess.Process] = None
         self.logger = logger
-    
+        self.last_progress_time = time.time()
+        self.last_cache_size = 0
+        self.monitor_task: Optional[asyncio.Task] = None
+        self.retry_count = 0
+        self.max_retries = 3
+        self.should_retry = False
+
     async def cancel(self):
         """Cancel the download task and terminate the subprocess."""
         if self.cancelled:
@@ -92,7 +79,9 @@ class DownloadTask:
         
         self.cancelled = True
         
-        # Cancel the async task first
+        if self.monitor_task and not self.monitor_task.done():
+            self.monitor_task.cancel()
+
         if self.task and not self.task.done():
             self.task.cancel()
         
@@ -136,6 +125,21 @@ class DownloadTask:
         except asyncio.TimeoutError:
             self.logger.warning(f"Process {pid} did not terminate after 10s")
 
+    def update_progress(self, current_cache_size: int):
+        if current_cache_size != self.last_cache_size:
+            self.last_cache_size = current_cache_size
+            self.last_progress_time = time.time()
+
+    def is_stalled(self, stall_timeout: float = 600) -> bool:
+        if self.status != ModelStatus.DOWNLOADING:
+            return False
+        elapsed_since_progress = time.time() - self.last_progress_time
+        return elapsed_since_progress > stall_timeout
+
+    async def terminate_subprocess_for_retry(self):
+        if self.process and self.process.returncode is None:
+            await self._terminate_process_tree()
+
 
 class ModelManager:
     """Manages HuggingFace models in cache with download tracking."""
@@ -156,8 +160,14 @@ class ModelManager:
         
         self._download_tasks: Dict[str, DownloadTask] = {}
         self._lock = asyncio.Lock()
-        logger.info(f"ModelManager initialized with cache_dir: {self.cache_dir}")
-    
+
+        self.stall_timeout = float(os.environ.get("MODEL_DOWNLOAD_STALL_TIMEOUT", "600"))
+
+        logger.info(
+            f"ModelManager initialized with cache_dir: {self.cache_dir}, "
+            f"stall_timeout: {self.stall_timeout}s ({self.stall_timeout/60:.1f} min)"
+        )
+
     def _get_task_id(self, model: Model) -> str:
         return model.get_identifier()
     
@@ -168,7 +178,7 @@ class ModelManager:
         """
         try:
             cache_info = scan_cache_dir(self.cache_dir)
-            
+
             # Check if repo exists in cache
             repo = next((r for r in cache_info.repos if r.repo_id == model.hf_repo), None)
             if not repo:
@@ -256,6 +266,60 @@ class ModelManager:
             logger.error(f"Download verification failed: {model.hf_repo}")
             return False
     
+    def _get_repo_cache_size(self, model: Model) -> int:
+        try:
+            cache_info = scan_cache_dir(self.cache_dir)
+            repo = next((r for r in cache_info.repos if r.repo_id == model.hf_repo), None)
+            if repo:
+                return repo.size_on_disk
+            return 0
+        except Exception as e:
+            logger.debug(f"Error getting cache size for {model.hf_repo}: {e}")
+            return 0
+
+    async def _monitor_download_progress(
+        self, task_id: str, model: Model, task_obj: DownloadTask,
+        check_interval: float = 60, stall_timeout: float = 600
+    ):
+        try:
+            logger.info(
+                f"Starting stall monitor for {task_id} "
+                f"(check every {check_interval}s, timeout after {stall_timeout}s)"
+            )
+
+            while task_obj.status == ModelStatus.DOWNLOADING and not task_obj.cancelled:
+                await asyncio.sleep(check_interval)
+
+                if task_obj.status != ModelStatus.DOWNLOADING or task_obj.cancelled:
+                    logger.debug(f"Monitor stopping for {task_id}: status changed or cancelled")
+                    break
+
+                current_size = self._get_repo_cache_size(model)
+                task_obj.update_progress(current_size)
+
+                if task_obj.is_stalled(stall_timeout):
+                    elapsed_since_progress = time.time() - task_obj.last_progress_time
+                    logger.warning(
+                        f"Download stalled for {task_id}: no progress for "
+                        f"{elapsed_since_progress:.0f}s (last size: {current_size} bytes)"
+                    )
+                    task_obj.should_retry = True
+                    await task_obj.terminate_subprocess_for_retry()
+                    break
+
+                logger.debug(
+                    f"Progress check for {task_id}: cache_size={current_size} bytes, "
+                    f"last_progress={time.time() - task_obj.last_progress_time:.0f}s ago"
+                )
+
+            logger.info(f"Stall monitor stopped for {task_id}")
+
+        except asyncio.CancelledError:
+            logger.debug(f"Stall monitor cancelled for {task_id}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in stall monitor for {task_id}: {e}", exc_info=True)
+
     async def add_model(self, model: Model) -> str:
         """Starts a model download asynchronously.
         
@@ -292,78 +356,104 @@ class ModelManager:
             download_task_obj.task = asyncio.create_task(
                 self._download_model(task_id, model, download_task_obj)
             )
-        
+
+            download_task_obj.monitor_task = asyncio.create_task(
+                self._monitor_download_progress(
+                    task_id, model, download_task_obj, stall_timeout=self.stall_timeout
+                )
+            )
+
         logger.info(f"Started download for model {task_id}")
         return task_id
     
-    async def _download_model(
-        self, task_id: str, model: Model, task_obj: DownloadTask
-    ):
-        """Downloads model in subprocess with retry logic, verification, and error handling."""
+    async def _download_model(self, task_id: str, model: Model, task_obj: DownloadTask):
+        """Downloads model with unified retry logic for network errors and stalls."""
         try:
-            logger.info(
-                f"Starting download for model {model.hf_repo} "
-                f"(commit: {model.hf_commit or 'latest'}) in subprocess"
-            )
-            
-            # Build command to call the download function
-            cmd = [
-                sys.executable, "-c",
-                f"from api.models.manager import _download_model_subprocess; "
-                f"_download_model_subprocess({repr(model.hf_repo)}, {repr(model.hf_commit)}, {repr(self.cache_dir)})"
-            ]
-            
-            # Start subprocess
-            task_obj.process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-            )
-            
-            logger.info(f"Download subprocess started with PID {task_obj.process.pid}")
-            
-            # Wait for subprocess to complete (timeout after 24 hours)
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    task_obj.process.communicate(),
-                    timeout=86400  # 24 hours
+            while task_obj.retry_count <= task_obj.max_retries:
+                if task_obj.retry_count > 0:
+                    wait_time = 2 ** task_obj.retry_count
+                    logger.info(f"Retrying {task_id} (attempt {task_obj.retry_count + 1}/{task_obj.max_retries + 1}) after {wait_time}s")
+                    await asyncio.sleep(wait_time)
+                    task_obj.should_retry = False
+                    task_obj.cancelled = False
+                    task_obj.last_progress_time = time.time()
+
+                logger.info(f"Starting download for {model.hf_repo} (commit: {model.hf_commit or 'latest'})")
+
+                cmd = [
+                    sys.executable, "-c",
+                    f"from api.models.manager import _download_model_subprocess; "
+                    f"_download_model_subprocess({repr(model.hf_repo)}, {repr(model.hf_commit)}, {repr(self.cache_dir)})"
+                ]
+
+                task_obj.process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    start_new_session=True,
                 )
-            except asyncio.TimeoutError:
-                logger.error(f"Download timeout (24 hours) for {task_id}")
-                await task_obj.cancel()
-                task_obj.status = ModelStatus.PARTIAL
-                task_obj.error_message = "Download timeout after 24 hours"
-                return
-            
-            # Check subprocess exit code
-            if task_obj.process.returncode != 0:
-                error_output = stderr.decode('utf-8', errors='replace')
-                logger.error(
-                    f"Download subprocess failed with exit code {task_obj.process.returncode}: {error_output}"
-                )
-                
-                # Parse specific error types
-                if "RepositoryNotFoundError" in error_output:
-                    task_obj.error_message = f"Repository not found: {model.hf_repo}"
-                elif "RevisionNotFoundError" in error_output:
-                    task_obj.error_message = f"Revision not found: {model.hf_commit}"
+
+                logger.info(f"Download subprocess started with PID {task_obj.process.pid}")
+
+                try:
+                    _, stderr = await asyncio.wait_for(
+                        task_obj.process.communicate(),
+                        timeout=86400
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(f"Download timeout (24 hours) for {task_id}")
+                    task_obj.error_message = "Download timeout after 24 hours"
+                    task_obj.cancelled = True
+                    break
+
+                if task_obj.should_retry:
+                    if task_obj.retry_count < task_obj.max_retries:
+                        logger.warning(f"Download stalled for {task_id}, will retry")
+                        task_obj.retry_count += 1
+                        continue
+                    else:
+                        task_obj.error_message = f"Download stalled after {task_obj.max_retries} retries"
+                        task_obj.cancelled = True
+                        break
+
+                if task_obj.process.returncode != 0:
+                    error_output = stderr.decode('utf-8', errors='replace')
+
+                    if "RepositoryNotFoundError" in error_output:
+                        task_obj.error_message = f"Repository not found: {model.hf_repo}"
+                        task_obj.cancelled = True
+                        break
+                    elif "RevisionNotFoundError" in error_output:
+                        task_obj.error_message = f"Revision not found: {model.hf_commit}"
+                        task_obj.cancelled = True
+                        break
+
+                    if task_obj.retry_count < task_obj.max_retries:
+                        logger.warning(f"Download failed for {task_id}, will retry: {error_output[:200]}")
+                        task_obj.retry_count += 1
+                        continue
+                    else:
+                        task_obj.error_message = error_output[:500]
+                        task_obj.cancelled = True
+                        break
+
+                logger.info(f"Download completed for {task_id}, verifying...")
+
+                if self._verify_download_success(model):
+                    task_obj.status = ModelStatus.DOWNLOADED
+                    logger.info(f"Successfully downloaded and verified model {task_id}")
+                    return
                 else:
-                    task_obj.error_message = error_output[:500]  # Truncate long errors
-                
-                task_obj.status = ModelStatus.PARTIAL
-                return
-            
-            logger.info(f"Download completed for {task_id}, verifying...")
-            
-            # Verify download success
-            if self._verify_download_success(model):
-                task_obj.status = ModelStatus.DOWNLOADED
-                logger.info(f"Successfully downloaded and verified model {task_id}")
-            else:
-                task_obj.status = ModelStatus.PARTIAL
-                task_obj.error_message = "Download verification failed - model files incomplete or corrupted"
-                logger.error(f"Download verification failed for {task_id}")
+                    if task_obj.retry_count < task_obj.max_retries:
+                        logger.warning(f"Verification failed for {task_id}, will retry")
+                        task_obj.retry_count += 1
+                        continue
+                    else:
+                        task_obj.error_message = "Download verification failed after retries"
+                        task_obj.cancelled = True
+                        break
+
+            task_obj.status = ModelStatus.PARTIAL
             
         except asyncio.CancelledError:
             logger.info(f"Download cancelled for {task_id}")

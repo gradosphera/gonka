@@ -28,6 +28,7 @@ class ModelStatus(str, Enum):
     DOWNLOADING = "DOWNLOADING"  # Download in progress
     NOT_FOUND = "NOT_FOUND"  # No trace of model in cache
     PARTIAL = "PARTIAL"  # Some files exist but model is incomplete
+    IGNORED = "IGNORED"  # Request acknowledged but not processed (e.g., offline mode)
 
 
 class DownloadProgress(BaseModel):

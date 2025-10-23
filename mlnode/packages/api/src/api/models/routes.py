@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Request, status
 from typing import Dict
+import os
 
 from api.models.types import (
     Model,
@@ -23,6 +24,11 @@ router = APIRouter()
 def get_model_manager(request: Request) -> ModelManager:
     """Get the ModelManager from app state."""
     return request.app.state.model_manager
+
+
+def _is_offline_mode_enabled() -> bool:
+    offline_value = os.getenv("HF_HUB_OFFLINE", "").strip().lower()
+    return offline_value in ("true", "1", "yes")
 
 
 @router.post(
@@ -112,7 +118,8 @@ async def check_model_status(
     - Maximum 3 concurrent downloads
     - Cannot start duplicate downloads for the same model
     - If model already exists, returns immediately with DOWNLOADED status
-    
+    - If HF_HUB_OFFLINE environment variable is set to true, returns IGNORED status instead of downloading
+
     Example request:
     ```json
     {
@@ -132,6 +139,18 @@ async def check_model_status(
         }
     }
     ```
+
+    Example response (offline mode):
+    ```json
+    {
+        "task_id": "meta-llama/Llama-2-7b-hf:latest:offline",
+        "status": "IGNORED",
+        "model": {
+            "hf_repo": "meta-llama/Llama-2-7b-hf",
+            "hf_commit": null
+        }
+    }
+    ```
     """,
 )
 async def download_model(
@@ -141,6 +160,15 @@ async def download_model(
     """Start downloading a model."""
     manager = get_model_manager(request)
     
+    # Check if offline mode is enabled - if so, acknowledge the request but don't download
+    if _is_offline_mode_enabled():
+        logger.info(f"HF_HUB_OFFLINE is enabled, skipping download for {model.hf_repo}")
+        return DownloadStartResponse(
+            task_id=f"{model.hf_repo}:{model.hf_commit or 'latest'}:offline",
+            status="IGNORED",  # This indicates the request was acknowledged but not processed
+            model=model
+        )
+
     try:
         task_id = await manager.add_model(model)
         
