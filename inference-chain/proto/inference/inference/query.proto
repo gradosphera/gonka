@@ -375,12 +375,6 @@ service Query {
 
   }
 
-  // Queries a list of TrainingAllowList items.
-  rpc TrainingAllowList (QueryTrainingAllowListRequest) returns (QueryTrainingAllowListResponse) {
-    option (google.api.http).get = "/productscience/inference/inference/training_allow_list";
-
-  }
-
   rpc GetBlockProofByHeight (QueryBlockProofRequest) returns (QueryBlockProofResponse) {
     option (google.api.http).get = "/productscience/inference/inference/block_proof/{proof_height}";
   }
