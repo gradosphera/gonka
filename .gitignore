@@ -33,3 +33,5 @@ prod-local/
 /testermint/downloads/
 /testermint/logs/
 balances-*.json
+/.clinerules/
+
