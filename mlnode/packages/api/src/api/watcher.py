@@ -11,7 +11,7 @@ from common.logger import create_logger
 
 logger = create_logger(__name__)
 
-MAX_UNHEALTHY_COUNT = 3
+MAX_UNHEALTHY_COUNT = os.getenv("MAX_UNHEALTHY_COUNT", 10)
 
 
 async def watch_managers(

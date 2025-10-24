@@ -218,16 +218,20 @@ class VLLMRunner(IVLLMRunner):
 
     def is_available(self) -> bool:
         if not self.is_running():
+            logger.debug("VLLMRunner is not running")
             return False
-        try:
-            # Check if any backend is available
-            for port in range(self.VLLM_PORT + 1, self.VLLM_PORT + len(self.processes) + 1):
-                resp = requests.get(f"http://{self.VLLM_HOST}:{port}/health", timeout=2)
+        
+        # Check if any backend is available
+        for port in range(self.VLLM_PORT + 1, self.VLLM_PORT + len(self.processes) + 1):
+            try:
+                resp = requests.get(f"http://{self.VLLM_HOST}:{port}/health", timeout=10)
                 if resp.status_code == 200:
                     return True
-            return False
-        except (requests.ConnectionError, requests.Timeout):
-            return False
+            except (requests.ConnectionError, requests.Timeout):
+                logger.debug("VLLMRunner is not available on port %d", port)
+                continue
+        
+        return False
 
     def get_error_if_exist(self) -> Optional[str]:
         for p in self.processes:
