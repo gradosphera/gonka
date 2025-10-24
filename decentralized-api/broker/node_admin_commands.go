@@ -240,14 +240,13 @@ func (c SetNodeAdminStateCommand) Execute(b *Broker) {
 	if err != nil {
 		logging.Error("Failed to set node admin state", types.Nodes, "node_id", c.NodeId, "error", err)
 		c.Response <- err
+	} else {
+		logging.Info("Updated node admin state", types.Nodes,
+			"node_id", c.NodeId,
+			"enabled", c.Enabled,
+			"epoch", currentEpoch)
+		c.Response <- nil
 	}
-
-	logging.Info("Updated node admin state", types.Nodes,
-		"node_id", c.NodeId,
-		"enabled", c.Enabled,
-		"epoch", currentEpoch)
-
-	c.Response <- nil
 }
 
 func (c SetNodeAdminStateCommand) modifyNodeAdminState(b *Broker, currentEpoch uint64) error {
