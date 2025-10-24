@@ -145,9 +145,6 @@ func TestSlashingForInvalidStatus_Integration(t *testing.T) {
 		Status:  types.ParticipantStatus_INVALID, // The new status
 	}
 
-	// The original status before the change
-	originalStatus := types.ParticipantStatus_ACTIVE
-
 	// Mock the slash call on the collateral keeper
 	expectedSlashFraction, err := slashFraction.ToLegacyDec()
 	require.NoError(t, err)
@@ -156,7 +153,7 @@ func TestSlashingForInvalidStatus_Integration(t *testing.T) {
 		Return(sdk.NewCoin(types.BaseCoin, math.NewInt(0)), nil).Times(1)
 
 	// Execute the function under test directly
-	k.CheckAndSlashForInvalidStatus(ctx, originalStatus, participant)
+	k.SlashForInvalidStatus(ctx, participant, params)
 }
 
 func TestSlashingForDowntime_Integration(t *testing.T) {

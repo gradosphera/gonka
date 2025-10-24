@@ -21,7 +21,7 @@ func createNParticipant(keeper keeper.Keeper, ctx context.Context, n int) []type
 	for i := range items {
 		items[i].Index = testutil.Bech32Addr(i)
 		// To test counter
-		items[i].Status = types.ParticipantStatus_ACTIVE
+		items[i].Status = types.ParticipantStatus_RAMPING
 
 		keeper.SetParticipant(ctx, items[i])
 	}

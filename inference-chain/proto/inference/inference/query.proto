@@ -30,6 +30,7 @@ import "inference/inference/bridge_transaction.proto";
 import "inference/inference/stats_developer.proto";
 import "inference/inference/epoch.proto";
 import "inference/inference/mlnode_version.proto";
+import "inference/inference/excluded_participant.proto";
 
 option go_package = "github.com/productscience/inference/x/inference/types";
 
@@ -371,6 +372,12 @@ service Query {
   // Queries a list of TrainingAllowList items.
   rpc TrainingAllowList (QueryTrainingAllowListRequest) returns (QueryTrainingAllowListResponse) {
     option (google.api.http).get = "/productscience/inference/inference/training_allow_list";
+
+  }
+
+  // Queries the list of excluded participants for an epoch (0 = current epoch).
+  rpc ExcludedParticipants (QueryExcludedParticipantsRequest) returns (QueryExcludedParticipantsResponse) {
+    option (google.api.http).get = "/productscience/inference/inference/excluded_participants/{epoch_index}";
 
   }
 }
@@ -942,4 +949,15 @@ message QueryGetMLNodeVersionRequest {}
 
 message QueryGetMLNodeVersionResponse {
   MLNodeVersion mlnode_version = 1 [(gogoproto.nullable) = false];
+}
+
+// QueryExcludedParticipantsRequest requests excluded participants for an epoch.
+// If epoch_index is 0, the query should return for the current effective epoch.
+message QueryExcludedParticipantsRequest {
+  uint64 epoch_index = 1;
+}
+
+// QueryExcludedParticipantsResponse returns a list of excluded participants for the epoch.
+message QueryExcludedParticipantsResponse {
+  repeated ExcludedParticipant items = 1;
 }

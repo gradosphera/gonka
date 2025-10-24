@@ -126,8 +126,8 @@ func TestInvalidateInference_RefundsRequesterAndChargesExecutor_WithSlash(t *tes
 	executor := types.Participant{
 		Index:                        executorAddr,
 		Address:                      executorAddr,
-		Status:                       types.ParticipantStatus_ACTIVE,
-		ConsecutiveInvalidInferences: 5,
+		Status:                       types.ParticipantStatus_INVALID,
+		ConsecutiveInvalidInferences: 4,
 		CurrentEpochStats:            &types.CurrentEpochStats{},
 		CoinBalance:                  5_000,
 	}

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"cosmossdk.io/collections"
+
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/core/store"
 	"cosmossdk.io/depinject"
@@ -638,6 +640,22 @@ func (am AppModule) moveUpcomingToEffectiveGroup(ctx context.Context, blockHeigh
 	err := am.keeper.ActiveInvalidations.Clear(ctx, nil)
 	if err != nil {
 		am.LogError("Unable to clear active invalidations", types.EpochGroup, "error", err.Error())
+	}
+
+	// Clear ExcludedParticipants for the epoch that just ended to keep scope to current epoch only
+	iter, err2 := am.keeper.ExcludedParticipantsMap.Iterate(ctx, collections.NewPrefixedPairRange[uint64, sdk.AccAddress](previousEpochIndex))
+	if err2 != nil {
+		am.LogError("Unable to iterate excluded participants for previous epoch", types.EpochGroup, "epoch", previousEpochIndex, "error", err2.Error())
+	} else {
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			pk, kerr := iter.Key()
+			if kerr != nil {
+				am.LogError("Failed to read key while clearing excluded participants", types.EpochGroup, "error", kerr.Error())
+				continue
+			}
+			_ = am.keeper.ExcludedParticipantsMap.Remove(ctx, pk)
+		}
 	}
 
 }

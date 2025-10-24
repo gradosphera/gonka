@@ -31,17 +31,17 @@ Files
 - inference-chain/proto/inference/inference/query.proto (edit)
 
 Implementation
-- [ ] TODO: Add excluded_participant.proto with:
-  - message ExcludedParticipant { string address = 1; uint64 epoch_id = 2; string reason = 3; uint64 effective_height = 4; }
-- [ ] TODO: In query.proto, add:
-  - rpc ExcludedParticipants(QueryExcludedParticipantsRequest) returns (QueryExcludedParticipantsResponse) { GET /productscience/inference/inference/excluded_participants/{epoch_id} }
-  - message QueryExcludedParticipantsRequest { uint64 epoch_id = 1; }
-  - message QueryExcludedParticipantsResponse { repeated ExcludedParticipant items = 1; }
-- [ ] TODO: Ensure appropriate go_package and imports registered.
-- [ ] TODO: Generate protobufs: from inference-chain dir, run: `ignite generate proto-go`
+- [x] TODO: Add excluded_participant.proto with:
+  - message ExcludedParticipant { string address = 1; uint64 epoch_id = 2; string reason = 3; uint64 effective_height = 4; } — added file and message definition.
+- [x] TODO: In query.proto, add:
+  - rpc ExcludedParticipants(QueryExcludedParticipantsRequest) returns (QueryExcludedParticipantsResponse) { GET /productscience/inference/inference/excluded_participants/{epoch_id} } — added.
+  - message QueryExcludedParticipantsRequest { uint64 epoch_id = 1; } — added.
+  - message QueryExcludedParticipantsResponse { repeated ExcludedParticipant items = 1; } — added.
+- [x] TODO: Ensure appropriate go_package and imports registered. — done, imported excluded_participant.proto.
+- [x] TODO: Generate protobufs: from inference-chain dir, run: `ignite generate proto-go` — generated successfully.
 
 Unit tests (compilation-level)
-- [ ] TODO: `cd inference-chain && go build ./...` succeeds
+- [x] TODO: `cd inference-chain && go build ./...` succeeds — build succeeded.
 
 ---
 
