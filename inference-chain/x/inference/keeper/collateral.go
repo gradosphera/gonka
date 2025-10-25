@@ -117,7 +117,7 @@ func (k Keeper) SlashForInvalidStatus(ctx context.Context, participant *types.Pa
 			"participant", participant.Address,
 			"slash_fraction", slashFraction.String(),
 		)
-		_, err := k.collateralKeeper.Slash(ctx, participantAddress, slashFraction)
+		_, err := k.collateralKeeper.Slash(ctx, participantAddress, slashFraction, types.SlashReasonInvalidation)
 		if err != nil {
 			k.LogError("Failed to slash participant", types.Tokenomics, "participant", participant.Address, "error", err)
 			// Non-fatal error, we log and continue. The participant is already marked INVALID.
@@ -164,7 +164,7 @@ func (k Keeper) CheckAndSlashForDowntime(ctx context.Context, participant *types
 			"slash_fraction", slashFraction.String(),
 		)
 
-		_, err = k.collateralKeeper.Slash(sdkCtx, participantAddress, slashFraction)
+		_, err = k.collateralKeeper.Slash(sdkCtx, participantAddress, slashFraction, types.SlashReasonDowntime)
 		if err != nil {
 			k.LogError("Failed to slash participant for downtime", types.Tokenomics, "participant", participant.Address, "error", err)
 		}

@@ -40,6 +40,8 @@ type (
 		Schema                collections.Schema
 		CurrentEpoch          collections.Item[uint64]
 		Jailed                collections.KeySet[sdk.AccAddress]
+		// SlashedInEpoch tracks whether a participant has been slashed for a given reason in a given epoch
+		SlashedInEpoch collections.KeySet[collections.Triple[uint64, sdk.AccAddress, string]]
 
 		// UnbondingIM is an IndexedMap with primary key Pair[completionEpoch, participant]
 		UnbondingIM collections.IndexedMap[collections.Pair[uint64, sdk.AccAddress], types.UnbondingCollateral, UnbondingIndexes]
@@ -81,6 +83,7 @@ func NewKeeper(
 		CollateralMap:         collections.NewMap(sb, types.CollateralKey, "collateral", sdk.AccAddressKey, codec.CollValue[sdk.Coin](cdc)),
 		CurrentEpoch:          collections.NewItem(sb, types.CurrentEpochKey, "current_epoch", collections.Uint64Value),
 		Jailed:                collections.NewKeySet(sb, types.JailedKey, "jailed", sdk.AccAddressKey),
+		SlashedInEpoch:        collections.NewKeySet(sb, types.SlashedInEpochKey, "slashed_in_epoch", collections.TripleKeyCodec(collections.Uint64Key, sdk.AccAddressKey, collections.StringKey)),
 		UnbondingIM: *collections.NewIndexedMap(
 			sb,
 			types.UnbondingCollPrefix,
@@ -383,10 +386,27 @@ func (k Keeper) GetAllJailed(ctx sdk.Context) []sdk.AccAddress {
 // Slash penalizes a participant by burning a fraction of their total collateral.
 // This includes both their active collateral and any collateral in the unbonding queue.
 // The slash is applied proportionally to all holdings.
-func (k Keeper) Slash(ctx context.Context, participantAddress sdk.AccAddress, slashFraction math.LegacyDec) (sdk.Coin, error) {
+func (k Keeper) Slash(ctx context.Context, participantAddress sdk.AccAddress, slashFraction math.LegacyDec, reason string) (sdk.Coin, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	if slashFraction.IsNegative() || slashFraction.GT(math.LegacyOneDec()) {
 		return sdk.Coin{}, fmt.Errorf("slash fraction must be between 0 and 1, got %s", slashFraction)
+	}
+	if reason == "" {
+		return sdk.Coin{}, fmt.Errorf("slash reason must be provided")
+	}
+	// get current epoch; default to 0 if not set yet
+	epoch := uint64(0)
+	if v, err := k.CurrentEpoch.Get(sdkCtx); err == nil {
+		epoch = v
+	}
+	// Check duplicate slashing for this (epoch, participant, reason)
+	tripleKey := collections.Join3(epoch, participantAddress, reason)
+	found, err := k.SlashedInEpoch.Has(sdkCtx, tripleKey)
+	if err != nil {
+		return sdk.Coin{}, err
+	}
+	if found {
+		return sdk.Coin{}, fmt.Errorf("already slashed for epoch=%d reason=%s", epoch, reason)
 	}
 
 	totalSlashedAmount := sdk.NewCoin(inferencetypes.BaseCoin, math.ZeroInt())
@@ -437,6 +457,11 @@ func (k Keeper) Slash(ctx context.Context, participantAddress sdk.AccAddress, sl
 			return sdk.Coin{}, fmt.Errorf("failed to burn slashed coins: %w", err)
 		}
 
+		// Mark as slashed for this epoch+participant+reason now that slash succeeded
+		if err := k.SlashedInEpoch.Set(sdkCtx, tripleKey); err != nil {
+			return sdk.Coin{}, err
+		}
+
 		// 4. Emit a slash event
 		sdkCtx.EventManager().EmitEvent(
 			sdk.NewEvent(
@@ -444,6 +469,7 @@ func (k Keeper) Slash(ctx context.Context, participantAddress sdk.AccAddress, sl
 				sdk.NewAttribute(types.AttributeKeyParticipant, participantAddress.String()),
 				sdk.NewAttribute(types.AttributeKeySlashAmount, totalSlashedAmount.String()),
 				sdk.NewAttribute(types.AttributeKeySlashFraction, slashFraction.String()),
+				sdk.NewAttribute(types.AttributeKeySlashReason, reason),
 			),
 		)
 
@@ -451,6 +477,7 @@ func (k Keeper) Slash(ctx context.Context, participantAddress sdk.AccAddress, sl
 			"participant", participantAddress.String(),
 			"slash_fraction", slashFraction.String(),
 			"slashed_amount", totalSlashedAmount.String(),
+			"reason", reason,
 		)
 	}
 

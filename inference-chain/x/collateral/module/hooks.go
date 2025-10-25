@@ -6,6 +6,7 @@ import (
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	"github.com/google/uuid"
 
 	"github.com/productscience/inference/x/collateral/keeper"
 )
@@ -81,6 +82,10 @@ func (h StakingHooks) BeforeValidatorSlashed(ctx context.Context, valAddr sdk.Va
 		"fraction", fraction.String(),
 	)
 
-	_, err := h.k.Slash(sdkCtx, accAddr, fraction)
+	// This slash happens either for validation downtime (0.5%) or byzantine misbehavior (double signing).
+	// Neither is subject to limits, so the reason will need to be unique
+
+	slashReason := uuid.New().String()
+	_, err := h.k.Slash(sdkCtx, accAddr, fraction, slashReason)
 	return err
 }
