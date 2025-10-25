@@ -69,6 +69,9 @@ async def _proxy_request_to_backend(request: Request, backend_path: str) -> Resp
         port = await _pick_vllm_backend()
     except RuntimeError:
         return Response(status_code=503, content=b"No vLLM backend available")
+
+    if backend_path == "/health":
+        return Response(status_code=200, content=b"OK")
     
     if not backend_path.startswith("/"):
         backend_path = "/" + backend_path

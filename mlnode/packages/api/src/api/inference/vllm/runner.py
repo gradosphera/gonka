@@ -228,9 +228,10 @@ class VLLMRunner(IVLLMRunner):
                 if resp.status_code == 200:
                     return True
             except (requests.ConnectionError, requests.Timeout):
-                logger.debug("VLLMRunner is not available on port %d", port)
+                logger.info("VLLMRunner is not available on port %d", port)
                 continue
         
+        logger.debug("VLLMRunner is not available on any port")
         return False
 
     def get_error_if_exist(self) -> Optional[str]:

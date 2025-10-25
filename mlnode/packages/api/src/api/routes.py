@@ -32,11 +32,14 @@ async def stop(request: Request):
     train_manager: TrainManager = request.app.state.train_manager
 
     if pow_manager.is_running():
+        logger.info("Stopping PowManager from /api/v1/stop")
         pow_manager.stop()
     if inference_manager.is_running():
         # Use async stop in async context to avoid blocking event loop
+        logger.info("Stopping InferenceManager from /api/v1/stop")
         await inference_manager._async_stop()
     if train_manager.is_running():
+        logger.info("Stopping TrainManager from /api/v1/stop")
         train_manager.stop()
 
     return {"status": "OK"}
