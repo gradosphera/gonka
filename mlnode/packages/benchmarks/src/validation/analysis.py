@@ -1,13 +1,59 @@
 import numpy as np
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, recall_score
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from collections import Counter
 from tqdm import tqdm
 from joblib import Parallel, delayed
+import json
+import os
 
 from validation.utils import distance2
 from validation import stats
+
+
+def generate_name_from_config(jsonl_path, model_short_name):
+    """Generate a descriptive name from a config file based on the jsonl path.
+    
+    Args:
+        jsonl_path: Path to the jsonl file (e.g., '../data/inference_results/...__2025-10-21_1426.jsonl')
+        model_short_name: Short name for the model (e.g., 'qwen235')
+    
+    Returns:
+        A string like 'honest_qwen235_H100vsH100' or 'fraud_qwen30_H100vs3090'
+        - 'honest' if inference and validation models are the same, 'fraud' if different
+        - underscore
+        - the short model name provided
+        - GPU from inference vs GPU from validation
+    """
+    # Replace .jsonl with _config.json to get config path
+    if jsonl_path.endswith('.jsonl'):
+        config_path = jsonl_path.replace('.jsonl', '_config.json')
+    else:
+        config_path = jsonl_path + '_config.json'
+    
+    # Check if config file exists
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    # Load config
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    
+    # Check if models are the same
+    model_inference = config['model_inference']['model']
+    model_validation = config['model_validation']['model']
+    is_honest = (model_inference == model_validation)
+    honesty_label = 'honest' if is_honest else 'fraud'
+    
+    # Extract GPU information
+    gpu_inference = config['server_inference']['gpu']
+    gpu_validation = config['server_validation']['gpu']
+    
+    # Create the name
+    name = f"{honesty_label}_{model_short_name}_{gpu_inference}vs{gpu_validation}"
+    
+    return name
 
 
 def process_data(items):
@@ -92,7 +138,6 @@ def evaluate_bound(lower, upper_candidates, distances_val, distances_quant):
 
     all_distances = np.concatenate([distances_val, distances_quant])
     labels_true = np.array([0] * len(distances_val) + [1] * len(distances_quant))
-
     best_f1 = -1
     optimal_upper = None
     for upper in upper_candidates:
@@ -131,7 +176,6 @@ def find_optimal_bounds_parallel(distances_val, distances_quant, step=0.0001, n_
     print(f"Optimal Lower Bound: {optimal_lower:.6f}")
     print(f"Optimal Upper Bound: {optimal_upper:.6f}")
     print(f"Best F1-Score: {best_f1:.4f}")
-
     return optimal_lower, optimal_upper
 
 

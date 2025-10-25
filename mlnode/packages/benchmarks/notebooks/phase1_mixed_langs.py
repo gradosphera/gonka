@@ -43,24 +43,24 @@ model_qwen3_int4 = QWEN3_30B_INT4
 model_qwen235b_fp8 = QWEN3_235B_FP8
 model_qwen235b_int4 = QWEN3_235B_INT4
 
-server_8h100_1 = ServerConfig(
-    ip='60.198.31.151',
-    inference_port='14586',
-    node_port='43517',
-    gpu='8xH100',
+server_4h100_1 = ServerConfig(
+    ip='45.135.56.10',
+    inference_port='30961',
+    node_port='23687',
+    gpu='4xH100',
 )
 
-server_8h100_2 = ServerConfig(
-    ip='60.198.31.153',
-    inference_port='26022',
-    node_port='21104',
-    gpu='8xH100',
+server_4h100_2 = ServerConfig(
+    ip='64.62.194.210',
+    inference_port='19704',
+    node_port='31128',
+    gpu='4xH100',
 )
 
 server_4h200_1 = ServerConfig(
-    ip='80.188.223.202',
-    inference_port='17083',
-    node_port='17867',
+    ip='208.64.254.72',
+    inference_port='20336',
+    node_port='20443',
     gpu='4xH200',
 )
 
@@ -100,33 +100,33 @@ runs = [
     #     run_validation=get_run_params(0.7, N_PROMPTS//5),
     #     max_workers=10,
     # ),
+    # InferenceValidationRun(
+    #     model_inference=model_qwen235b_fp8,
+    #     model_validation=model_qwen235b_fp8,
+    #     server_inference=server_4h100_1,
+    #     server_validation=server_4h200_1,
+    #     run_inference=get_run_params(0.99, N_PROMPTS),
+    #     run_validation=get_run_params(0.99, N_PROMPTS),
+    #     max_workers=50,
+    # ),
+    # InferenceValidationRun(
+    #     model_inference=model_qwen235b_int4,
+    #     model_validation=model_qwen235b_fp8,
+    #     server_inference=server_4h100_1,
+    #     server_validation=server_4h100_2,
+    #     run_inference=get_run_params(0.7, N_PROMPTS),
+    #     run_validation=get_run_params(0.7, N_PROMPTS),
+    #     max_workers=50,
+    # ),
     InferenceValidationRun(
         model_inference=model_qwen235b_fp8,
         model_validation=model_qwen235b_fp8,
-        server_inference=server_8h100_1,
-        server_validation=server_8h100_2,
+        server_inference=server_4h100_1,
+        server_validation=server_4h200_1,
         run_inference=get_run_params(0.99, N_PROMPTS),
         run_validation=get_run_params(0.99, N_PROMPTS),
         max_workers=50,
     ),
-    InferenceValidationRun(
-        model_inference=model_qwen235b_int4,
-        model_validation=model_qwen235b_fp8,
-        server_inference=server_8h100_1,
-        server_validation=server_8h100_2,
-        run_inference=get_run_params(0.7, N_PROMPTS//5),
-        run_validation=get_run_params(0.7, N_PROMPTS//5),
-        max_workers=50,
-    ),
-    # InferenceValidationRun(
-    #     model_inference=model_qwen235b_fp8,
-    #     model_validation=model_qwen235b_fp8,
-    #     server_inference=server_8h100_1,
-    #     server_validation=server_4h200_1,
-    #     run_inference=get_run_params(0.99, N_PROMPTS),
-    #     run_validation=get_run_params(0.99, N_PROMPTS),
-    #     max_workers=10,
-    # ),
 ]
 
 

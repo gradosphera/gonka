@@ -6,13 +6,10 @@ QWEN25_7B_INT8 = ModelPreset(
     precision='int8',
     dtype='float16',
     additional_args=[
-        '--enforce-eager',
         '--enable-auto-tool-choice',
         '--tool-call-parser', 'hermes',
     ],
 )
-
-
 
 
 DEEPSEEK_R1_0528_FP8 = ModelPreset(
@@ -21,7 +18,6 @@ DEEPSEEK_R1_0528_FP8 = ModelPreset(
     dtype='auto',
     additional_args=[
         '--quantization', 'fp8',
-        '--enforce-eager',
         '--gpu-memory-utilization', '0.95',
         '--tensor-parallel-size', '8',  
         '--pipeline-parallel-size', '1', 
@@ -37,7 +33,6 @@ DEEPSEEK_R1_0528_INT4 = ModelPreset(
     precision='int4',
     dtype='auto',
     additional_args=[
-        '--enforce-eager', 
         '--gpu-memory-utilization', '0.95',
         '--tensor-parallel-size', '8',
         '--pipeline-parallel-size', '1' ,
@@ -54,7 +49,6 @@ GEMMA_3_27B_FP8 = ModelPreset(
     precision='fp8',
     dtype='auto',
     additional_args=[
-        '--enforce-eager',
         '--gpu-memory-utilization', '0.95',
         '--enable-auto-tool-choice',
         '--tool-call-parser', 'pythonic',
@@ -68,7 +62,6 @@ GEMMA_3_27B_INT4 = ModelPreset(
     precision='int4',
     dtype='auto',
     additional_args=[
-        '--enforce-eager',
         '--gpu-memory-utilization', '0.95',
         '--enable-auto-tool-choice',
         '--tool-call-parser', 'pythonic',
@@ -81,7 +74,6 @@ QWEN3_30B_FP8 = ModelPreset(
     precision='fp8',
     dtype='float16',
     additional_args=[
-        '--enforce-eager',
         '--gpu-memory-utilization', '0.95',
         '--enable-auto-tool-choice',
         '--tool-call-parser', 'hermes',
@@ -94,7 +86,6 @@ QWEN3_30B_INT4 = ModelPreset(
     precision='int4',
     dtype='float16',
     additional_args=[
-        '--enforce-eager',
         '--gpu-memory-utilization', '0.95',
         '--enable-auto-tool-choice',
         '--tool-call-parser', 'hermes',
@@ -107,12 +98,9 @@ QWEN3_235B_FP8 = ModelPreset(
     precision='fp8',
     dtype='float16',
     additional_args=[
-        '--enforce-eager',
-        '--gpu-memory-utilization', '0.95',
         '--enable-auto-tool-choice',
         '--tool-call-parser', 'hermes',
-        '--max_model_len', '10000',
-        '--enable-expert-parallel',
+        '--max_model_len', '240000',
     ],
 )
 
@@ -121,12 +109,9 @@ QWEN3_235B_INT4 = ModelPreset(
     precision='int4',
     dtype='float16',
     additional_args=[
-        '--enforce-eager',
-        '--gpu-memory-utilization', '0.95',
         '--enable-auto-tool-choice',
         '--tool-call-parser', 'hermes',
-        '--max_model_len', '10000',
-        '--enable-expert-parallel',
+        '--max_model_len', '240000',
     ],
 )
     
