@@ -76,7 +76,4 @@ func (app *App) registerMigrations() {
 	app.Configurator().RegisterMigration(stakingtypes.ModuleName, 5, func(ctx sdk.Context) error {
 		return nil
 	})
-	app.Configurator().RegisterMigration(inferencetypes.ModuleName, 7, func(ctx sdk.Context) error {
-		return nil
-	})
 }

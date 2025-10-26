@@ -15,7 +15,7 @@ import (
 var activeParticipantsEpoch0Test = types.ActiveParticipants{
 	Participants: []*types.ActiveParticipant{
 		{
-			ValidatorKey: "tl6U/XtzUsmsUDPoMaColWG72vNqzyXhr6/EP49EvFk=",
+			ValidatorKey: "K0fvGendqbvnmUqp3gslfBwqTFp+YBOBCroZwaC2WC4=",
 		},
 	},
 	PocStartBlockHeight:  1,
