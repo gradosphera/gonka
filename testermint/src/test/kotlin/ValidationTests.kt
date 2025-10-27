@@ -128,6 +128,7 @@ class ValidationTests : TestermintTest() {
     @Test
     fun `late validation of inference`() {
         val (cluster, genesis) = initCluster(mergeSpec = alwaysValidate)
+        genesis.waitForNextEpoch()
         cluster.allPairs.forEach { pair ->
             pair.waitForMlNodesToLoad()
         }

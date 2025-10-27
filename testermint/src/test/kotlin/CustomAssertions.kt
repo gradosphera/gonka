@@ -20,9 +20,8 @@ class TxResponseAssert(actual: TxResponse) :
         isNotNull()
         if (actual.code != 0) {
             failWithMessage(
-                "Expected transaction to succeed (code=0) but was %s. txhash=%s, rawLog=%s",
+                "transaction failed - code=%d,rawLog=%s",
                 actual.code,
-                actual.txhash,
                 actual.rawLog
             )
         }
@@ -33,9 +32,7 @@ class TxResponseAssert(actual: TxResponse) :
         isNotNull()
         if (actual.code == 0) {
             failWithMessage(
-                "Expected transaction to fail (code!=0) but was %s. txhash=%s, rawLog=%s",
-                actual.code,
-                actual.txhash,
+                "Transaction did not fail: rawLog=%s",
                 actual.rawLog
             )
         }
