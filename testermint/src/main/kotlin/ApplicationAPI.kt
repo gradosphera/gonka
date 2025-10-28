@@ -21,6 +21,7 @@ import java.net.URLEncoder
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import com.github.kittinunf.fuel.core.HttpException
 
 const val SERVER_TYPE_PUBLIC = "public"
 const val SERVER_TYPE_ML = "ml"
@@ -395,7 +396,7 @@ data class ApplicationAPI(
 }
 
 
-fun logResponse(reqData: Triple<Request, Response, Result<*, FuelError>>) {
+fun logResponse(reqData: Triple<Request, Response, Result<*, FuelError>>, throwError:Boolean = false) {
     val (request, response, result) = reqData
     Logger.debug("Request: {} {}", request.method, request.url)
     Logger.trace("Request headers: {}", request.headers)
@@ -409,6 +410,9 @@ fun logResponse(reqData: Triple<Request, Response, Result<*, FuelError>>) {
     if (result is Result.Failure) {
         Logger.error(result.getException(), "Error making request: url={}", request.url)
         Logger.error("Response Data: {}", response.data.decodeToString())
+        if (throwError) {
+            throw HttpException(response.statusCode, response.data.decodeToString())
+        }
         return
     }
 
