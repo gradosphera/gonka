@@ -691,18 +691,18 @@ func (mr *MockCollateralKeeperMockRecorder) GetCollateral(ctx, participant any) 
 }
 
 // Slash mocks base method.
-func (m *MockCollateralKeeper) Slash(ctx context.Context, participant types.AccAddress, slashFraction math.LegacyDec) (types.Coin, error) {
+func (m *MockCollateralKeeper) Slash(ctx context.Context, participant types.AccAddress, slashFraction math.LegacyDec, reason string) (types.Coin, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Slash", ctx, participant, slashFraction)
+	ret := m.ctrl.Call(m, "Slash", ctx, participant, slashFraction, reason)
 	ret0, _ := ret[0].(types.Coin)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Slash indicates an expected call of Slash.
-func (mr *MockCollateralKeeperMockRecorder) Slash(ctx, participant, slashFraction any) *gomock.Call {
+func (mr *MockCollateralKeeperMockRecorder) Slash(ctx, participant, slashFraction, reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Slash", reflect.TypeOf((*MockCollateralKeeper)(nil).Slash), ctx, participant, slashFraction)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Slash", reflect.TypeOf((*MockCollateralKeeper)(nil).Slash), ctx, participant, slashFraction, reason)
 }
 
 // MockStreamVestingKeeper is a mock of StreamVestingKeeper interface.

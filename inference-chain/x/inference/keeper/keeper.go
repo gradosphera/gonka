@@ -61,6 +61,7 @@ type (
 		PruningState              collections.Item[types.PruningState]
 		InferencesToPrune         collections.Map[collections.Pair[int64, string], collections.NoValue]
 		ActiveInvalidations       collections.KeySet[collections.Pair[sdk.AccAddress, string]]
+		ExcludedParticipantsMap   collections.Map[collections.Pair[uint64, sdk.AccAddress], types.ExcludedParticipant]
 	}
 )
 
@@ -271,6 +272,13 @@ func NewKeeper(
 			types.ActiveInvalidationsPrefix,
 			"active_invalidations",
 			collections.PairKeyCodec(sdk.AccAddressKey, collections.StringKey),
+		),
+		ExcludedParticipantsMap: collections.NewMap(
+			sb,
+			types.ExcludedParticipantsPrefix,
+			"excluded_participants",
+			collections.PairKeyCodec(collections.Uint64Key, sdk.AccAddressKey),
+			codec.CollValue[types.ExcludedParticipant](cdc),
 		),
 	}
 	// Build the collections schema

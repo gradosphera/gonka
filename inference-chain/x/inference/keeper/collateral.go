@@ -99,33 +99,28 @@ func (k Keeper) AdjustWeightsByCollateral(ctx context.Context, participants []*t
 	return nil
 }
 
-// CheckAndSlashForInvalidStatus checks if a participant's status has transitioned to INVALID
+// SlashForInvalidStatus checks if a participant's status has transitioned to INVALID
 // and, if so, triggers a collateral slash.
-func (k Keeper) CheckAndSlashForInvalidStatus(ctx context.Context, originalStatus types.ParticipantStatus, participant *types.Participant) {
-	// If the status changed to INVALID, trigger a slash.
-	if originalStatus != types.ParticipantStatus_INVALID && participant.Status == types.ParticipantStatus_INVALID {
-		sdkCtx := sdk.UnwrapSDKContext(ctx)
-		params := k.GetParams(sdkCtx)
-		slashFraction, err := params.CollateralParams.SlashFractionInvalid.ToLegacyDec()
-		if err != nil {
-			k.LogError("invalid slash_fraction_invalid:", types.Tokenomics, "error", err)
-			return
-		}
+func (k Keeper) SlashForInvalidStatus(ctx context.Context, participant *types.Participant, params types.Params) {
+	slashFraction, err := params.CollateralParams.SlashFractionInvalid.ToLegacyDec()
+	if err != nil {
+		k.LogError("invalid slash_fraction_invalid:", types.Tokenomics, "error", err)
+		return
+	}
 
-		participantAddress, err := sdk.AccAddressFromBech32(participant.Address)
+	participantAddress, err := sdk.AccAddressFromBech32(participant.Address)
+	if err != nil {
+		// This should not happen if the address is valid in the keeper.
+		k.LogError("Could not parse participant address for slashing", types.Validation, "address", participant.Address, "error", err)
+	} else {
+		k.LogInfo("Slashing participant for being marked INVALID", types.Tokenomics,
+			"participant", participant.Address,
+			"slash_fraction", slashFraction.String(),
+		)
+		_, err := k.collateralKeeper.Slash(ctx, participantAddress, slashFraction, types.SlashReasonInvalidation)
 		if err != nil {
-			// This should not happen if the address is valid in the keeper.
-			k.LogError("Could not parse participant address for slashing", types.Validation, "address", participant.Address, "error", err)
-		} else {
-			k.LogInfo("Slashing participant for being marked INVALID", types.Tokenomics,
-				"participant", participant.Address,
-				"slash_fraction", slashFraction.String(),
-			)
-			_, err := k.collateralKeeper.Slash(sdkCtx, participantAddress, slashFraction)
-			if err != nil {
-				k.LogError("Failed to slash participant", types.Tokenomics, "participant", participant.Address, "error", err)
-				// Non-fatal error, we log and continue. The participant is already marked INVALID.
-			}
+			k.LogError("Failed to slash participant", types.Tokenomics, "participant", participant.Address, "error", err)
+			// Non-fatal error, we log and continue. The participant is already marked INVALID.
 		}
 	}
 }
@@ -143,7 +138,7 @@ func (k Keeper) CheckAndSlashForDowntime(ctx context.Context, participant *types
 	params := k.GetParams(sdkCtx)
 	downtimeThreshold, err := params.CollateralParams.DowntimeMissedPercentageThreshold.ToLegacyDec()
 	if err != nil {
-		k.LogError("nvalid downtime_missed_percentage_threshold", types.Tokenomics, err)
+		k.LogError("Invalid downtime_missed_percentage_threshold", types.Tokenomics, err)
 
 	}
 
@@ -169,7 +164,7 @@ func (k Keeper) CheckAndSlashForDowntime(ctx context.Context, participant *types
 			"slash_fraction", slashFraction.String(),
 		)
 
-		_, err = k.collateralKeeper.Slash(sdkCtx, participantAddress, slashFraction)
+		_, err = k.collateralKeeper.Slash(sdkCtx, participantAddress, slashFraction, types.SlashReasonDowntime)
 		if err != nil {
 			k.LogError("Failed to slash participant for downtime", types.Tokenomics, "participant", participant.Address, "error", err)
 		}

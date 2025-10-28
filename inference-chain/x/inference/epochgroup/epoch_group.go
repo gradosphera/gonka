@@ -334,13 +334,24 @@ func (eg *EpochGroup) updateMember(ctx context.Context, address string, weight i
 	return err
 }
 
-func (eg *EpochGroup) UpdateMember(ctx context.Context, previousVersion *types.Participant, currentVersion *types.Participant) error {
-	if previousVersion != nil && previousVersion.Status != currentVersion.Status {
-		if currentVersion.Status == types.ParticipantStatus_INVALID {
-			// Effectively delete the member
-			return eg.updateMember(ctx, currentVersion.Address, 0, "")
-		}
+func (eq *EpochGroup) RemoveMember(ctx context.Context, participant *types.Participant) error {
+	err := eq.updateMember(ctx, participant.Address, 0, "")
+	if err != nil {
+		return err
 	}
+	for _, model := range eq.GroupData.GetSubGroupModels() {
+		subGroup, err := eq.GetSubGroup(ctx, model)
+		if err != nil {
+			eq.Logger.LogError("Error getting sub-group", types.EpochGroup, "error", err, "model", model)
+			continue
+		}
+		err = subGroup.RemoveMember(ctx, participant)
+		if err != nil {
+			eq.Logger.LogError("Error removing member from sub-group", types.EpochGroup, "error", err, "model", model)
+		}
+		// for sub groups, continue on and remove as much as we can
+	}
+
 	return nil
 }
 

@@ -86,6 +86,7 @@ message ValidationParams {
   int64  timestamp_expiration = 13;  // Max time in seconds until timestamps are "too old"
   int64  timestamp_advance = 14;     // Max time in seconds until timestamps are "in the future"
   uint64 estimated_limits_per_block_kb = 15; // Max estimated KB per block per Transfer Agent
+  Decimal invalid_reputation_preserve = 16; // How much reputation to keep after an invalidation hit (defaults to 0)
 }
 
 message PocParams {
