@@ -29,62 +29,63 @@ Gonka v0.2.5 introduces an exchange bridge that connects external chains to the 
   - Metadata can be added or updated later (set `overwrite=true`), and the chain pushes updates to the existing wrapped contract.
 
 
-        ┌────────────────────────────────────────────────────────┐
-        │  Bridge Service (Off-chain Ethereum Adapter)           │
-        │  ────────────────────────────────────────────────────  │
-        │  • Runs Prysm (beacon) + Geth (execution) in           │
-        │    ingestion-only mode — no consensus or validation    │
-        │  • Subscribes to finalized blocks (≥2 epochs)          │
-        │  • Fetches trusted bridge contracts via                │
-        │    `GET /v1/bridge/addresses?chain=ethereum`           │
-        │  • Filters receipts → builds minimal payload (empty OK)│
-        │  • POSTs to API: `/admin/v1/bridge/block`              │
-        └──────────────────────┬─────────────────────────────────┘
-                               │
-                               ▼
-        ┌────────────────────────────────────────────────────────┐
-        │  Decentralized API                                     │
-        │  ────────────────────────────────────────────────────  │
-        │  • Queues payloads                                     │
-        │  • Submits `MsgBridgeExchange` to chain                │
-        │  • Signed by validator key                             │
-        │  • Maps external sender → Cosmos recipient             │
-        └──────────────────────┬─────────────────────────────────┘
-                               │
-                               ▼
-        ┌────────────────────────────────────────────────────────┐
-        │  Gonka Chain Node (on-chain)                           │
-        │  ────────────────────────────────────────────────────  │
-        │  • Validates MsgBridgeExchange                         │
-        │  • Creates BridgeTransaction                           │
-        │      ├── Status: PENDING (<50% validator power)        │
-        │      └── Status: COMPLETED (≥50% validator power)      │
-        └──────────────────────┬─────────────────────────────────┘
-                               │
-                 ┌─────────────┴──────────────┐
-                 ▼                            ▼
-       ┌────────────────────┐        ┌────────────────────┐
-       │  Inbound (EXT→GNK) │        │ Outbound (GNK→EXT) │
-       │  ───────────────── │        │ ────────────────── │
-       │  • Mint wrapped    │        │  • Burn WGNK /     │
-       │    token W(EXT)    │        │    release GNK     │
-       └──────────┬─────────┘        └──────────┬─────────┘
-                  │                             │
-                  ▼                             ▼
-     ┌──────────────────────────┐     ┌────────────────────────────┐
-     │  Wrapped Token Handling  │     │ External Chain Settlement  │
-     │  ──────────────────────  │     │  ───────────────────────   │
-     │  • If wrapped CW20 for   │     │  • BLS-signed withdrawal   │
-     │    (chainId,contract)    │     │    or mint confirmation    │
-     │    exists → mint tokens  │     │  • Completes external tx   │
-     │  • If not → create new   │     └────────────────────────────┘
-     │    contract:             │
-     │     ├── Using existing   │
-     │     │   metadata (name,  │
-     │     │   symbol, decimals)│
-     │     └── Or blank meta if │
-     │         not registered   │
-     └──────────────────────────┘
+```text
+┌────────────────────────────────────────────────────────┐
+│  Bridge Service (Off-chain Ethereum Adapter)           │
+│  ────────────────────────────────────────────────────  │
+│  • Runs Prysm (beacon) + Geth (execution) in           │
+│    ingestion-only mode — no consensus or validation    │
+│  • Subscribes to finalized blocks (≥2 epochs)          │
+│  • Fetches trusted bridge contracts via                │
+│    GET /v1/bridge/addresses?chain=ethereum             │
+│  • Filters receipts → builds minimal payload (empty OK)│
+│  • POSTs to API: /admin/v1/bridge/block                │
+└───────────────────────────┬────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│  Decentralized API                                     │
+│  ────────────────────────────────────────────────────  │
+│  • Queues payloads                                     │
+│  • Submits MsgBridgeExchange to chain                  │
+│  • Signed by validator key                             │
+│  • Maps external sender → Cosmos recipient             │
+└───────────────────────────┬────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│  Gonka Chain Node (on-chain)                           │
+│  ────────────────────────────────────────────────────  │
+│  • Validates MsgBridgeExchange                         │
+│  • Creates BridgeTransaction                           │
+│      ├─ Status: PENDING  (<50% validator power)        │
+│      └─ Status: COMPLETED (≥50% validator power)       │
+└───────────────────────────┬────────────────────────────┘
+                            │
+                ┌───────────┴───────────┐
+                ▼                       ▼
+┌──────────────────────────┐  ┌──────────────────────────┐
+│ Inbound (EXT→GNK)        │  │ Outbound (GNK→EXT)       │
+│ ──────────────────────── │  │ ──────────────────────── │
+│ • Mint W(EXT)            │  │ • Burn WGNK / Release GNK│
+└───────────────┬──────────┘  └─────────┬────────────────┘
+                │                       │
+                ▼                       ▼
+┌──────────────────────────┐   ┌──────────────────────────┐
+│ Wrapped Token Handling   │   │ External Chain Settlement│
+│ ───────────────────────  │   │ ───────────────────────  │
+│ • If wrapped CW20 for    │   │ • BLS-signed withdrawal  │
+│   (chainId,contract)     │   │   or mint confirmation   │
+│   exists → mint tokens   │   │ • Completes external tx  │
+│ • If not → create new    │   └──────────────────────────┘
+│   wrapped contract:      │
+│    ├─ Using existing     │
+│    │  metadata (name,    │
+│    │  symbol, decimals)  │
+│    └─ Or blank metadata  │
+│       if not registered  │
+└──────────────────────────┘
+```
 
 ### Governance Proposals \ Contract Deployment
 
