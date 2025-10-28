@@ -1198,14 +1198,16 @@ func (b *Broker) queryNodeStatus(node Node, state NodeState) (*statusQueryResult
 	status, err := client.NodeState(context.Background())
 
 	nodeId := node.Id
+	prevStatus := state.CurrentStatus
+	var currentStatus types.HardwareNodeStatus
 	if err != nil {
-		logging.Error("queryNodeStatus. Failed to query node status", types.Nodes,
+		logging.Error("queryNodeStatus. Failed to query node status. Assuming currentStatus = FAILED", types.Nodes,
 			"nodeId", nodeId, "error", err)
-		return nil, err
+		currentStatus = types.HardwareNodeStatus_FAILED
+	} else {
+		currentStatus = toStatus(*status)
 	}
 
-	prevStatus := state.CurrentStatus
-	currentStatus := toStatus(*status)
 	logging.Info("queryNodeStatus. Queried node status", types.Nodes, "nodeId", nodeId, "currentStatus", currentStatus.String(), "prevStatus", prevStatus.String())
 
 	if currentStatus == types.HardwareNodeStatus_INFERENCE {
