@@ -421,10 +421,8 @@ func (s *Server) handleExecutorRequest(ctx echo.Context, request *ChatRequest, w
 		)
 	})
 	if err != nil {
-		logging.Error("Failed to get response from inference node. Triggering status query", types.Inferences,
+		logging.Error("Failed to get response from inference node", types.Inferences,
 			"inferenceId", inferenceId, "error", err)
-		// TODO: won't really work, because in queryNodeStatus we check last queried time to avoid too frequent queries
-		s.nodeBroker.TriggerStatusQuery()
 		return err
 	}
 	defer resp.Body.Close()
