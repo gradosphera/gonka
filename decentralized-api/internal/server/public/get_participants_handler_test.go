@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"decentralized-api/cosmosclient"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	grpctypes "github.com/cosmos/cosmos-sdk/types/grpc"
 	"github.com/cosmos/cosmos-sdk/types/query"
@@ -103,3 +102,28 @@ func TestGetAllParticipants_PaginationAndPinnedHeight(t *testing.T) {
 
 	mc.AssertExpectations(t)
 }
+
+// TODO: do not delete test: used to check state on archive node
+/*func TestArchiveNode(t *testing.T) {
+	const epoch = 1
+	rpcClient, err := cosmos_client.NewRpcClient("http://204.12.168.157:26657")
+	assert.NoError(t, err)
+
+	interfaceRegistry := codectypes.NewInterfaceRegistry()
+	types.RegisterInterfaces(interfaceRegistry)
+
+	cdc := codec.NewProtoCodec(interfaceRegistry)
+	dataKey := types.ActiveParticipantsFullKey(epoch)
+	result, err := cosmos_client.QueryByKey(rpcClient, "inference", dataKey)
+	assert.NoError(t, err)
+
+	var activeParticipants types.ActiveParticipants
+	err = cdc.Unmarshal(result.Response.Value, &activeParticipants)
+	assert.NoError(t, err)
+
+	blockHeight := activeParticipants.CreatedAtBlockHeight
+	result, err = cosmos_client.QueryByKeyWithOptions(rpcClient, "inference", dataKey, blockHeight, true)
+
+	fmt.Printf("%+v", result)
+}
+*/
