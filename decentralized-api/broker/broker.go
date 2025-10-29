@@ -783,6 +783,12 @@ type pocParams struct {
 
 const reconciliationInterval = 30 * time.Second
 
+// Timeouts for node health checks used in queryNodeStatus
+const (
+	nodeStatusRequestTimeout      = 5 * time.Second
+	inferenceHealthRequestTimeout = 5 * time.Second
+)
+
 func (b *Broker) TriggerReconciliation() {
 	select {
 	case b.reconcileTrigger <- struct{}{}:
@@ -1195,7 +1201,9 @@ type statusQueryResult struct {
 func (b *Broker) queryNodeStatus(node Node, state NodeState) (*statusQueryResult, error) {
 	client := b.NewNodeClient(&node)
 
-	status, err := client.NodeState(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), nodeStatusRequestTimeout)
+	defer cancel()
+	status, err := client.NodeState(ctx)
 
 	nodeId := node.Id
 	prevStatus := state.CurrentStatus
@@ -1211,7 +1219,9 @@ func (b *Broker) queryNodeStatus(node Node, state NodeState) (*statusQueryResult
 	logging.Info("queryNodeStatus. Queried node status", types.Nodes, "nodeId", nodeId, "currentStatus", currentStatus.String(), "prevStatus", prevStatus.String())
 
 	if currentStatus == types.HardwareNodeStatus_INFERENCE {
-		ok, err := client.InferenceHealth(context.Background())
+		hctx, hcancel := context.WithTimeout(context.Background(), inferenceHealthRequestTimeout)
+		defer hcancel()
+		ok, err := client.InferenceHealth(hctx)
 		if !ok || err != nil {
 			currentStatus = types.HardwareNodeStatus_FAILED
 			logging.Info("queryNodeStatus. Node inference health check failed", types.Nodes, "nodeId", nodeId, "currentStatus", currentStatus.String(), "prevStatus", prevStatus.String(), "err", err)
