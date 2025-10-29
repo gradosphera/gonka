@@ -9,6 +9,7 @@ import (
 	"decentralized-api/logging"
 	"decentralized-api/utils"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -38,6 +39,9 @@ const (
 	// BothContexts indicates the AuthKey was used for both transfer and executor requests
 	BothContexts = TransferContext | ExecutorContext
 )
+
+// Sentinel error to identify transport-level POST failures to inference worker
+var errInferencePost = errors.New("inference post failed")
 
 // Package-level variables for AuthKey reuse prevention
 var (
@@ -414,13 +418,23 @@ func (s *Server) handleExecutorRequest(ctx echo.Context, request *ChatRequest, w
 		if err != nil {
 			return nil, err
 		}
-		return http.Post(
+		resp, postErr := http.Post(
 			completionsUrl,
 			request.Request.Header.Get("Content-Type"),
 			bytes.NewReader(modifiedRequestBody.NewBody),
 		)
+		if postErr != nil {
+			return nil, fmt.Errorf("%w: %v", errInferencePost, postErr)
+		}
+		return resp, nil
 	})
 	if err != nil {
+		if errors.Is(err, errInferencePost) {
+			logging.Warn("Transport error posting to inference worker; triggering manual node status query", types.Inferences,
+				"inferenceId", inferenceId, "error", err)
+			// Trigger a manual status query to refresh node health
+			s.nodeBroker.TriggerStatusQuery()
+		}
 		logging.Error("Failed to get response from inference node", types.Inferences,
 			"inferenceId", inferenceId, "error", err)
 		return err
@@ -432,6 +446,12 @@ func (s *Server) handleExecutorRequest(ctx echo.Context, request *ChatRequest, w
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		msg := getInferenceErrorMessage(resp)
 		logging.Warn("Inference node response with an error", types.Inferences, "code", resp.StatusCode, "msg", msg)
+		// If it's a worker/server-side error (5xx), trigger a manual status query
+		if resp.StatusCode >= 500 {
+			logging.Warn("Server-side error from inference worker; triggering manual node status query", types.Inferences,
+				"inferenceId", inferenceId, "statusCode", resp.StatusCode)
+			s.nodeBroker.TriggerStatusQuery()
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, msg)
 	}
 
