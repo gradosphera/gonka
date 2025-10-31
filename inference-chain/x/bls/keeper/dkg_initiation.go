@@ -17,7 +17,7 @@ func (k Keeper) InitiateKeyGenerationForEpoch(ctx sdk.Context, epochID uint64, f
 	tSlotsDegree := iTotalSlots - params.TSlotsDegreeOffset // Calculate t from offset
 
 	// Perform deterministic slot assignment based on percentage weights
-	blsParticipants, err := k.AssignSlots(finalizedParticipants, iTotalSlots)
+	blsParticipants, err := k.AssignSlots(ctx, finalizedParticipants, iTotalSlots)
 	if err != nil {
 		return fmt.Errorf("failed to assign slots: %w", err)
 	}
@@ -88,7 +88,7 @@ func (k Keeper) InitiateKeyGenerationForEpoch(ctx sdk.Context, epochID uint64, f
 }
 
 // AssignSlots performs deterministic slot assignment based on percentage weights
-func (k Keeper) AssignSlots(participants []types.ParticipantWithWeightAndKey, totalSlots uint32) ([]types.BLSParticipantInfo, error) {
+func (k Keeper) AssignSlots(ctx sdk.Context, participants []types.ParticipantWithWeightAndKey, totalSlots uint32) ([]types.BLSParticipantInfo, error) {
 	if len(participants) == 0 {
 		return nil, fmt.Errorf("no participants provided")
 	}
@@ -117,7 +117,23 @@ func (k Keeper) AssignSlots(participants []types.ParticipantWithWeightAndKey, to
 		}
 
 		if participantSlots <= 0 {
-			return nil, fmt.Errorf("participant %s has zero or negative slots", participant.Address)
+			k.Logger().Warn(
+				"Participant assigned zero or negative slots",
+				"address", participant.Address,
+				"weight", participant.PercentageWeight.String(),
+				"totalWeight", totalWeight.String(),
+				"totalSlots", totalSlots,
+			)
+			ctx.EventManager().EmitEvent(
+				sdk.NewEvent(
+					"bls.participant_no_slots",
+					sdk.NewAttribute("address", participant.Address),
+					sdk.NewAttribute("weight", participant.PercentageWeight.String()),
+					sdk.NewAttribute("total_weight", totalWeight.String()),
+					sdk.NewAttribute("total_slots", fmt.Sprintf("%d", totalSlots)),
+				),
+			)
+			continue
 		}
 
 		startIndex := currentSlot
